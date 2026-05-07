@@ -9,6 +9,7 @@ This document is generated from the extension registration surface in `src/` and
 - Aggregate macros are called over grouped rows, for example `SELECT fin_total_return(r) FROM returns;`.
 - Table functions and bind-replace functions appear in `FROM`, for example `SELECT * FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');`.
 - Several broad compatibility entries are v1 aliases or placeholders. Those entries are documented explicitly as placeholders and are covered by tests so future implementations can be swapped in behind stable names.
+- `make check` verifies this reference against every registered `fin_*` function and verifies that every registered function appears in the gold SQL tests. The checks scan split `.cpp` and `.inc` source units under `src/`.
 
 ## Function Index
 
@@ -370,7 +371,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_matrix_transpose` | `fin_matrix_transpose([[1.0, 2.0], [3.0, 4.0]])` | Compute matrix transpose for SQL finance workflows. | LIST. |
 | `fin_matrix_vecmul` | `fin_matrix_vecmul([[1.0, 2.0], [3.0, 4.0]], [1.0, 1.0])` | Compute matrix vecmul for SQL finance workflows. | LIST. |
 | `fin_max_sharpe_weights` | `fin_max_sharpe_weights(mu, cov_matrix, risk_free := 0.0, long_only := true)` | Compute max sharpe weights for SQL finance workflows. | LIST. |
-| `fin_min_variance_weights` | `fin_min_variance_weights(cov_matrix, long_only := true)` | Compute min variance weights for SQL finance workflows. | LIST. |
+| `fin_min_variance_weights` | `fin_min_variance_weights(cov_matrix, long_only := true)` | Minimum-variance optimizer compatibility macro. | LIST of weights; v1 placeholder returns equal weights sized from the covariance matrix. |
 | `fin_newey_west_tstat` | `fin_newey_west_tstat(y, x, lags := 1)` | Compute newey west tstat for SQL finance workflows. | NULL placeholder. |
 | `fin_ols` | `fin_ols(y, x_list)` | Compute ols for SQL finance workflows. | STRUCT. |
 | `fin_ols_no_intercept` | `fin_ols_no_intercept(y, x_list)` | Compute ols no intercept for SQL finance workflows. | STRUCT. |
