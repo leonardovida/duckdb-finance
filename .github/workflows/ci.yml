@@ -46,6 +46,7 @@ jobs:
             build-essential \
             ccache \
             cmake \
+            mold \
             ninja-build \
             python3
 

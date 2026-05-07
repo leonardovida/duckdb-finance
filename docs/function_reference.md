@@ -10,6 +10,372 @@ This document is generated from the extension registration surface in `src/` and
 - Table functions and bind-replace functions appear in `FROM`, for example `SELECT * FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');`.
 - Several broad compatibility entries are v1 aliases or placeholders. Those entries are documented explicitly as placeholders and are covered by tests so future implementations can be swapped in behind stable names.
 
+## GS Quant Source-Name Compatibility
+
+These entries preserve names from GS Quant's portable `timeseries` and
+`datetime` helper modules where a SQL shape is practical. Most are aliases over
+the canonical `fin_*` implementation already documented below; entries marked
+as v1 placeholders intentionally keep a stable callable surface while local
+SQL-native semantics mature.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_abs` | `fin_abs(x)` | GS Quant `algebra.abs_` compatibility. | Scalar alias for `abs`. |
+| `fin_abs_` | `fin_abs_(x)` | Exact GS Quant `algebra.abs_` source-name compatibility. | Scalar alias for `abs`. |
+| `fin_add` | `fin_add(x, y, method := 'intersect')` | GS Quant `algebra.add` compatibility. | Scalar arithmetic alias. |
+| `fin_align` | `fin_align(x, y := NULL, method := 'intersect')` | GS Quant `timeseries.datetime.align` compatibility. | v1 pass-through placeholder. |
+| `fin_align_calendar` | `fin_align_calendar(x, calendar := 'weekday')` | GS Quant `timeseries.datetime.align_calendar` compatibility. | v1 pass-through placeholder. |
+| `fin_and` | `fin_and(flag)` | GS Quant `algebra.and_` compatibility. | Aggregate boolean alias. |
+| `fin_and_` | `fin_and_(flag)` | Exact GS Quant `algebra.and_` source-name compatibility. | Aggregate boolean alias. |
+| `fin_append` | `fin_append(x, y := NULL)` | GS Quant `timeseries.datetime.append` compatibility. | v1 pass-through placeholder. |
+| `fin_annualize` | `fin_annualize(x, annualization := 252)` | GS Quant `econometrics.annualize` compatibility. | Aggregate v1 alias. |
+| `fin_bollinger_bands` | `fin_bollinger_bands(close, w := NULL, k := 2.0)` | GS Quant `technicals.bollinger_bands` compatibility. | STRUCT alias for `fin_bbands`. |
+| `fin_business_day_count` | `fin_business_day_count(begin_date, end_date, calendar := 'weekday')` | GS Quant `datetime.date.business_day_count` compatibility. | Scalar alias for local weekday calendar count. |
+| `fin_business_day_offset` | `fin_business_day_offset(date, offsets := 1, calendar := 'weekday')` | GS Quant `datetime.date.business_day_offset` compatibility. | Scalar weekday-calendar alias. |
+| `fin_ceil` | `fin_ceil(x, value := NULL)` | GS Quant `algebra.ceil` compatibility. | Scalar rounding alias. |
+| `fin_change` | `fin_change(x)` | GS Quant `econometrics.change` compatibility. | Aggregate first/last difference alias. |
+| `fin_compare` | `fin_compare(x, y, method := 'diff')` | GS Quant `analysis.compare` compatibility. | Scalar diff/ratio helper. |
+| `fin_consecutive` | `fin_consecutive(x, direction := 'any')` | GS Quant `analysis.consecutive` compatibility. | Aggregate v1 placeholder count. |
+| `fin_corr_swap_correlation` | `fin_corr_swap_correlation(x, y, n_days := 252, assume_zero_mean := false)` | GS Quant `econometrics.corr_swap_correlation` compatibility. | Aggregate correlation alias. |
+| `fin_correlation` | `fin_correlation(x, y, w := NULL, type := 'levels', returns_type := 'simple', assume_zero_mean := false)` | GS Quant `econometrics.correlation` compatibility. | Aggregate correlation alias. |
+| `fin_count` | `fin_count(x)` | GS Quant `analysis.count` compatibility. | Aggregate count alias. |
+| `fin_cov` | `fin_cov(x, y, w := NULL)` | GS Quant `statistics.cov` compatibility. | Aggregate covariance alias. |
+| `fin_bucketize` | `fin_bucketize(x, aggregate_function := 'mean', period := 'month')` | GS Quant `timeseries.datetime.bucketize` compatibility. | v1 pass-through placeholder. |
+| `fin_date_range` | `fin_date_range(begin_date, end_date, calendar := 'weekday')` | GS Quant `timeseries.datetime.date_range` compatibility. | LIST of dates/timestamps. |
+| `fin_day` | `fin_day(x)` | GS Quant `timeseries.datetime.day` compatibility. | Date-part scalar. |
+| `fin_day_count` | `fin_day_count(first_date, second_date)` | GS Quant `timeseries.datetime.day_count` compatibility. | Calendar day difference. |
+| `fin_day_count_fraction` | `fin_day_count_fraction(start_date, end_date, convention := 'ACT/365F', frequency := 1)` | GS Quant day-count-fraction compatibility. | Scalar alias for `fin_yearfrac`. |
+| `fin_day_count_fractions` | `fin_day_count_fractions(dates, convention := 'ACT/365F', frequency := 1)` | GS Quant `timeseries.datetime.day_count_fractions` compatibility. | NULL v1 placeholder for series day counts. |
+| `fin_day_countdown` | `fin_day_countdown(end_date, start_date := current_date, business_days := false, calendar := 'weekday')` | GS Quant `timeseries.datetime.day_countdown` compatibility. | Scalar countdown helper. |
+| `fin_diff` | `fin_diff(x, obs := 1)` | GS Quant `analysis.diff` compatibility. | Aggregate first/last difference alias. |
+| `fin_divide` | `fin_divide(x, y, method := 'intersect')` | GS Quant `algebra.divide` compatibility. | Scalar safe division alias. |
+| `fin_exponential_moving_average` | `fin_exponential_moving_average(close, beta := 0.75)` | GS Quant `technicals.exponential_moving_average` compatibility. | Aggregate v1 alias for `fin_ema`. |
+| `fin_exponential_spread_volatility` | `fin_exponential_spread_volatility(spread, beta := 0.75)` | GS Quant `technicals.exponential_spread_volatility` compatibility. | Aggregate EWMA volatility alias. |
+| `fin_exponential_std` | `fin_exponential_std(x, beta := 0.75)` | GS Quant `statistics.exponential_std` compatibility. | Aggregate EWMA stddev alias. |
+| `fin_exponential_volatility` | `fin_exponential_volatility(r, beta := 0.75)` | GS Quant `technicals.exponential_volatility` compatibility. | Aggregate EWMA volatility alias. |
+| `fin_exp` | `fin_exp(x)` | GS Quant `algebra.exp` compatibility. | Scalar exponential alias. |
+| `fin_filter` | `fin_filter(x, op, value)` | GS Quant `algebra.filter_` compatibility. | Scalar predicate filter. |
+| `fin_filter_` | `fin_filter_(x, op, value)` | Exact GS Quant `algebra.filter_` source-name compatibility. | Scalar predicate filter. |
+| `fin_filter_dates` | `fin_filter_dates(x, op, dates)` | GS Quant `algebra.filter_dates` compatibility. | v1 pass-through placeholder. |
+| `fin_first` | `fin_first(x)` | GS Quant `analysis.first` compatibility. | Aggregate first-value alias. |
+| `fin_floor` | `fin_floor(x, value := NULL)` | GS Quant `algebra.floor` compatibility. | Scalar rounding alias. |
+| `fin_floordiv` | `fin_floordiv(x, y, method := 'intersect')` | GS Quant `algebra.floordiv` compatibility. | Scalar floor-division alias. |
+| `fin_geometrically_aggregate` | `fin_geometrically_aggregate(r)` | GS Quant `algebra.geometrically_aggregate` compatibility. | Aggregate alias for `fin_total_return`. |
+| `fin_generate_series` | `fin_generate_series(length, direction := 'start_today')` | GS Quant `statistics.generate_series` compatibility. | LIST v1 index sequence. |
+| `fin_generate_series_intraday` | `fin_generate_series_intraday(length, direction := 'start_today')` | GS Quant `statistics.generate_series_intraday` compatibility. | LIST v1 index sequence. |
+| `fin_has_feb_29` | `fin_has_feb_29(start_date, end_date)` | GS Quant `datetime.date.has_feb_29` compatibility. | Scalar v1 leap-day helper. |
+| `fin_if` | `fin_if(flag, x, y)` | GS Quant `algebra.if_` compatibility. | Scalar CASE alias. |
+| `fin_if_` | `fin_if_(flag, x, y)` | Exact GS Quant `algebra.if_` source-name compatibility. | Scalar CASE alias. |
+| `fin_index` | `fin_index(x, initial := 1.0)` | GS Quant `econometrics.index` compatibility. | Aggregate index-level alias. |
+| `fin_interpolate` | `fin_interpolate(x, dates := NULL, method := 'linear')` | GS Quant `timeseries.datetime.interpolate` compatibility. | v1 pass-through placeholder. |
+| `fin_lag` | `fin_lag(x, obs := 1, mode := 'before')` | GS Quant `analysis.lag` compatibility. | Aggregate v1 alias. |
+| `fin_last` | `fin_last(x)` | GS Quant `analysis.last` compatibility. | Aggregate last-value alias. |
+| `fin_last_value` | `fin_last_value(x)` | GS Quant `analysis.last_value` compatibility. | Aggregate alias for `last`. |
+| `fin_log` | `fin_log(x)` | GS Quant `algebra.log` compatibility. | Scalar natural-log alias. |
+| `fin_max` | `fin_max(x, w := NULL)` | GS Quant `statistics.max_` compatibility. | Aggregate max alias. |
+| `fin_max_` | `fin_max_(x, w := NULL)` | Exact GS Quant `statistics.max_` source-name compatibility. | Aggregate max alias. |
+| `fin_mean` | `fin_mean(x, w := NULL, mean_type := 'arithmetic')` | GS Quant `statistics.mean` compatibility. | Aggregate average alias. |
+| `fin_median` | `fin_median(x, w := NULL)` | GS Quant `statistics.median` compatibility. | Aggregate median alias. |
+| `fin_min` | `fin_min(x, w := NULL)` | GS Quant `statistics.min_` compatibility. | Aggregate min alias. |
+| `fin_min_` | `fin_min_(x, w := NULL)` | Exact GS Quant `statistics.min_` source-name compatibility. | Aggregate min alias. |
+| `fin_mode` | `fin_mode(x, w := NULL)` | GS Quant `statistics.mode` compatibility. | Aggregate mode alias. |
+| `fin_month` | `fin_month(x)` | GS Quant `timeseries.datetime.month` compatibility. | Date-part scalar. |
+| `fin_moving_average` | `fin_moving_average(x, w := NULL)` | GS Quant `technicals.moving_average` compatibility. | Aggregate alias for `fin_sma`. |
+| `fin_multiply` | `fin_multiply(x, y, method := 'intersect')` | GS Quant `algebra.multiply` compatibility. | Scalar arithmetic alias. |
+| `fin_not` | `fin_not(x)` | GS Quant `algebra.not_` compatibility. | Scalar boolean alias. |
+| `fin_not_` | `fin_not_(x)` | Exact GS Quant `algebra.not_` source-name compatibility. | Scalar boolean alias. |
+| `fin_or` | `fin_or(flag)` | GS Quant `algebra.or_` compatibility. | Aggregate boolean alias. |
+| `fin_or_` | `fin_or_(flag)` | Exact GS Quant `algebra.or_` source-name compatibility. | Aggregate boolean alias. |
+| `fin_percentile` | `fin_percentile(x, n, w := NULL)` | GS Quant `statistics.percentile` compatibility. | Aggregate quantile alias. |
+| `fin_percentiles` | `fin_percentiles(x, y := NULL, w := NULL)` | GS Quant `statistics.percentiles` compatibility. | Window percent-rank alias. |
+| `fin_point_sort_order` | `fin_point_sort_order(point, ref_date := current_date)` | GS Quant `datetime.point.point_sort_order` compatibility. | v1 point-order helper. |
+| `fin_power` | `fin_power(x, y)` | GS Quant `algebra.power` compatibility. | Scalar power alias. |
+| `fin_prepend` | `fin_prepend(x, y := NULL)` | GS Quant `timeseries.datetime.prepend` compatibility. | v1 pass-through placeholder. |
+| `fin_prev_business_date` | `fin_prev_business_date(date, calendar := 'weekday')` | GS Quant `datetime.date.prev_business_date` compatibility. | Scalar weekday-calendar alias. |
+| `fin_prices` | `fin_prices(r, initial := 1.0, method := 'simple')` | GS Quant `econometrics.prices` compatibility. | Aggregate v1 price-index alias. |
+| `fin_product` | `fin_product(x, w := NULL)` | GS Quant `statistics.product` compatibility. | Aggregate product alias. |
+| `fin_quarter` | `fin_quarter(x)` | GS Quant `timeseries.datetime.quarter` compatibility. | Date-part scalar. |
+| `fin_range` | `fin_range(x, w := NULL)` | GS Quant `statistics.range_` compatibility. | Aggregate max-minus-min alias. |
+| `fin_range_` | `fin_range_(x, w := NULL)` | Exact GS Quant `statistics.range_` source-name compatibility. | Aggregate max-minus-min alias. |
+| `fin_relative_date_add` | `fin_relative_date_add(date_rule, strict := false)` | GS Quant `datetime.point.relative_date_add` compatibility. | Scalar v1 relative-day conversion. |
+| `fin_relative_strength_index` | `fin_relative_strength_index(close, w := 14)` | GS Quant `technicals.relative_strength_index` compatibility. | Aggregate alias for `fin_rsi`. |
+| `fin_repeat` | `fin_repeat(x, n := 1)` | GS Quant `analysis.repeat` compatibility. | v1 pass-through placeholder. |
+| `fin_returns` | `fin_returns(price, prev_price, method := 'simple')` | GS Quant `econometrics.returns` compatibility. | Scalar pairwise return alias. |
+| `fin_seasonally_adjusted` | `fin_seasonally_adjusted(x, method := 'additive', freq := 'year')` | GS Quant `technicals.seasonally_adjusted` compatibility. | v1 pass-through placeholder. |
+| `fin_smooth_outliers` | `fin_smooth_outliers(x, threshold := 3.0)` | GS Quant `analysis.smooth_outliers` compatibility. | Aggregate v1 smoothing placeholder. |
+| `fin_smooth_spikes` | `fin_smooth_spikes(x, threshold := 3.0, threshold_type := 'percentage')` | GS Quant `analysis.smooth_spikes` compatibility. | v1 pass-through placeholder. |
+| `fin_smoothed_moving_average` | `fin_smoothed_moving_average(close, w := NULL)` | GS Quant `technicals.smoothed_moving_average` compatibility. | Aggregate alias for `fin_sma`. |
+| `fin_sqrt` | `fin_sqrt(x)` | GS Quant `algebra.sqrt` compatibility. | Scalar square-root alias. |
+| `fin_std` | `fin_std(x, w := NULL)` | GS Quant `statistics.std` compatibility. | Aggregate sample-standard-deviation alias. |
+| `fin_subtract` | `fin_subtract(x, y, method := 'intersect')` | GS Quant `algebra.subtract` compatibility. | Scalar arithmetic alias. |
+| `fin_sum` | `fin_sum(x, w := NULL)` | GS Quant `statistics.sum_` compatibility. | Aggregate stable-sum alias. |
+| `fin_sum_` | `fin_sum_(x, w := NULL)` | Exact GS Quant `statistics.sum_` source-name compatibility. | Aggregate stable-sum alias. |
+| `fin_time_difference_as_string` | `fin_time_difference_as_string(seconds, resolution := 'Second')` | GS Quant `datetime.time.time_difference_as_string` compatibility. | Scalar v1 duration string helper. |
+| `fin_today` | `fin_today(location := NULL)` | GS Quant `datetime.date.today` compatibility. | Scalar alias for local `current_date`. |
+| `fin_to_zulu_string` | `fin_to_zulu_string(ts)` | GS Quant `datetime.time.to_zulu_string` compatibility. | Scalar timestamp formatting helper. |
+| `fin_trend` | `fin_trend(x, method := 'additive', freq := 'year')` | GS Quant `technicals.trend` compatibility. | STRUCT v1 alias for `fin_linear_trend`. |
+| `fin_union` | `fin_union(x, y := NULL)` | GS Quant `timeseries.datetime.union` compatibility. | v1 pass-through placeholder. |
+| `fin_value` | `fin_value(x, date := NULL, method := 'step')` | GS Quant `timeseries.datetime.value` compatibility. | Aggregate last-value alias. |
+| `fin_vol_swap_volatility` | `fin_vol_swap_volatility(r, n_days := 252, annualization := 252, assume_zero_mean := false)` | GS Quant `econometrics.vol_swap_volatility` compatibility. | Aggregate volatility alias. |
+| `fin_weekday` | `fin_weekday(x)` | GS Quant `timeseries.datetime.weekday` compatibility. | Monday-zero date-part scalar. |
+| `fin_weighted_sum` | `fin_weighted_sum(x, w)` | GS Quant `algebra.weighted_sum` compatibility. | Aggregate weighted-sum alias. |
+| `fin_winsorize` | `fin_winsorize(x, threshold := 2.5, w := NULL)` | GS Quant `statistics.winsorize` compatibility. | Aggregate v1 placeholder. |
+| `fin_year` | `fin_year(x)` | GS Quant `timeseries.datetime.year` compatibility. | Date-part scalar. |
+| `fin_zscores` | `fin_zscores(x, w := NULL)` | GS Quant `statistics.zscores` compatibility. | Aggregate last-zscore alias. |
+
+### GS Quant Portfolio Measure Compatibility
+
+These names mirror `gs_quant.timeseries.measures_portfolios`. They operate on
+local SQL series supplied by the caller instead of fetching entitled Marquee
+portfolio reports.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_aum` | `fin_aum(value)` | Custom AUM measure compatibility. | Aggregate last-value alias. |
+| `fin_portfolio_factor_exposure` | `fin_portfolio_factor_exposure(value, factor_name := NULL, unit := 'Notional')` | Portfolio factor exposure compatibility. | Aggregate v1 alias. |
+| `fin_portfolio_factor_pnl` | `fin_portfolio_factor_pnl(value, factor_name := NULL, unit := 'Notional')` | Portfolio factor PnL compatibility. | Aggregate sum alias. |
+| `fin_portfolio_factor_proportion_of_risk` | `fin_portfolio_factor_proportion_of_risk(value, factor_name := NULL)` | Factor proportion of risk compatibility. | Aggregate v1 alias. |
+| `fin_portfolio_daily_risk` | `fin_portfolio_daily_risk(risk, factor_name := 'Total')` | Daily risk compatibility. | Aggregate v1 alias. |
+| `fin_portfolio_annual_risk` | `fin_portfolio_annual_risk(risk, factor_name := 'Total', annualization := 252)` | Annual risk compatibility. | Annualized aggregate alias. |
+| `fin_portfolio_thematic_exposure` | `fin_portfolio_thematic_exposure(value, basket_ticker := NULL)` | Thematic exposure compatibility. | Aggregate v1 alias. |
+| `fin_portfolio_pnl` | `fin_portfolio_pnl(pnl, unit := 'Notional')` | Portfolio PnL compatibility. | Aggregate sum alias. |
+| `fin_portfolio_hit_rate` | `fin_portfolio_hit_rate(r, rolling_window := NULL)` | Portfolio hit rate compatibility. | Alias for `fin_hit_ratio`. |
+| `fin_portfolio_max_drawdown` | `fin_portfolio_max_drawdown(r, rolling_window := NULL)` | Portfolio max drawdown compatibility. | Alias for `fin_max_drawdown`. |
+| `fin_portfolio_drawdown_length` | `fin_portfolio_drawdown_length(r, rolling_window := NULL)` | Drawdown length compatibility. | Alias for `fin_drawdown_duration`. |
+| `fin_portfolio_max_recovery_period` | `fin_portfolio_max_recovery_period(r, rolling_window := NULL)` | Max recovery period compatibility. | Alias for `fin_drawdown_duration`. |
+| `fin_portfolio_standard_deviation` | `fin_portfolio_standard_deviation(r, rolling_window := NULL)` | Portfolio standard deviation compatibility. | Aggregate stddev alias. |
+| `fin_portfolio_downside_risk` | `fin_portfolio_downside_risk(r, rolling_window := NULL, annualization := 252)` | Portfolio downside risk compatibility. | Alias for downside deviation. |
+| `fin_portfolio_semi_variance` | `fin_portfolio_semi_variance(r, rolling_window := NULL)` | Portfolio semi variance compatibility. | Alias for semivariance. |
+| `fin_portfolio_kurtosis` | `fin_portfolio_kurtosis(r, rolling_window := NULL)` | Portfolio kurtosis compatibility. | Aggregate kurtosis alias. |
+| `fin_portfolio_skewness` | `fin_portfolio_skewness(r, rolling_window := NULL)` | Portfolio skewness compatibility. | Aggregate skewness alias. |
+| `fin_portfolio_realized_var` | `fin_portfolio_realized_var(r, rolling_window := NULL, confidence := 0.95)` | Portfolio realized VaR compatibility. | Alias for `fin_var`. |
+| `fin_portfolio_tracking_error` | `fin_portfolio_tracking_error(r, benchmark_r, rolling_window := NULL, annualization := 252)` | Portfolio tracking error compatibility. | Alias for `fin_tracking_error`. |
+| `fin_portfolio_tracking_error_bear` | `fin_portfolio_tracking_error_bear(r, benchmark_r, rolling_window := NULL, annualization := 252)` | Bear-market tracking error compatibility. | Filtered aggregate alias. |
+| `fin_portfolio_tracking_error_bull` | `fin_portfolio_tracking_error_bull(r, benchmark_r, rolling_window := NULL, annualization := 252)` | Bull-market tracking error compatibility. | Filtered aggregate alias. |
+| `fin_portfolio_sharpe_ratio` | `fin_portfolio_sharpe_ratio(r, risk_free := 0.0, annualization := 252)` | Portfolio Sharpe ratio compatibility. | Alias for `fin_sharpe`. |
+| `fin_portfolio_calmar_ratio` | `fin_portfolio_calmar_ratio(r, annualization := 252)` | Portfolio Calmar ratio compatibility. | Alias for `fin_calmar`. |
+| `fin_portfolio_sortino_ratio` | `fin_portfolio_sortino_ratio(r, mar := 0.0, annualization := 252)` | Portfolio Sortino ratio compatibility. | Alias for `fin_sortino`. |
+| `fin_portfolio_information_ratio` | `fin_portfolio_information_ratio(r, benchmark_r, annualization := 252)` | Portfolio information ratio compatibility. | Alias for `fin_information_ratio`. |
+| `fin_portfolio_information_ratio_bull` | `fin_portfolio_information_ratio_bull(r, benchmark_r, annualization := 252)` | Bull-market information ratio compatibility. | Filtered aggregate alias. |
+| `fin_portfolio_information_ratio_bear` | `fin_portfolio_information_ratio_bear(r, benchmark_r, annualization := 252)` | Bear-market information ratio compatibility. | Filtered aggregate alias. |
+| `fin_portfolio_modigliani_ratio` | `fin_portfolio_modigliani_ratio(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Portfolio Modigliani ratio compatibility. | Local Sharpe-scaled alias. |
+| `fin_portfolio_treynor_measure` | `fin_portfolio_treynor_measure(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Portfolio Treynor measure compatibility. | Alias for Treynor ratio. |
+| `fin_portfolio_jensen_alpha` | `fin_portfolio_jensen_alpha(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Portfolio Jensen alpha compatibility. | Alias for `fin_jensen_alpha`. |
+| `fin_portfolio_jensen_alpha_bear` | `fin_portfolio_jensen_alpha_bear(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Bear-market Jensen alpha compatibility. | v1 alias for full-sample Jensen alpha. |
+| `fin_portfolio_jensen_alpha_bull` | `fin_portfolio_jensen_alpha_bull(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Bull-market Jensen alpha compatibility. | v1 alias for full-sample Jensen alpha. |
+| `fin_portfolio_alpha` | `fin_portfolio_alpha(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Portfolio alpha compatibility. | Alias for `fin_alpha`. |
+| `fin_portfolio_beta` | `fin_portfolio_beta(r, benchmark_r)` | Portfolio beta compatibility. | Alias for `fin_beta`. |
+| `fin_portfolio_correlation` | `fin_portfolio_correlation(r, benchmark_r)` | Portfolio correlation compatibility. | Aggregate correlation alias. |
+| `fin_portfolio_r_squared` | `fin_portfolio_r_squared(r, benchmark_r)` | Portfolio R-squared compatibility. | Squared correlation alias. |
+| `fin_portfolio_capture_ratio` | `fin_portfolio_capture_ratio(r, benchmark_r, direction := 'all')` | Portfolio capture ratio compatibility. | Aggregate capture alias. |
+
+### GS Quant Report Measure Compatibility
+
+These names mirror `gs_quant.timeseries.measures_reports` and use local SQL
+series supplied by the caller.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_factor_exposure` | `fin_factor_exposure(value, factor_name := NULL, unit := 'Notional')` | Report factor exposure compatibility. | Aggregate v1 alias. |
+| `fin_factor_pnl` | `fin_factor_pnl(value, factor_name := NULL, unit := 'Notional')` | Report factor PnL compatibility. | Aggregate sum alias. |
+| `fin_factor_proportion_of_risk` | `fin_factor_proportion_of_risk(value, factor_name := NULL)` | Report factor proportion of risk compatibility. | Aggregate v1 alias. |
+| `fin_daily_risk` | `fin_daily_risk(risk, factor_name := 'Total')` | Report daily risk compatibility. | Aggregate v1 alias. |
+| `fin_annual_risk` | `fin_annual_risk(risk, factor_name := 'Total', annualization := 252)` | Report annual risk compatibility. | Annualized aggregate alias. |
+| `fin_normalized_performance` | `fin_normalized_performance(value, initial := 100.0)` | Report normalized performance compatibility. | Aggregate index-level alias. |
+| `fin_long_pnl` | `fin_long_pnl(pnl)` | Report long PnL compatibility. | Positive PnL sum alias. |
+| `fin_short_pnl` | `fin_short_pnl(pnl)` | Report short PnL compatibility. | Negative PnL sum alias. |
+| `fin_thematic_exposure` | `fin_thematic_exposure(value, basket_ticker := NULL)` | Report thematic exposure compatibility. | Aggregate v1 alias. |
+| `fin_thematic_beta` | `fin_thematic_beta(r, thematic_r)` | Report thematic beta compatibility. | Alias for `fin_beta`. |
+| `fin_pnl` | `fin_pnl(pnl, unit := 'Notional')` | Report PnL compatibility. | Aggregate sum alias. |
+| `fin_historical_simulation_estimated_pnl` | `fin_historical_simulation_estimated_pnl(pnl)` | Historical simulation PnL compatibility. | Aggregate sum alias. |
+| `fin_historical_simulation_estimated_factor_attribution` | `fin_historical_simulation_estimated_factor_attribution(value, factor_name := NULL)` | Historical simulation factor attribution compatibility. | Aggregate v1 alias. |
+| `fin_hit_rate` | `fin_hit_rate(r, rolling_window := NULL)` | Report hit rate compatibility. | Alias for `fin_hit_ratio`. |
+| `fin_drawdown_length` | `fin_drawdown_length(r, rolling_window := NULL)` | Report drawdown length compatibility. | Alias for drawdown duration. |
+| `fin_max_recovery_period` | `fin_max_recovery_period(r, rolling_window := NULL)` | Report max recovery period compatibility. | Alias for drawdown duration. |
+| `fin_standard_deviation` | `fin_standard_deviation(r, rolling_window := NULL)` | Report standard deviation compatibility. | Aggregate stddev alias. |
+| `fin_downside_risk` | `fin_downside_risk(r, rolling_window := NULL, annualization := 252)` | Report downside risk compatibility. | Alias for downside deviation. |
+| `fin_semi_variance` | `fin_semi_variance(r, rolling_window := NULL)` | Report semi variance compatibility. | Alias for semivariance. |
+| `fin_kurtosis` | `fin_kurtosis(r, rolling_window := NULL)` | Report kurtosis compatibility. | Aggregate kurtosis alias. |
+| `fin_skewness` | `fin_skewness(r, rolling_window := NULL)` | Report skewness compatibility. | Aggregate skewness alias. |
+| `fin_realized_var` | `fin_realized_var(r, rolling_window := NULL, confidence := 0.95)` | Report realized VaR compatibility. | Alias for `fin_var`. |
+| `fin_tracking_error_bear` | `fin_tracking_error_bear(r, benchmark_r, rolling_window := NULL, annualization := 252)` | Report bear tracking error compatibility. | Filtered aggregate alias. |
+| `fin_tracking_error_bull` | `fin_tracking_error_bull(r, benchmark_r, rolling_window := NULL, annualization := 252)` | Report bull tracking error compatibility. | Filtered aggregate alias. |
+| `fin_calmar_ratio` | `fin_calmar_ratio(r, annualization := 252)` | Report Calmar ratio compatibility. | Alias for `fin_calmar`. |
+| `fin_sortino_ratio` | `fin_sortino_ratio(r, mar := 0.0, annualization := 252)` | Report Sortino ratio compatibility. | Alias for `fin_sortino`. |
+| `fin_jensen_alpha_bear` | `fin_jensen_alpha_bear(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Report bear Jensen alpha compatibility. | v1 full-sample alias. |
+| `fin_jensen_alpha_bull` | `fin_jensen_alpha_bull(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Report bull Jensen alpha compatibility. | v1 full-sample alias. |
+| `fin_information_ratio_bear` | `fin_information_ratio_bear(r, benchmark_r, annualization := 252)` | Report bear information ratio compatibility. | Filtered aggregate alias. |
+| `fin_information_ratio_bull` | `fin_information_ratio_bull(r, benchmark_r, annualization := 252)` | Report bull information ratio compatibility. | Filtered aggregate alias. |
+| `fin_modigliani_ratio` | `fin_modigliani_ratio(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Report Modigliani ratio compatibility. | Local Sharpe-scaled alias. |
+| `fin_treynor_measure` | `fin_treynor_measure(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Report Treynor measure compatibility. | Alias for Treynor ratio. |
+| `fin_capture_ratio` | `fin_capture_ratio(r, benchmark_r, direction := 'all')` | Report capture ratio compatibility. | Aggregate capture alias. |
+| `fin_r_squared` | `fin_r_squared(r, benchmark_r)` | Report R-squared compatibility. | Squared correlation alias. |
+
+### GS Quant Market Measure Compatibility
+
+These entries represent smaller GS Quant `timeseries` market-data modules whose
+Python implementations fetch entitled Marquee datasets. The DuckDB forms operate
+on local SQL series supplied by the caller and keep exact source names where
+possible; display-name aliases are included when GS Quant exposes a different
+plot name.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_basket_series` | `fin_basket_series(r, weight := NULL, cost := 0.0, rebal_freq := 'daily', return_type := 'excess_return')` | GS Quant `backtesting.basket_series` compatibility. | Weighted aggregate return minus supplied costs. |
+| `fin_covariance` | `fin_covariance(x, y, bucket_start := '08:00:00', bucket_end := '08:30:00')` | GS Quant `tca.covariance` compatibility. | Aggregate covariance over local series. |
+| `fin_crosscurrency_swap_rate` | `fin_crosscurrency_swap_rate(spread, swap_tenor := NULL, rateoption_type := NULL, forward_tenor := NULL)` | GS Quant `measures_xccy.crosscurrency_swap_rate` compatibility. | Last-value local xccy spread alias. |
+| `fin_forward_point` | `fin_forward_point(points, settlement_date := NULL, location := NULL)` | GS Quant FX-vol display-name compatibility for `forward_point`. | Last-value alias for forward points. |
+| `fin_fwd_points` | `fin_fwd_points(points, settlement_date := NULL, location := NULL)` | GS Quant `measures_fx_vol.fwd_points` compatibility. | Last-value local forward-points alias. |
+| `fin_implied_volatility` | `fin_implied_volatility(vol, tenor := NULL, strike_reference := NULL, relative_strike := NULL)` | GS Quant FX-vol display-name compatibility for `implied_volatility`. | Last-value local volatility alias. |
+| `fin_implied_volatility_fxvol` | `fin_implied_volatility_fxvol(vol, tenor := NULL, strike_reference := NULL, relative_strike := NULL)` | GS Quant `measures_fx_vol.implied_volatility_fxvol` compatibility. | Last-value local volatility alias. |
+| `fin_inflation_swap_rate` | `fin_inflation_swap_rate(rate, swap_tenor := NULL, index_type := NULL, forward_tenor := NULL)` | GS Quant `measures_inflation.inflation_swap_rate` compatibility. | Last-value local inflation-swap-rate alias. |
+| `fin_inflation_swap_term` | `fin_inflation_swap_term(rate, index_type := NULL, forward_tenor := NULL, pricing_date := NULL)` | GS Quant `measures_inflation.inflation_swap_term` compatibility. | Last-value local term-structure alias. |
+| `fin_spot_carry` | `fin_spot_carry(forward_points, spot := 1.0, tenor_days := 365.0, annualized := 'daily')` | GS Quant `measures_fx_vol.spot_carry` compatibility. | Average forward-points-to-spot carry, optionally annualized. |
+| `fin_vol_swap_strike` | `fin_vol_swap_strike(strike_vol, expiry_tenor := NULL, strike_type := NULL)` | GS Quant `measures_fx_vol.vol_swap_strike` compatibility. | Last-value local vol-swap strike alias. |
+
+### GS Quant Rates Measure Compatibility
+
+These names mirror additional decorated functions in
+`gs_quant.timeseries.measures_rates`. The Python source retrieves rates,
+swaption, curve, OIS, and policy-rate datasets. The DuckDB forms operate on
+local SQL series and preserve the market-data parameters as optional metadata
+arguments.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_basis_swap_spread` | `fin_basis_swap_spread(spread, swap_tenor := NULL, spread_benchmark_type := NULL, spread_tenor := NULL)` | GS Quant basis swap spread compatibility. | Last-value local spread alias. |
+| `fin_basis_swap_term_structure` | `fin_basis_swap_term_structure(spread, spread_benchmark_type := NULL, spread_tenor := NULL, reference_benchmark_type := NULL)` | GS Quant basis swap term-structure compatibility. | Last-value local spread alias. |
+| `fin_index_forward_rate` | `fin_index_forward_rate(rate, forward_start_tenor := NULL, benchmark_type := NULL, fixing_tenor := NULL)` | GS Quant index forward rate compatibility. | Last-value local rate alias. |
+| `fin_instantaneous_forward_rate` | `fin_instantaneous_forward_rate(rate, tenor := NULL, csa := NULL, close_location := NULL)` | GS Quant instantaneous forward rate compatibility. | Last-value local rate alias. |
+| `fin_midcurve_annuity` | `fin_midcurve_annuity(annuity, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve annuity compatibility. | Last-value local annuity alias. |
+| `fin_midcurve_atm_fwd_rate` | `fin_midcurve_atm_fwd_rate(rate, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve ATM forward rate compatibility. | Last-value local rate alias. |
+| `fin_midcurve_premium` | `fin_midcurve_premium(premium, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve premium compatibility. | Last-value local premium alias. |
+| `fin_midcurve_vol` | `fin_midcurve_vol(vol, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve volatility compatibility. | Last-value local vol alias. |
+| `fin_non_usd_ois` | `fin_non_usd_ois(rate, tenor := NULL)` | GS Quant non-USD OIS compatibility. | Last-value local rate alias. |
+| `fin_ois_xccy` | `fin_ois_xccy(rate, tenor := NULL)` | GS Quant OIS xccy compatibility. | Last-value local rate alias. |
+| `fin_ois_xccy_ex_spike` | `fin_ois_xccy_ex_spike(rate, tenor := NULL)` | GS Quant OIS xccy ex-spike compatibility. | Last-value local rate alias. |
+| `fin_policy_rate_expectation` | `fin_policy_rate_expectation(rate, event_type := NULL, rate_type := NULL, meeting_date := NULL)` | GS Quant policy rate expectation compatibility. | Last-value local rate alias. |
+| `fin_policy_rate_term_structure` | `fin_policy_rate_term_structure(rate, event_type := NULL, rate_type := NULL, valuation_date := NULL)` | GS Quant policy rate term-structure compatibility. | Last-value local rate alias. |
+| `fin_swap_annuity` | `fin_swap_annuity(annuity, swap_tenor := NULL, benchmark_type := NULL, floating_rate_tenor := NULL)` | GS Quant swap annuity compatibility. | Last-value local annuity alias. |
+| `fin_swap_rate_calc` | `fin_swap_rate_calc(rate, swap_tenor := NULL, benchmark_type := NULL, floating_rate_tenor := NULL)` | GS Quant swap rate calc compatibility. | Last-value local rate alias. |
+| `fin_swap_term_structure` | `fin_swap_term_structure(rate, benchmark_type := NULL, floating_rate_tenor := NULL, tenor_type := NULL)` | GS Quant swap term-structure compatibility. | Last-value local rate alias. |
+| `fin_swaption_annuity` | `fin_swaption_annuity(annuity, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | GS Quant swaption annuity compatibility. | Last-value local annuity alias. |
+| `fin_swaption_atm_fwd_rate` | `fin_swaption_atm_fwd_rate(rate, expiration_tenor := NULL, termination_tenor := NULL, benchmark_type := NULL)` | GS Quant swaption ATM forward rate compatibility. | Last-value local rate alias. |
+| `fin_swaption_premium` | `fin_swaption_premium(premium, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | GS Quant swaption premium compatibility. | Last-value local premium alias. |
+| `fin_swaption_vol` | `fin_swaption_vol(vol, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | GS Quant swaption volatility compatibility. | Last-value local vol alias. |
+| `fin_swaption_vol_smile` | `fin_swaption_vol_smile(vol, expiration_tenor := NULL, termination_tenor := NULL, pricing_date := NULL)` | GS Quant swaption vol-smile compatibility. | Last-value local vol alias. |
+| `fin_swaption_vol_term` | `fin_swaption_vol_term(vol, tenor_type := NULL, tenor := NULL, relative_strike := 0.0, pricing_date := NULL)` | GS Quant swaption vol-term compatibility. | Last-value local vol alias. |
+| `fin_usd_ois` | `fin_usd_ois(rate, tenor := NULL)` | GS Quant USD OIS compatibility. | Last-value local rate alias. |
+
+### GS Quant Data Vendor And Risk Model Compatibility
+
+These names mirror decorated GS Quant functions for cognitive credit,
+countries, FactSet/GIR, and risk-model datasets. The SQL forms operate on local
+series supplied by the caller.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_cognitive_credit_fundamentals` | `fin_cognitive_credit_fundamentals(value, kpi := NULL, report_type := NULL)` | GS Quant cognitive credit fundamentals compatibility. | Last-value local metric alias. |
+| `fin_factor_correlation` | `fin_factor_correlation(x, y := NULL, risk_model_id := NULL, factor_name_1 := NULL, factor_name_2 := NULL)` | GS Quant risk-model factor correlation compatibility. | Correlation over local series; returns 1 for a single supplied series. |
+| `fin_factor_covariance` | `fin_factor_covariance(x, y := NULL, risk_model_id := NULL, factor_name_1 := NULL, factor_name_2 := NULL)` | GS Quant risk-model factor covariance compatibility. | Covariance over local series, or variance when one series is supplied. |
+| `fin_factor_performance` | `fin_factor_performance(r, risk_model_id := NULL, factor_name := NULL)` | GS Quant risk-model factor performance compatibility. | Aggregate total-return alias. |
+| `fin_factor_returns_intraday` | `fin_factor_returns_intraday(r, risk_model_id := NULL, factor_name := NULL, data_source := NULL)` | GS Quant intraday factor returns compatibility. | Last-value local return alias. |
+| `fin_factor_returns_percentile` | `fin_factor_returns_percentile(r, risk_model_id := NULL, factor_name := NULL, lookback_days := NULL, n_percentile := 0.5)` | GS Quant factor returns percentile compatibility. | Aggregate quantile alias. |
+| `fin_factor_volatility` | `fin_factor_volatility(value, risk_model_id := NULL, factor_name := NULL)` | GS Quant risk-model factor volatility compatibility. | Aggregate standard-deviation alias. |
+| `fin_factor_zscore` | `fin_factor_zscore(value, risk_model_id := NULL, factor_name := NULL)` | GS Quant risk-model factor z-score compatibility. | Last-value z-score alias. |
+| `fin_factset_enterprise_value` | `fin_factset_enterprise_value(value, metric := NULL)` | GS Quant FactSet enterprise-value compatibility. | Last-value local metric alias. |
+| `fin_factset_estimates` | `fin_factset_estimates(value, metric := NULL, statistic := NULL, report_basis := NULL, period := NULL)` | GS Quant FactSet estimates compatibility. | Last-value local metric alias. |
+| `fin_factset_fundamentals` | `fin_factset_fundamentals(value, metric := NULL, report_basis := NULL, report_format := NULL)` | GS Quant FactSet fundamentals compatibility. | Last-value local metric alias. |
+| `fin_factset_ratings` | `fin_factset_ratings(value, rating_type := NULL)` | GS Quant FactSet ratings compatibility. | Last-value local metric alias. |
+| `fin_fci` | `fin_fci(value, measure := NULL)` | GS Quant country FCI compatibility. | Last-value local measure alias. |
+| `fin_gir_estimates` | `fin_gir_estimates(value, metric := NULL, report_basis := NULL, period := NULL)` | GS Quant GIR estimates compatibility. | Last-value local metric alias. |
+| `fin_risk_model_measure` | `fin_risk_model_measure(value, risk_model_id := NULL, risk_model_measure_selected := NULL)` | GS Quant generic risk-model measure compatibility. | Last-value local metric alias. |
+
+### GS Quant General Measure Compatibility
+
+These names mirror the remaining decorated functions in
+`gs_quant.timeseries.measures`. They are local-data equivalents for GS Quant
+market, fundamentals, ESG, thematic, forecast, and commodity dataset wrappers.
+
+| Function | Usage | Purpose | Returns / Notes |
+|---|---|---|---|
+| `fin_skew` | `fin_skew(value)` | GS Quant `measures.skew` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_cds_implied_volatility` | `fin_cds_implied_volatility(value)` | GS Quant `measures.cds_implied_volatility` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_option_premium_credit` | `fin_option_premium_credit(value)` | GS Quant `measures.option_premium_credit` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_absolute_strike_credit` | `fin_absolute_strike_credit(value)` | GS Quant `measures.absolute_strike_credit` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_implied_volatility_credit` | `fin_implied_volatility_credit(value)` | GS Quant `measures.implied_volatility_credit` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_cds_spread` | `fin_cds_spread(value)` | GS Quant `measures.cds_spread` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_implied_volatility_ng` | `fin_implied_volatility_ng(value)` | GS Quant `measures.implied_volatility_ng` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_implied_correlation` | `fin_implied_correlation(x, y := NULL)` | GS Quant `measures.implied_correlation` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_implied_correlation_with_basket` | `fin_implied_correlation_with_basket(x, y := NULL)` | GS Quant `measures.implied_correlation_with_basket` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_realized_correlation_with_basket` | `fin_realized_correlation_with_basket(x, y := NULL)` | GS Quant `measures.realized_correlation_with_basket` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_average_implied_volatility` | `fin_average_implied_volatility(value)` | GS Quant `measures.average_implied_volatility` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_average_implied_variance` | `fin_average_implied_variance(value)` | GS Quant `measures.average_implied_variance` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_average_realized_volatility` | `fin_average_realized_volatility(value)` | GS Quant `measures.average_realized_volatility` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_cap_floor_vol` | `fin_cap_floor_vol(value)` | GS Quant `measures.cap_floor_vol` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_cap_floor_atm_fwd_rate` | `fin_cap_floor_atm_fwd_rate(value)` | GS Quant `measures.cap_floor_atm_fwd_rate` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_spread_option_vol` | `fin_spread_option_vol(value)` | GS Quant `measures.spread_option_vol` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_spread_option_atm_fwd_rate` | `fin_spread_option_atm_fwd_rate(value)` | GS Quant `measures.spread_option_atm_fwd_rate` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_zc_inflation_swap_rate` | `fin_zc_inflation_swap_rate(value)` | GS Quant `measures.zc_inflation_swap_rate` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_basis` | `fin_basis(value)` | GS Quant `measures.basis` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fx_forecast` | `fin_fx_forecast(value)` | GS Quant `measures.fx_forecast` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fx_forecast_time_series` | `fin_fx_forecast_time_series(value)` | GS Quant `measures.fx_forecast_time_series` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_forward_vol` | `fin_forward_vol(value)` | GS Quant `measures.forward_vol` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_forward_vol_term` | `fin_forward_vol_term(value)` | GS Quant `measures.forward_vol_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_skew_term` | `fin_skew_term(value)` | GS Quant `measures.skew_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_vol_term` | `fin_vol_term(value)` | GS Quant `measures.vol_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_vol_smile` | `fin_vol_smile(value)` | GS Quant `measures.vol_smile` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fwd_term` | `fin_fwd_term(value)` | GS Quant `measures.fwd_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fx_fwd_term` | `fin_fx_fwd_term(value)` | GS Quant `measures.fx_fwd_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_carry_term` | `fin_carry_term(value)` | GS Quant `measures.carry_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_forward_var_term` | `fin_forward_var_term(value)` | GS Quant `measures.forward_var_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_var_term` | `fin_var_term(value)` | GS Quant `measures.var_term` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_var_swap` | `fin_var_swap(value)` | GS Quant `measures.var_swap` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fair_price` | `fin_fair_price(value)` | GS Quant `measures.fair_price` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_implied_volatility_elec` | `fin_implied_volatility_elec(value)` | GS Quant `measures.implied_volatility_elec` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_forward_price_ng` | `fin_forward_price_ng(value)` | GS Quant `measures.forward_price_ng` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_bucketize_price` | `fin_bucketize_price(value)` | GS Quant `measures.bucketize_price` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_dividend_yield` | `fin_dividend_yield(value)` | GS Quant `measures.dividend_yield` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_earnings_per_share` | `fin_earnings_per_share(value)` | GS Quant `measures.earnings_per_share` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_earnings_per_share_positive` | `fin_earnings_per_share_positive(value)` | GS Quant `measures.earnings_per_share_positive` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_net_debt_to_ebitda` | `fin_net_debt_to_ebitda(value)` | GS Quant `measures.net_debt_to_ebitda` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_price_to_book` | `fin_price_to_book(value)` | GS Quant `measures.price_to_book` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_price_to_cash` | `fin_price_to_cash(value)` | GS Quant `measures.price_to_cash` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_price_to_earnings` | `fin_price_to_earnings(value)` | GS Quant `measures.price_to_earnings` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_price_to_earnings_positive` | `fin_price_to_earnings_positive(value)` | GS Quant `measures.price_to_earnings_positive` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_price_to_earnings_positive_exclusive` | `fin_price_to_earnings_positive_exclusive(value)` | GS Quant `measures.price_to_earnings_positive_exclusive` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_price_to_sales` | `fin_price_to_sales(value)` | GS Quant `measures.price_to_sales` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_return_on_equity` | `fin_return_on_equity(value)` | GS Quant `measures.return_on_equity` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_sales_per_share` | `fin_sales_per_share(value)` | GS Quant `measures.sales_per_share` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_dividend_yield` | `fin_current_constituents_dividend_yield(value)` | GS Quant `measures.current_constituents_dividend_yield` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_earnings_per_share` | `fin_current_constituents_earnings_per_share(value)` | GS Quant `measures.current_constituents_earnings_per_share` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_earnings_per_share_positive` | `fin_current_constituents_earnings_per_share_positive(value)` | GS Quant `measures.current_constituents_earnings_per_share_positive` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_net_debt_to_ebitda` | `fin_current_constituents_net_debt_to_ebitda(value)` | GS Quant `measures.current_constituents_net_debt_to_ebitda` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_price_to_book` | `fin_current_constituents_price_to_book(value)` | GS Quant `measures.current_constituents_price_to_book` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_price_to_cash` | `fin_current_constituents_price_to_cash(value)` | GS Quant `measures.current_constituents_price_to_cash` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_price_to_earnings` | `fin_current_constituents_price_to_earnings(value)` | GS Quant `measures.current_constituents_price_to_earnings` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_price_to_earnings_positive` | `fin_current_constituents_price_to_earnings_positive(value)` | GS Quant `measures.current_constituents_price_to_earnings_positive` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_price_to_sales` | `fin_current_constituents_price_to_sales(value)` | GS Quant `measures.current_constituents_price_to_sales` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_return_on_equity` | `fin_current_constituents_return_on_equity(value)` | GS Quant `measures.current_constituents_return_on_equity` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_current_constituents_sales_per_share` | `fin_current_constituents_sales_per_share(value)` | GS Quant `measures.current_constituents_sales_per_share` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_realized_correlation` | `fin_realized_correlation(x, y := NULL)` | GS Quant `measures.realized_correlation` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_realized_volatility` | `fin_realized_volatility(r)` | GS Quant `measures.realized_volatility` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_esg_headline_metric` | `fin_esg_headline_metric(value)` | GS Quant `measures.esg_headline_metric` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_rating` | `fin_rating(value)` | GS Quant `measures.rating` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fair_value` | `fin_fair_value(value)` | GS Quant `measures.fair_value` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_factor_profile` | `fin_factor_profile(value)` | GS Quant `measures.factor_profile` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_commodity_forecast` | `fin_commodity_forecast(value)` | GS Quant `measures.commodity_forecast` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_commodity_forecast_time_series` | `fin_commodity_forecast_time_series(value)` | GS Quant `measures.commodity_forecast_time_series` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_forward_curve` | `fin_forward_curve(value)` | GS Quant `measures.forward_curve` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_forward_curve_ng` | `fin_forward_curve_ng(value)` | GS Quant `measures.forward_curve_ng` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_fx_implied_correlation` | `fin_fx_implied_correlation(x, y := NULL)` | GS Quant `measures.fx_implied_correlation` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_settlement_price` | `fin_settlement_price(value)` | GS Quant `measures.settlement_price` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_hloc_prices` | `fin_hloc_prices(price_value)` | GS Quant `measures.hloc_prices` compatibility. | STRUCT with high, low, open, and close. |
+| `fin_thematic_model_exposure` | `fin_thematic_model_exposure(value)` | GS Quant `measures.thematic_model_exposure` compatibility. | Average exposure scaled by notional. |
+| `fin_thematic_model_beta` | `fin_thematic_model_beta(x, y := NULL)` | GS Quant `measures.thematic_model_beta` compatibility. | Local beta-style aggregate alias. |
+| `fin_retail_interest_agg` | `fin_retail_interest_agg(value)` | GS Quant `measures.retail_interest_agg` compatibility. | Local SQL measure alias over caller-supplied series. |
+| `fin_s3_long_short_concentration` | `fin_s3_long_short_concentration(value)` | GS Quant `measures.s3_long_short_concentration` compatibility. | Local SQL measure alias over caller-supplied series. |
+
 ## Function Index
 
 ### Numerical And Money Helpers
