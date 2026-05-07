@@ -4,7 +4,8 @@ This document is generated from the extension registration surface in `src/` and
 
 ## Usage Conventions
 
-- Load the extension before use: `LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';`.
+- Load the extension before use, for example:
+  `LOAD '../duckdb/build/debug/extension/finance/finance.duckdb_extension';`.
 - Scalar functions are called in ordinary `SELECT` expressions.
 - Aggregate macros are called over grouped rows, for example `SELECT fin_total_return(r) FROM returns;`.
 - Table functions and bind-replace functions appear in `FROM`, for example `SELECT * FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');`.

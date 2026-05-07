@@ -1,13 +1,19 @@
-# DuckDB Finance Extension
+# DuckDB Finance Documentation
 
-The `finance` extension is organized around normal DuckDB SQL types and a `fin_`
-function namespace. It can be built as a standard out-of-tree DuckDB extension
-against the adjacent DuckDB checkout.
+DuckDB Finance is an out-of-tree DuckDB extension that exposes SQL-native quant
+finance analytics through the `fin_` function namespace. It uses standard
+DuckDB values such as `DOUBLE`, `DATE`, `TIMESTAMP`, `VARCHAR`, `STRUCT`, and
+`LIST`, so workflows stay inspectable and portable.
 
-For the full callable surface, see [Function Reference](function_reference.md).
-For model and unit conventions, see
-[Quant Developer Guide](quant_developer_guide.md). For complete workflow
-examples, see [Finance SQL Playbooks](playbooks.md).
+Start here:
+
+- [Function Reference](function_reference.md) for callable `fin_*` usage.
+- [Quant Developer Guide](quant_developer_guide.md) for units, conventions, and
+  model boundaries.
+- [GS Quant-Inspired SQL Mapping](gs_quant_mapping.md) for local SQL analogues
+  of pricing-and-risk workflows.
+- [Finance SQL Playbooks](playbooks.md) for complete runnable workflows.
+- [Development Guide](development.md) for build, test, and contribution details.
 
 ## API Areas
 
@@ -52,6 +58,10 @@ Some broad catalog entries are pragmatic v1 aliases or approximations so the API
 surface is usable while the deeper statistical/optimization methods can be
 improved behind stable names.
 
+Because this is pre-1.0 OSS software, users should pin a commit for production
+research workflows and reconcile model outputs against their official analytics
+stack before relying on them for trading, valuation, or risk sign-off.
+
 ## Quant Developer Orientation
 
 The extension is intended for users who already think in PV, Greeks, rates,
@@ -75,6 +85,9 @@ required. The regression suite includes `gsq_goldman_*` fixtures in
 `test/sql/gold_dataset.sql` and row-wise expected-value checks in
 `test/sql/gold_tests.sql`.
 
+These helpers are not affiliated with Goldman Sachs and do not use GS APIs,
+sessions, entitlements, or market data.
+
 ## Playbooks
 
 [Finance SQL Playbooks](playbooks.md) contains runnable examples for:
@@ -87,3 +100,10 @@ required. The regression suite includes `gsq_goldman_*` fixtures in
 - Market microstructure diagnostics and bars.
 
 The companion SQL is available at `examples/playbooks.sql`.
+
+## Development And Contribution
+
+Use [Development Guide](development.md) for local setup. Public contributions
+should include focused SQL tests, updated docs, and a passing `make check`.
+Synthetic fixtures are preferred; do not contribute proprietary market data,
+vendor marks, credentials, or entitlement-dependent examples.

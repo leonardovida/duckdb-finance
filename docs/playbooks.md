@@ -17,9 +17,9 @@ Run the companion SQL file after building the extension:
 ```sh
 make debug
 {
-  printf "LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';\n"
+  printf "LOAD '../duckdb/build/debug/extension/finance/finance.duckdb_extension';\n"
   cat examples/playbooks.sql
-} | /Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+} | ../duckdb/build/debug/duckdb -unsigned
 ```
 
 ## Playbook 1: Equity Option Desk Snapshot
