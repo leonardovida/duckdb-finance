@@ -33,7 +33,8 @@ def registered_functions() -> set[str]:
 
 def main() -> int:
     docs = read(ROOT / "docs" / "function_reference.md")
-    missing = sorted(function for function in registered_functions() if function not in docs)
+    documented = set(re.findall(r"`(fin_[A-Za-z0-9_]+)`", docs))
+    missing = sorted(function for function in registered_functions() if function not in documented)
     if missing:
         print("Missing function reference entries:")
         for function in missing:

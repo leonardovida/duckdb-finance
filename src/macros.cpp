@@ -66,6 +66,7 @@ static const FinanceMacro FINANCE_MACROS[] = {
 #include "macros/time_series.inc"
 #include "macros/technical.inc"
 #include "macros/statistics_specs_portfolio.inc"
+#include "macros/compatibility.inc"
 #include "macros/gsq.inc"
     {nullptr, nullptr}};
 

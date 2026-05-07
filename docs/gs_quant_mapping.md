@@ -27,6 +27,77 @@ GS Quant organizes pricing and risk around these concepts:
 | `MarketDataShockBasedScenario`, `CurveScenario`, `RollFwd`, `IndexCurveShift` | `fin_gsq_market_data_*`, `fin_gsq_curve_scenario`, `fin_gsq_roll_fwd`, `fin_gsq_index_curve_shift` | Scenarios are deterministic transforms on local scalar inputs. |
 | `Portfolio` and portfolio risk aggregation | `fin_gsq_portfolio_item`, `fin_gsq_portfolio_value`, `fin_gsq_portfolio_risk` | Aggregates operate on rows already priced or risked locally. |
 
+## Portable Timeseries Functions
+
+GS Quant's local `gs_quant.timeseries` helpers are represented by `fin_*`
+SQL names grouped along the same module boundaries. The source-name
+compatibility layer covers the 87 `@plot_function` entries in these portable
+modules: `algebra`, `analysis`, `datetime`, `econometrics`, `statistics`, and
+`technicals`.
+
+| GS Quant module | SQL representation |
+|---|---|
+| `timeseries.algebra` | Arithmetic, filtering, boolean, and weighted aggregation helpers such as `fin_add`, `fin_filter`, `fin_if`, and `fin_weighted_sum`. |
+| `timeseries.analysis` | First/last, diff, compare, lag, smoothing, repeat, and consecutive helpers such as `fin_first`, `fin_last_value`, and `fin_smooth_outliers`. |
+| `timeseries.datetime` | Date-part, alignment, interpolation, range, bucket, and countdown helpers such as `fin_day`, `fin_weekday`, `fin_date_range`, and `fin_day_countdown`. |
+| `timeseries.econometrics` | Return, price-index, annualization, volatility, correlation, beta, and drawdown helpers such as `fin_returns`, `fin_prices`, `fin_correlation`, and `fin_max_drawdown`. |
+| `timeseries.statistics` | Min/max/range, mean/median/mode, sum/product, standard deviation, covariance, percentile, winsorization, and generated-series helpers such as `fin_mean`, `fin_cov`, and `fin_generate_series`. |
+| `timeseries.technicals` | Moving average, Bollinger bands, RSI, MACD, exponential volatility, seasonal adjustment, and trend helpers such as `fin_moving_average`, `fin_bollinger_bands`, and `fin_trend`. |
+
+Some pandas-native series operations have v1 SQL placeholders or aggregate
+aliases where DuckDB needs a table-function implementation for full index-aware
+behavior. Those placeholders are documented and tested behind stable names.
+Python-reserved GS Quant helper names with trailing underscores, such as
+`abs_`, `filter_`, `and_`, `min_`, and `sum_`, are exposed both as clean SQL
+names and exact trailing-underscore aliases.
+
+The standalone `gs_quant.datetime` helpers are represented by scalar SQL names
+as well: business-day helpers map to the local calendar functions, day-count
+helpers map to `fin_yearfrac`, and point/time formatting helpers map to
+`fin_relative_date_add`, `fin_point_sort_order`, `fin_to_zulu_string`, and
+`fin_time_difference_as_string`.
+
+`gs_quant.timeseries.measures_portfolios` is represented as local aggregate
+portfolio analytics. Instead of retrieving Marquee reports by portfolio id, the
+SQL functions accept already-loaded return, benchmark, risk, factor, PnL, or AUM
+series and compute the corresponding local measure, for example
+`fin_portfolio_sharpe_ratio`, `fin_portfolio_tracking_error`,
+`fin_portfolio_factor_exposure`, and `fin_aum`.
+
+The unprefixed report-measure names from `gs_quant.timeseries.measures_reports`
+are represented the same way, for example `fin_factor_exposure`, `fin_pnl`,
+`fin_drawdown_length`, `fin_modigliani_ratio`, and `fin_r_squared`.
+
+Smaller market-data modules that primarily wrap Marquee datasets are represented
+as local-data aliases. `timeseries.backtesting.basket_series` maps to
+`fin_basket_series`, `timeseries.tca.covariance` maps to `fin_covariance`,
+FX-vol measures map to names such as `fin_implied_volatility_fxvol`,
+`fin_forward_point`, `fin_fwd_points`, `fin_vol_swap_strike`, and
+`fin_spot_carry`, inflation measures map to `fin_inflation_swap_rate` and
+`fin_inflation_swap_term`, and the xccy swap spread measure maps to
+`fin_crosscurrency_swap_rate`.
+
+Rates measures in `timeseries.measures_rates` are represented with the same
+local-data convention. Native primitives continue to handle `fin_swap_rate`,
+`fin_forward_rate`, and `fin_discount_factor`; remote dataset wrappers such as
+`fin_swaption_vol`, `fin_swaption_premium`, `fin_basis_swap_spread`,
+`fin_ois_xccy`, `fin_usd_ois`, and `fin_policy_rate_expectation` accept local
+rate, spread, premium, annuity, or volatility series and return last-value
+compatibility measures.
+
+Vendor and model-data wrappers follow the same local-series pattern:
+`fin_cognitive_credit_fundamentals`, `fin_fci`, the FactSet/GIR family, and
+risk-model functions such as `fin_factor_zscore`, `fin_factor_covariance`,
+`fin_factor_correlation`, and `fin_factor_returns_percentile` keep the GS Quant
+function names while leaving data acquisition to the caller.
+
+The remaining decorated functions in `timeseries.measures` are represented as
+general local-measure aliases. This includes credit volatility/spread helpers,
+equity index implied/realized correlation and volatility helpers, commodity and
+energy curves, corporate fundamentals, ESG/rating/fair-value wrappers, thematic
+model exposure/beta, retail-interest, and S3 concentration measures. These
+functions preserve GS Quant names but do not fetch Marquee datasets.
+
 ## Instrument Families
 
 The SQL descriptors cover a focused cross-asset set:
