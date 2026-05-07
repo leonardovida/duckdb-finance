@@ -1,0 +1,9 @@
+require finance
+
+statement ok
+LOAD finance
+
+query I
+SELECT starts_with(fin_version(), 'finance')
+----
+true

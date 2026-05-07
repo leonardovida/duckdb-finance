@@ -1,0 +1,6 @@
+extension:
+  name: finance
+  description: SQL-native quant finance functions for DuckDB
+  version: 0.1.0
+  language: C++
+  build: cmake

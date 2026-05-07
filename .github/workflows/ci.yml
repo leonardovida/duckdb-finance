@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - "**"
+  merge_group:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DUCKDB_REF: main
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out extension
+        uses: actions/checkout@v4
+        with:
+          path: duckdb-finance
+
+      - name: Check out DuckDB
+        uses: actions/checkout@v4
+        with:
+          repository: duckdb/duckdb
+          ref: ${{ env.DUCKDB_REF }}
+          path: duckdb
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ccache \
+            cmake \
+            ninja-build \
+            python3
+
+      - name: Configure compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/src/**', 'duckdb-finance/include/**', 'duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-
+
+      - name: Run checks
+        working-directory: duckdb-finance
+        env:
+          DUCKDB_ROOT: ${{ github.workspace }}/duckdb
+          DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        run: make check

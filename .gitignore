@@ -1,0 +1,19 @@
+# Build outputs
+build/
+cmake-build-*/
+*.duckdb_extension
+*.duckdb_extension.gz
+*.duckdb
+*.db
+*.wal
+
+# Local tooling
+.cache/
+.ccache/
+.vscode/
+.idea/
+.DS_Store
+
+# Python helpers
+__pycache__/
+*.py[cod]
