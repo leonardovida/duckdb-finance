@@ -157,6 +157,10 @@ LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/fina
 
 ## Documentation
 
+GitHub Pages source lives in `docs/` and is configured for:
+
+- <https://leonardovida.github.io/duckdb-finance/>
+
 - [Function reference](docs/function_reference.md): usage and behavior notes for
   the `fin_*` function surface.
 - [GS Quant-inspired SQL mapping](docs/gs_quant_mapping.md): local SQL

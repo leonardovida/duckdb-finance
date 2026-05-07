@@ -1,3 +1,13 @@
+---
+layout: default
+title: Function Reference
+description: Every registered DuckDB Finance fin_* function with usage and return notes.
+permalink: /function-reference/
+nav_order: 3
+reference_search: true
+wide: true
+---
+
 # Finance Function Reference
 
 This document is generated from the extension registration surface in `src/` and the executable SQL coverage in `test/sql/`. All functions live in the `fin_` namespace and use standard DuckDB types such as `DOUBLE`, `VARCHAR`, `DATE`, `TIMESTAMP`, `LIST`, `STRUCT`, and table results.
@@ -501,12 +511,12 @@ This document is generated from the extension registration surface in `src/` and
 The reference surface is exercised by `make test`, which builds the extension, runs smoke SQL, loads `test/sql/gold_dataset.sql`, and evaluates `test/sql/gold_tests.sql`. The gold dataset is intentionally small and deterministic so expected values are easy to audit.
 
 For model and unit conventions, see
-[Quant Developer Guide](quant_developer_guide.md). For workflow-oriented
-examples, see [Finance SQL Playbooks](playbooks.md).
+[Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}). For workflow-oriented
+examples, see [Finance SQL Playbooks]({{ '/playbooks/' | relative_url }}).
 
 ## GS Quant-Inspired Pricing And Risk Helpers
 
-These helpers port the parts of GS Quant's pricing-and-risk model that fit a local SQL extension: instrument descriptors, risk-measure descriptors, pricing context descriptors, scenario transforms, and portfolio aggregation. They are independent DuckDB implementations and do not call Goldman Sachs APIs. See [GS Quant-Inspired SQL Mapping](gs_quant_mapping.md) for model semantics, source-shape mapping, and the Goldman-style golden dataset.
+These helpers port the parts of GS Quant's pricing-and-risk model that fit a local SQL extension: instrument descriptors, risk-measure descriptors, pricing context descriptors, scenario transforms, and portfolio aggregation. They are independent DuckDB implementations and do not call Goldman Sachs APIs. See [GS Quant-Inspired SQL Mapping]({{ '/gs-quant-mapping/' | relative_url }}) for model semantics, source-shape mapping, and the Goldman-style golden dataset.
 
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|

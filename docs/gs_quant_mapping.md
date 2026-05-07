@@ -1,3 +1,11 @@
+---
+layout: default
+title: GS Quant-Inspired SQL Mapping
+description: Local DuckDB Finance mappings for GS Quant-style pricing and risk workflows.
+permalink: /gs-quant-mapping/
+nav_order: 5
+---
+
 # GS Quant-Inspired SQL Mapping
 
 This document describes the local DuckDB Finance surface inspired by Goldman
@@ -13,7 +21,7 @@ instrument descriptors, risk-measure descriptors, pricing-context metadata,
 scenario transformations, and portfolio aggregation.
 
 For cross-cutting conventions, see the
-[Quant Developer Guide](quant_developer_guide.md).
+[Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}).
 
 ## Source Shape
 
@@ -110,8 +118,9 @@ those constants with explicit tolerances.
 
 ## Usage Examples
 
-For end-to-end workflows, see [Finance SQL Playbooks](playbooks.md) and the
-runnable companion file at `examples/playbooks.sql`.
+For end-to-end workflows, see [Finance SQL Playbooks]({{ '/playbooks/' | relative_url }}) and the
+runnable companion file at
+[examples/playbooks.sql]({{ site.github_url }}/blob/main/examples/playbooks.sql).
 
 Create and price an equity option descriptor:
 

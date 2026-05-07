@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+    <meta name="description" content="{{ page.description | default: site.description }}">
+    <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+    <script defer src="{{ '/assets/js/site.js' | relative_url }}"></script>
+  </head>
+  <body class="{% if page.wide %}page-wide{% endif %} {% if page.reference_search %}page-reference{% endif %}">
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="topbar">
+      <a class="brand" href="{{ '/' | relative_url }}" aria-label="DuckDB Finance documentation home">
+        <span class="brand-mark" aria-hidden="true">DF</span>
+        <span>
+          <strong>DuckDB Finance</strong>
+          <small>Quant SQL Extension</small>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="site-nav">
+        Menu
+      </button>
+      <nav class="top-actions" aria-label="Repository links">
+        <a href="{{ site.github_url }}">View on GitHub</a>
+        <a href="{{ site.github_url }}/blob/main/docs/function_reference.md">Source Docs</a>
+      </nav>
+    </header>
+
+    <div class="site-shell">
+      <aside class="sidebar" id="site-nav">
+        <div class="sidebar-kicker">Documentation</div>
+        <nav aria-label="Primary documentation">
+          {% for item in site.nav %}
+            <a
+              href="{{ item.url | relative_url }}"
+              {% if page.url == item.url %}class="active" aria-current="page"{% endif %}
+            >{{ item.title }}</a>
+          {% endfor %}
+        </nav>
+        <div class="load-snippet">
+          <span>Load locally</span>
+          <code>LOAD '.../finance.duckdb_extension';</code>
+        </div>
+      </aside>
+
+      <main class="content" id="content">
+        {% if page.reference_search %}
+          <div class="reference-toolbar" role="search">
+            <label for="function-filter">Search function reference</label>
+            <input id="function-filter" type="search" placeholder="Filter by name, purpose, input, or return type" autocomplete="off">
+            <span data-reference-count aria-live="polite"></span>
+          </div>
+        {% endif %}
+        {{ content }}
+      </main>
+
+      <aside class="toc" aria-label="On this page">
+        <div class="toc-title">Contents</div>
+        <nav data-toc></nav>
+      </aside>
+    </div>
+
+    <footer class="site-footer">
+      <span>DuckDB Finance documentation.</span>
+      <a href="{{ site.github_url }}/issues">Issues</a>
+      <a href="{{ site.github_url }}/blob/main/LICENSE">License</a>
+    </footer>
+  </body>
+</html>

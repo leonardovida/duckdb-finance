@@ -1,0 +1,32 @@
+title: DuckDB Finance
+description: SQL-native quant finance analytics for DuckDB.
+url: https://leonardovida.github.io
+baseurl: /duckdb-finance
+repository: leonardovida/duckdb-finance
+github_url: https://github.com/leonardovida/duckdb-finance
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+permalink: pretty
+
+nav:
+  - title: Overview
+    url: /
+  - title: Getting Started
+    url: /getting-started/
+  - title: Function Reference
+    url: /function-reference/
+  - title: Quant Developer Guide
+    url: /quant-developer-guide/
+  - title: GS Quant Mapping
+    url: /gs-quant-mapping/
+  - title: Playbooks
+    url: /playbooks/
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
