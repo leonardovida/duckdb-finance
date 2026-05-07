@@ -19,6 +19,8 @@ nav:
     url: /getting-started/
   - title: Function Reference
     url: /function-reference/
+  - title: Performance Testing
+    url: /performance-testing/
   - title: Quant Developer Guide
     url: /quant-developer-guide/
   - title: GS Quant Mapping

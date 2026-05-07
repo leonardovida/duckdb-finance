@@ -3,7 +3,7 @@ layout: default
 title: GS Quant-Inspired SQL Mapping
 description: Local DuckDB Finance mappings for GS Quant-style pricing and risk workflows.
 permalink: /gs-quant-mapping/
-nav_order: 5
+nav_order: 6
 ---
 
 # GS Quant-Inspired SQL Mapping
