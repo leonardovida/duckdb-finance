@@ -3,7 +3,7 @@ layout: default
 title: Finance SQL Playbooks
 description: Runnable DuckDB Finance workflows for desk-style analysis.
 permalink: /playbooks/
-nav_order: 6
+nav_order: 7
 wide: true
 ---
 

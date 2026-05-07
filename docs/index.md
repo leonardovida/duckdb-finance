@@ -37,6 +37,10 @@ SELECT
     <strong>Function Reference</strong>
     <span>Search every registered <code>fin_*</code> function by usage, purpose, and return shape.</span>
   </a>
+  <a class="doc-link" href="{{ '/performance-testing/' | relative_url }}">
+    <strong>Performance Testing</strong>
+    <span>Profile the full function surface and run focused hot-path benchmarks.</span>
+  </a>
   <a class="doc-link" href="{{ '/quant-developer-guide/' | relative_url }}">
     <strong>Quant Developer Guide</strong>
     <span>Read the units, model boundaries, risk conventions, and reconciliation guidance.</span>

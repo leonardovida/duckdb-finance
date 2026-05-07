@@ -143,7 +143,14 @@ and Greeks, and portfolio risk columns normalized before aggregation.
 ## Performance
 
 The scalar hot paths are optimized for vectorized DuckDB execution and reusable
-per-row model state. To run the local benchmark:
+per-row model state. To profile the complete registered function surface through
+the gold-test corpus:
+
+```sh
+make perf
+```
+
+To run the heavier local hot-path benchmark:
 
 ```sh
 make debug
@@ -163,6 +170,8 @@ GitHub Pages source lives in `docs/` and is configured for:
 
 - [Function reference](docs/function_reference.md): usage and behavior notes for
   the `fin_*` function surface.
+- [Performance testing](docs/performance_testing.md): full-surface profiling
+  and focused hot-path benchmark workflow.
 - [GS Quant-inspired SQL mapping](docs/gs_quant_mapping.md): local SQL
   equivalents for GS Quant-style pricing contexts, instruments, measures,
   scenarios, portfolios, and golden fixtures.
