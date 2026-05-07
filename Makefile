@@ -8,7 +8,7 @@ GOLD_DATASET_SQL ?= test/sql/gold_dataset.sql
 GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 
-.PHONY: debug release test smoke gold check-docs check clean
+.PHONY: debug release test smoke gold check-docs check-tests check clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -27,7 +27,10 @@ test: smoke gold
 check-docs:
 	python3 scripts/check_function_docs.py
 
-check: check-docs test
+check-tests:
+	python3 scripts/check_function_tests.py
+
+check: check-docs check-tests test
 
 clean:
 	cmake --build $(BUILD_DIR) --target clean
