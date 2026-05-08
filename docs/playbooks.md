@@ -3,7 +3,7 @@ layout: default
 title: Finance SQL Playbooks
 description: Runnable DuckDB Finance workflows for desk-style analysis.
 permalink: /playbooks/
-nav_order: 7
+nav_order: 8
 wide: true
 ---
 
@@ -21,14 +21,12 @@ metadata unless a query explicitly performs FX pricing or conversion.
 For model and unit conventions, read the
 [Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}) first.
 
-Run the companion SQL file after building the extension:
+Run the companion SQL file after installing and loading the extension:
 
-```sh
-make debug
-{
-  printf "LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';\n"
-  cat examples/playbooks.sql
-} | /Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+```sql
+INSTALL finance FROM community;
+LOAD finance;
+.read examples/playbooks.sql
 ```
 
 ## Playbook 1: Equity Option Desk Snapshot

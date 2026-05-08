@@ -1,126 +1,176 @@
 # DuckDB Finance
 
-`finance` is an out-of-tree DuckDB extension for SQL-native quant finance
-workflows. It is aimed at quant developers, desk strategists, risk engineers,
-and finance users who want deterministic analytics close to their data.
+[![CI](https://github.com/leonardovida/duckdb-finance/actions/workflows/ci.yml/badge.svg)](https://github.com/leonardovida/duckdb-finance/actions/workflows/ci.yml)
 
-It provides functions with the `fin_` prefix for returns, risk metrics,
-volatility, option pricing and Greeks, fixed income, cash flows, portfolio math,
-technical indicators, market microstructure, time-series table functions, schema
-helpers, finance-oriented validation, and GS Quant-inspired pricing/risk
-descriptors.
+`finance` is a DuckDB extension for SQL-native quant finance analytics. It puts
+common pricing, risk, return, portfolio, market microstructure, and validation
+tools directly inside DuckDB so research and risk workflows can stay close to
+the data.
 
-This repository builds against the local DuckDB checkout at:
+The extension is designed for quant developers, desk strategists, risk
+engineers, and finance users who want deterministic local analytics with
+explicit assumptions instead of hidden service calls.
 
-```sh
-/Users/leov/workspace/motherduck/duckdb
-```
+## What You Get
 
-## Build And Test
+- Return and risk analytics: simple/log returns, annualization, volatility,
+  Sharpe, Sortino, EWMA volatility, drawdowns, outlier counts, quantile spread,
+  capture ratios, VaR/CVaR-style helpers, and data-quality reports.
+- Option models: Black-Scholes-Merton, Black-76, Bachelier, binomial trees,
+  digital, Asian geometric, barrier, SABR/SVI helpers, Greeks, higher-order
+  Greeks, and implied-volatility solvers.
+- Fixed income and cash flows: discount factors, forward rates, PV/FV,
+  NPV/IRR/XIRR/MIRR, annuities, bond price/YTM/duration/convexity/DV01, curve
+  interpolation, and curve bootstrapping.
+- Portfolio analytics: vector and matrix helpers, portfolio return, variance,
+  volatility, Sharpe, equal/inverse-vol weights, optimizer table functions, HRP
+  fallback weights, efficient-frontier points, and rebalance trades.
+- GS Quant-inspired local workflows: SQL descriptors for pricing contexts,
+  instruments, measures, scenarios, and portfolios, backed by deterministic
+  local helpers and golden fixtures.
+- Technical analysis and microstructure: OHLC/OHLCV helpers, indicators,
+  candlestick aliases, VWAP/TWAP, spreads, microprice, imbalance, impact
+  proxies, and tick/volume/dollar/imbalance bars.
+- Validation and schema helpers: finance-oriented checks for prices, returns,
+  OHLC rows, conventions, calendars, sessions, and expected schemas.
 
-```sh
-make debug
-make smoke
-make test
-make check
-```
+All public functions live in the `fin_` namespace.
 
-`make smoke` and `make test` both build the extension, load the produced binary
-with DuckDB's `-unsigned` flag, and run `test/sql/smoke_queries.sql`.
-`make check` also verifies that every registered `fin_*` function is documented
-in `docs/function_reference.md`.
+## Status
 
-Manual load:
+This repository is early-stage OSS. The native core is covered by deterministic
+DuckDB SQL tests and documentation coverage checks, but the API should still be
+treated as pre-1.0. Some broad catalog entries are pragmatic v1 aliases or
+approximations; those are documented so stronger implementations can replace
+them behind stable names.
+
+The extension does not call Goldman Sachs, GS Quant, market-data vendors, or any
+remote pricing service. GSQ-style names are local SQL analogues for familiar
+pricing-and-risk workflows.
+
+## Install
+
+After `finance` is accepted into the DuckDB Community Extensions repository,
+install and load it from DuckDB:
 
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+INSTALL finance FROM community;
+LOAD finance;
 SELECT fin_version();
 ```
 
-## Implementation Layout
+Community extensions are built and signed by DuckDB's community extension CI and
+served from the community extension endpoint. If you need to disable community
+extensions in a locked-down environment, set DuckDB's
+`allow_community_extensions` option according to the DuckDB extension security
+docs.
 
-- `src/scalar.cpp`: native scalar math, option models, fixed income, cash-flow,
-  portfolio, matrix, validation, and calendar/session functions.
-- `src/aggregate.cpp`: native aggregates that need custom state, including
-  Sortino, EWMA variance/volatility, RSI, drawdown metrics, outlier counts,
-  quantile spread, IV rank, and IV percentile.
-- `src/macros.cpp`: SQL macro wrappers for aggregate-style analytics and
-  compatibility aliases.
-- `src/table_functions.cpp`: DuckDB table functions and bind-replace SQL table
-  functions for option chains, curve bootstrapping, grids, bars, optimizers,
-  factor reports, calendars, and rebalance trades.
-- `test/sql/smoke_queries.sql`: executable DuckDB smoke coverage.
-- `test/sql/gold_dataset.sql` and `test/sql/gold_tests.sql`: deterministic
-  behavior coverage for the function surface.
-- `docs/function_reference.md`: comprehensive function reference with usage,
-  purpose, return notes, and examples.
-- `docs/gs_quant_mapping.md`: GS Quant-inspired SQL mapping, model semantics,
-  usage examples, and the Goldman-style golden dataset layout.
-- `docs/quant_developer_guide.md`: model boundaries, units, sign conventions,
-  risk aggregation guidance, and reconciliation notes for quant developers.
-- `docs/playbooks.md` and `examples/playbooks.sql`: workflow-oriented examples
-  for option desks, scenario PnL, rates, portfolios, factors, and microstructure.
-- `examples/hot_path_benchmark.sql`: local CLI benchmark for option, bond,
-  binomial-tree, and cash-flow hot paths.
+Until the community package is published, build from source for local
+development.
 
-## Examples
+## Build From Source
+
+Clone DuckDB and this repository, then point `DUCKDB_ROOT` at the DuckDB
+checkout:
+
+```sh
+git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
+git clone https://github.com/leonardovida/duckdb-finance.git /path/to/duckdb-finance
+cd /path/to/duckdb-finance
+```
+
+Build the debug extension:
+
+```sh
+make debug DUCKDB_ROOT=/path/to/duckdb
+```
+
+The Makefile also supports an adjacent `../duckdb` checkout by default for
+contributors who prefer that layout.
+
+## Load A Local Build
+
+Start DuckDB with unsigned local extensions enabled:
+
+```sh
+DUCKDB_ROOT=/path/to/duckdb
+$DUCKDB_ROOT/build/debug/duckdb -unsigned
+```
+
+Load the built extension:
 
 ```sql
-SELECT fin_simple_return(105, 100);
-SELECT fin_total_return(r), fin_volatility(r), fin_sharpe(r)
-FROM (VALUES (0.01), (-0.02), (0.03)) AS t(r);
+LOAD '/path/to/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+SELECT fin_version();
+```
 
-SELECT fin_max_drawdown(r), fin_ulcer_index(r), fin_outlier_count(r, 'zscore', 3.0)
+## Quick Start
+
+Returns and portfolio analytics:
+
+```sql
+SELECT
+  fin_simple_return(105.0, 100.0) AS simple_return,
+  fin_log_return(105.0, 100.0) AS log_return;
+
+SELECT
+  fin_total_return(r) AS total_return,
+  fin_volatility(r) AS volatility,
+  fin_sharpe(r) AS sharpe,
+  fin_max_drawdown(r) AS max_drawdown
 FROM (VALUES (0.01), (-0.02), (0.03), (0.015)) AS t(r);
-```
 
-```sql
-SELECT fin_bsm_price('call', 100, 100, 1, 0.05, 0.2);
-SELECT (fin_bsm_greeks('call', 100, 100, 1, 0.05, 0.2)).delta;
-SELECT fin_bsm_implied_vol('call', 10.45058357, 100, 100, 1, 0.05);
-```
-
-```sql
-SELECT fin_bond_price(0.05, 0.04, 5, 2, 100);
-SELECT fin_npv([-100.0, 60.0, 60.0], [0.0, 1.0, 2.0], 0.1, 'periodic');
-```
-
-```sql
 SELECT fin_portfolio_sharpe(
   [0.5, 0.5],
   [0.1, 0.2],
   [[0.04, 0.01], [0.01, 0.09]],
   0.02
-);
+) AS sharpe;
 ```
+
+Options:
 
 ```sql
-SELECT *
-FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol');
-
-SELECT *
-FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');
-
-SELECT *
-FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
+SELECT
+  fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS price,
+  (fin_bsm_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.20)).delta AS delta,
+  fin_bsm_implied_vol('call', 10.450583572185565, 100.0, 100.0, 1.0, 0.05) AS iv;
 ```
+
+Fixed income and cash flows:
+
+```sql
+SELECT
+  fin_bond_price(0.05, 0.04, 5.0, 2.0, 100.0) AS bond_price,
+  fin_npv([-100.0, 60.0, 60.0], [0.0, 1.0, 2.0], 0.10, 'periodic') AS npv;
+```
+
+GSQ-style local descriptors:
 
 ```sql
 WITH option AS (
-  SELECT fin_gsq_eq_option('call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20) AS inst
+  SELECT fin_gsq_eq_option(
+    'call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20, 0.0, 10.0, 'USD'
+  ) AS inst
 )
 SELECT
-  fin_gsq_eq_option_price(inst),
-  fin_gsq_eq_delta(inst),
-  fin_gsq_eq_vega(inst)
+  fin_gsq_eq_option_price(inst) AS pv,
+  fin_gsq_eq_delta(inst) AS delta,
+  fin_gsq_eq_vega(inst) AS vega
 FROM option;
+```
 
-SELECT
-  portfolio_id,
-  fin_gsq_portfolio_value(value, quantity),
-  fin_gsq_portfolio_risk(risk, quantity)
-FROM gsq_goldman_portfolio_cases
-GROUP BY portfolio_id;
+Table functions:
+
+```sql
+CREATE OR REPLACE TEMP TABLE option_inputs AS
+SELECT * FROM (VALUES
+  ('call', 100.0, 100.0, 1.0, 0.05, 0.20),
+  ('put', 100.0, 100.0, 1.0, 0.05, 0.20)
+) AS t(kind, spot, strike, ttm, rate, vol);
+
+SELECT *
+FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol');
 ```
 
 ## Playbooks
@@ -128,12 +178,10 @@ GROUP BY portfolio_id;
 The playbooks are practical SQL workflows that can be run after loading the
 extension:
 
-```sh
-make debug
-{
-  printf "LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';\n"
-  cat examples/playbooks.sql
-} | /Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+```sql
+INSTALL finance FROM community;
+LOAD finance;
+.read examples/playbooks.sql
 ```
 
 The examples assume finance-native units: decimal returns and rates, annualized
@@ -152,13 +200,8 @@ make perf
 
 To run the heavier local hot-path benchmark:
 
-```sh
-make debug
-/Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
-```
-
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+LOAD finance;
 .read examples/hot_path_benchmark.sql
 ```
 
@@ -168,6 +211,10 @@ GitHub Pages source lives in `docs/` and is configured for:
 
 - <https://leonardovida.github.io/duckdb-finance/>
 
+- [Getting started](docs/getting_started.md): local build, load, and first
+  pricing queries.
+- [Installation](docs/installation.md): community extension installation,
+  source builds, and publication checklist.
 - [Function reference](docs/function_reference.md): usage and behavior notes for
   the `fin_*` function surface.
 - [Performance testing](docs/performance_testing.md): full-surface profiling
@@ -181,11 +228,75 @@ GitHub Pages source lives in `docs/` and is configured for:
   their intended use cases.
 - [Extension overview](docs/index.md): API areas, stability notes, and build
   context.
+- [Development guide](docs/development.md): build, test, extension layout, and
+  contribution workflow.
 
-## Notes
+Runnable examples live in `examples/`.
 
-The extension intentionally uses standard DuckDB types (`DOUBLE`, `DATE`,
-`TIMESTAMP`, `VARCHAR`, `STRUCT`, and `LIST`) rather than custom SQL logical
-types. Some broad catalog entries are pragmatic v1 implementations or aliases;
-the stable native core is concentrated in pricing, Greeks, rates, cash flows,
-portfolio vector/matrix helpers, validation, and table-function plumbing.
+## Tests
+
+Run the full local check:
+
+```sh
+make check
+```
+
+This runs documentation coverage, builds the extension, loads it in DuckDB, and
+executes both smoke and deterministic gold tests.
+
+Focused commands:
+
+```sh
+make smoke
+make gold
+make test
+```
+
+## Performance
+
+The hot scalar paths are implemented in native C++ and written for DuckDB's
+vectorized execution model. The option and portfolio paths avoid unnecessary
+allocation where practical and reuse per-row model state for related values.
+
+Run the focused hot-path benchmark after loading the extension:
+
+```sql
+LOAD finance;
+.read examples/hot_path_benchmark.sql
+```
+
+## Design Principles
+
+- Keep inputs explicit and caller-owned.
+- Use normal DuckDB types rather than hidden external objects.
+- Prefer deterministic local formulas over network-dependent behavior.
+- Make units and model assumptions visible in SQL and docs.
+- Cover edge cases with executable DuckDB tests.
+- Keep golden datasets small, synthetic, and auditable.
+
+## Repository Layout
+
+```text
+src/                         Native extension implementation
+include/finance/             Extension registration headers
+test/sql/                    Smoke tests, fixtures, and gold assertions
+docs/                        User and developer documentation
+examples/                    Runnable SQL playbooks and benchmarks
+scripts/check_function_docs.py
+community-extension/         Community extension metadata
+```
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[docs/development.md](docs/development.md) before opening a pull request.
+
+The minimum bar for behavior changes is:
+
+1. focused DuckDB SQL tests,
+2. updated function documentation,
+3. `make check` passing locally or a clear explanation of the blocker.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

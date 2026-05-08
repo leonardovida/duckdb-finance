@@ -3,7 +3,7 @@ layout: default
 title: Performance Testing
 description: Profiling and benchmark coverage for DuckDB Finance functions.
 permalink: /performance-testing/
-nav_order: 4
+nav_order: 5
 ---
 
 # Performance Testing
@@ -41,7 +41,8 @@ make perf PERF_OUTPUT=/tmp/finance-profile.json
 Run the focused hot-path benchmark from DuckDB after loading the extension:
 
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+INSTALL finance FROM community;
+LOAD finance;
 .read examples/hot_path_benchmark.sql
 ```
 

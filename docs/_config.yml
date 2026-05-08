@@ -17,6 +17,8 @@ nav:
     url: /
   - title: Getting Started
     url: /getting-started/
+  - title: Installation
+    url: /installation/
   - title: Function Reference
     url: /function-reference/
   - title: Performance Testing
@@ -27,6 +29,8 @@ nav:
     url: /gs-quant-mapping/
   - title: Playbooks
     url: /playbooks/
+  - title: Development
+    url: /development/
 
 exclude:
   - Gemfile

@@ -1,52 +1,33 @@
 ---
 layout: default
 title: Getting Started
-description: Build, load, and run the DuckDB Finance extension.
+description: Install, load, and run the DuckDB Finance extension.
 permalink: /getting-started/
 nav_order: 2
 ---
 
 # Getting Started
 
-<p class="lead">Build the extension against the adjacent DuckDB checkout, load the produced
-binary with <code>-unsigned</code>, and run SQL-native pricing and risk queries directly in
-DuckDB.</p>
+<p class="lead">Install <code>finance</code> like a DuckDB community extension, load it, and run
+SQL-native pricing and risk queries directly in DuckDB.</p>
 
-## Build
+## Install And Load
 
-This repository expects the adjacent DuckDB checkout at:
-
-```sh
-/Users/leov/workspace/motherduck/duckdb
-```
-
-Use the repository `Makefile`:
-
-```sh
-make debug
-make smoke
-make gold
-make test
-make check
-```
-
-`make check` runs the source-derived documentation coverage check first, then
-the DuckDB-backed smoke and golden SQL suites.
-
-## Load
-
-Manual load from the local debug build:
+After `finance` is published in the DuckDB Community Extensions repository, use
+DuckDB's standard community extension flow:
 
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+INSTALL finance FROM community;
+LOAD finance;
 SELECT fin_version();
 ```
 
-The local test runner uses DuckDB's `-unsigned` flag:
+Community extensions are built and signed by DuckDB's community extension CI, so
+normal users should not need a local DuckDB source checkout or an unsigned local
+extension binary.
 
-```sh
-/Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
-```
+Until the community package is published, build from source using the
+[Development Guide]({{ '/development/' | relative_url }}).
 
 ## First Queries
 
@@ -115,6 +96,8 @@ FROM option;
 
 ## What To Read Next
 
+- [Installation]({{ '/installation/' | relative_url }}) for the community
+  extension publication path and local source builds.
 - [Function Reference]({{ '/function-reference/' | relative_url }}) for every
   registered `fin_*` function.
 - [Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}) for

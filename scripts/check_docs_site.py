@@ -36,7 +36,7 @@ def main() -> int:
             print(f"  {url}")
         return 1
 
-    required_pages = ["/", "/function-reference/", "/performance-testing/"]
+    required_pages = ["/", "/getting-started/", "/installation/", "/function-reference/", "/performance-testing/"]
     missing_pages = [url for url in required_pages if url not in pages]
     if missing_pages:
         print("Missing required documentation pages:")
@@ -60,6 +60,38 @@ def main() -> int:
         print("Pages workflow is missing required publishing configuration:")
         for fragment in missing_fragments:
             print(f"  {fragment}")
+        return 1
+
+    descriptor = read(ROOT / "community-extension" / "description.yml")
+    required_descriptor_fragments = [
+        "name: finance",
+        "version:",
+        "language: C++",
+        "build: cmake",
+        "license: MIT",
+        "maintainers:",
+        "github: leonardovida/duckdb-finance",
+        "ref:",
+        "hello_world:",
+        "INSTALL finance FROM community",
+    ]
+    missing_descriptor_fragments = [
+        fragment for fragment in required_descriptor_fragments if fragment not in descriptor
+    ]
+    if missing_descriptor_fragments:
+        print("Community extension descriptor is missing required install metadata:")
+        for fragment in missing_descriptor_fragments:
+            print(f"  {fragment}")
+        return 1
+
+    user_specific_paths = []
+    for path in [ROOT / "README.md", ROOT / "CONTRIBUTING.md", *DOCS.glob("*.md")]:
+        if "/Users/leov/" in read(path):
+            user_specific_paths.append(path.relative_to(ROOT))
+    if user_specific_paths:
+        print("Public docs contain user-specific local paths:")
+        for path in user_specific_paths:
+            print(f"  {path}")
         return 1
 
     print(f"Docs site nav covers {len(config_nav_urls())} pages and Pages publishing CI is configured.")

@@ -18,7 +18,8 @@ It is built for local research, CI fixtures, scenario checks, desk sanity
 checks, and SQL-native portfolio analytics.
 
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+INSTALL finance FROM community;
+LOAD finance;
 
 SELECT
   fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
@@ -31,7 +32,11 @@ SELECT
 <div class="doc-grid">
   <a class="doc-link" href="{{ '/getting-started/' | relative_url }}">
     <strong>Getting Started</strong>
-    <span>Build the extension, load it in DuckDB, and run the first pricing and risk queries.</span>
+    <span>Install the extension, load it in DuckDB, and run the first pricing and risk queries.</span>
+  </a>
+  <a class="doc-link" href="{{ '/installation/' | relative_url }}">
+    <strong>Installation</strong>
+    <span>Install from DuckDB Community Extensions or build from source for development.</span>
   </a>
   <a class="doc-link" href="{{ '/function-reference/' | relative_url }}">
     <strong>Function Reference</strong>
@@ -45,9 +50,17 @@ SELECT
     <strong>Quant Developer Guide</strong>
     <span>Read the units, model boundaries, risk conventions, and reconciliation guidance.</span>
   </a>
+  <a class="doc-link" href="{{ '/gs-quant-mapping/' | relative_url }}">
+    <strong>GS Quant Mapping</strong>
+    <span>Map familiar pricing-and-risk workflows to local DuckDB SQL helpers.</span>
+  </a>
   <a class="doc-link" href="{{ '/playbooks/' | relative_url }}">
     <strong>Finance SQL Playbooks</strong>
     <span>Run desk-style examples for options, scenario PnL, rates, portfolios, factors, and ticks.</span>
+  </a>
+  <a class="doc-link" href="{{ '/development/' | relative_url }}">
+    <strong>Development Guide</strong>
+    <span>Build, test, document, and extend the out-of-tree extension.</span>
   </a>
 </div>
 
@@ -77,16 +90,45 @@ surface is usable while deeper statistical and optimization methods can improve
 behind stable names. Placeholder behavior is explicitly documented and covered
 by tests.
 
+Because this is pre-1.0 OSS software, users should pin a commit for production
+research workflows and reconcile model outputs against their official analytics
+stack before relying on them for trading, valuation, or risk sign-off.
+
 ## Repository Map
 
 | Path | Purpose |
 |---|---|
-| `src/scalar.cpp` | Native scalar math, option models, fixed income, cash-flow, portfolio, matrix, validation, and calendar/session functions. |
-| `src/aggregate.cpp` | Native aggregates with custom state, including Sortino, EWMA variance/volatility, RSI, drawdown metrics, outlier counts, quantile spread, IV rank, and IV percentile. |
-| `src/macros.cpp` | SQL macro wrappers for aggregate-style analytics and compatibility aliases. |
-| `src/table_functions.cpp` | DuckDB table functions and bind-replace SQL table functions. |
+| `src/scalar.cpp` | Native scalar registration unit; implementation lives in `src/scalar/*.inc`. |
+| `src/aggregate.cpp` | Native aggregate registration unit; implementation lives in `src/aggregate/*.inc`. |
+| `src/macros.cpp` | SQL macro registration unit; macro groups live in `src/macros/*.inc`. |
+| `src/table_functions.cpp` | Table-function registration unit; implementation lives in `src/table_functions/*.inc`. |
 | `test/sql/gold_dataset.sql` and `test/sql/gold_tests.sql` | Deterministic behavior coverage for the function surface. |
 | `docs/function_reference.md` | Source-derived function reference with usage, purpose, returns, and examples. |
+
+## GS Quant-Inspired Surface
+
+The GS Quant-inspired layer is documented in
+[GS Quant-Inspired SQL Mapping](gs_quant_mapping.md). It follows the shape of GS
+Quant pricing-and-risk workflows while remaining local to DuckDB: no Goldman
+Sachs API calls, sessions, entitlements, or remote market-data dependencies are
+required.
+
+These helpers are not affiliated with Goldman Sachs and do not use GS APIs,
+sessions, entitlements, or market data.
+
+## Playbooks
+
+[Finance SQL Playbooks](playbooks.md) contains runnable examples for option desk
+snapshots, cross-asset portfolio rollups, scenario PnL explain, rates curve
+shifts, factor tear sheets, and market microstructure diagnostics. The companion
+SQL is available at `examples/playbooks.sql`.
+
+## Development And Contribution
+
+Use [Development Guide](development.md) for local setup. Public contributions
+should include focused SQL tests, updated docs, and a passing `make check`.
+Synthetic fixtures are preferred; do not contribute proprietary market data,
+vendor marks, credentials, or entitlement-dependent examples.
 
 ## Verification
 

@@ -1,19 +1,76 @@
-# Build outputs
-build/
-cmake-build-*/
-*.duckdb_extension
-*.duckdb_extension.gz
-*.duckdb
-*.db
-*.wal
-
-# Local tooling
-.cache/
-.ccache/
-.vscode/
-.idea/
+# macOS and filesystem metadata
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100/
+.Trashes/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+
+# Local environment files
+.env
+.env.*
+!.env.example
+.python-version
 
 # Python helpers
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# C/C++ and CMake build outputs
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CMakeUserPresets.json
+Testing/
+CTestTestfile.cmake
+install_manifest.txt
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.dSYM/
+
+# DuckDB extension artifacts and local databases
+*.duckdb_extension
+*.duckdb_extension.gz
+*.duckdb
+*.duckdb.wal
+*.db
+*.db.wal
+*.sqlite
+*.sqlite3
+*.wal
+
+# DuckDB checkouts copied into this repository for local development
+/duckdb/
+
+# Tool caches and generated logs
+.cache/
+.ccache/
+.ninja_*
+*.log
+*.tmp
+*.bak
