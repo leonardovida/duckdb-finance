@@ -59,19 +59,11 @@ cd /path/to/duckdb-finance
 make debug DUCKDB_ROOT=/path/to/duckdb
 ```
 
-Load the local unsigned build from DuckDB:
-
-```sh
-/path/to/duckdb/build/debug/duckdb -unsigned
-```
-
-```sql
-LOAD '/path/to/duckdb/build/debug/extension/finance/finance.duckdb_extension';
-SELECT fin_version();
-```
-
 Run the validation suite:
 
 ```sh
 make check DUCKDB_ROOT=/path/to/duckdb
 ```
+
+For normal use, install the published community extension instead of loading a
+local extension binary directly.

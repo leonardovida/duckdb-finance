@@ -19,11 +19,8 @@ work, and verify behavior with DuckDB after edits.
 
 ## Build And Test
 
-The extension builds against the adjacent DuckDB checkout:
-
-```sh
-/Users/leov/workspace/motherduck/duckdb
-```
+The extension builds against a DuckDB checkout. Use `DUCKDB_ROOT` when the
+checkout is not adjacent to this repository.
 
 Use the repository `Makefile`:
 
@@ -38,18 +35,11 @@ make check
 `make test` runs both smoke and gold SQL through:
 
 ```sh
-/Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+make test DUCKDB_ROOT=/path/to/duckdb
 ```
 
 `make check` runs documentation coverage first, then the full DuckDB-backed test
 suite.
-
-Manual load:
-
-```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
-SELECT fin_version();
-```
 
 Known local warning: the DuckDB debug build may print non-fatal CMake/vcpkg or
 Apple Silicon sanitizer warnings. Treat DuckDB SQL errors, assertion conversion

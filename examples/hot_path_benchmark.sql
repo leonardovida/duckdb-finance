@@ -1,6 +1,7 @@
 -- Hot-path benchmark for DuckDB Finance.
--- Run from the DuckDB shell after loading the extension:
---   LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+-- Run from the DuckDB shell after installing and loading the community extension:
+--   INSTALL finance FROM community;
+--   LOAD finance;
 --   .read examples/hot_path_benchmark.sql
 
 .timer on

@@ -60,17 +60,10 @@ make check
 5. `make smoke` to load the extension and run broad smoke queries.
 6. `make gold` to run deterministic fixtures and assertions.
 
-Manual load:
-
-```sql
-LOAD '/path/to/duckdb/build/debug/extension/finance/finance.duckdb_extension';
-SELECT fin_version();
-```
-
-DuckDB requires `-unsigned` for local unsigned extension binaries:
+The test targets start DuckDB with unsigned local extensions enabled:
 
 ```sh
-/path/to/duckdb/build/debug/duckdb -unsigned
+make test DUCKDB_ROOT=/path/to/duckdb
 ```
 
 ## Adding A Function
