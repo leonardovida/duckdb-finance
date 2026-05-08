@@ -4,7 +4,7 @@ extension:
   version: 0.1.0
   language: C++
   build: cmake
-  license: MIT
+  licence: MIT
   maintainers:
     - leonardovida
 repo:
