@@ -68,7 +68,7 @@ def main() -> int:
         "version:",
         "language: C++",
         "build: cmake",
-        "license: MIT",
+        "licence: MIT",
         "maintainers:",
         "github: leonardovida/duckdb-finance",
         "ref:",

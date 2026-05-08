@@ -41,7 +41,7 @@ should be built and distributed.
 The descriptor should include:
 
 - Extension metadata: name, description, semantic version, language, build
-  system, license, maintainers, and any excluded platforms or required
+  system, licence, maintainers, and any excluded platforms or required
   toolchains.
 - Repository metadata: public GitHub repository and build ref.
 - Documentation metadata: a small `hello_world` SQL snippet and an extended
