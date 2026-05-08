@@ -3,7 +3,7 @@ layout: default
 title: Quant Developer Guide
 description: Units, model boundaries, risk conventions, and reconciliation guidance.
 permalink: /quant-developer-guide/
-nav_order: 5
+nav_order: 6
 ---
 
 # Quant Developer Guide

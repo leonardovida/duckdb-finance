@@ -6,22 +6,19 @@ well-tested, and easy to reason about from SQL.
 
 ## Development Setup
 
-Clone DuckDB next to this repository:
+Clone DuckDB and this repository, then point `DUCKDB_ROOT` at the DuckDB
+checkout:
 
 ```sh
-git clone https://github.com/duckdb/duckdb.git ../duckdb
+git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
+git clone https://github.com/leonardovida/duckdb-finance.git /path/to/duckdb-finance
+cd /path/to/duckdb-finance
 ```
 
 Then build and test the extension:
 
 ```sh
-make debug
-make check
-```
-
-If DuckDB lives elsewhere, pass `DUCKDB_ROOT`:
-
-```sh
+make debug DUCKDB_ROOT=/path/to/duckdb
 make check DUCKDB_ROOT=/path/to/duckdb
 ```
 

@@ -48,46 +48,59 @@ The extension does not call Goldman Sachs, GS Quant, market-data vendors, or any
 remote pricing service. GSQ-style names are local SQL analogues for familiar
 pricing-and-risk workflows.
 
-## Build
+## Install
 
-Clone DuckDB next to this repository:
+After `finance` is accepted into the DuckDB Community Extensions repository,
+install and load it from DuckDB:
+
+```sql
+INSTALL finance FROM community;
+LOAD finance;
+SELECT fin_version();
+```
+
+Community extensions are built and signed by DuckDB's community extension CI and
+served from the community extension endpoint. If you need to disable community
+extensions in a locked-down environment, set DuckDB's
+`allow_community_extensions` option according to the DuckDB extension security
+docs.
+
+Until the community package is published, build from source for local
+development.
+
+## Build From Source
+
+Clone DuckDB and this repository, then point `DUCKDB_ROOT` at the DuckDB
+checkout:
 
 ```sh
-git clone https://github.com/duckdb/duckdb.git ../duckdb
+git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
+git clone https://github.com/leonardovida/duckdb-finance.git /path/to/duckdb-finance
+cd /path/to/duckdb-finance
 ```
 
 Build the debug extension:
 
 ```sh
-make debug
-```
-
-If DuckDB is in a different directory:
-
-```sh
 make debug DUCKDB_ROOT=/path/to/duckdb
 ```
 
-The default build expects this layout:
+The Makefile also supports an adjacent `../duckdb` checkout by default for
+contributors who prefer that layout.
 
-```text
-workspace/
-  duckdb/
-  duckdb-finance/
-```
-
-## Load
+## Load A Local Build
 
 Start DuckDB with unsigned local extensions enabled:
 
 ```sh
-../duckdb/build/debug/duckdb -unsigned
+DUCKDB_ROOT=/path/to/duckdb
+$DUCKDB_ROOT/build/debug/duckdb -unsigned
 ```
 
 Load the built extension:
 
 ```sql
-LOAD '../duckdb/build/debug/extension/finance/finance.duckdb_extension';
+LOAD '/path/to/duckdb/build/debug/extension/finance/finance.duckdb_extension';
 SELECT fin_version();
 ```
 
@@ -165,12 +178,10 @@ FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 
 The playbooks are practical SQL workflows that can be run after loading the
 extension:
 
-```sh
-make debug
-{
-  printf "LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';\n"
-  cat examples/playbooks.sql
-} | /Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+```sql
+INSTALL finance FROM community;
+LOAD finance;
+.read examples/playbooks.sql
 ```
 
 The examples assume finance-native units: decimal returns and rates, annualized
@@ -189,13 +200,8 @@ make perf
 
 To run the heavier local hot-path benchmark:
 
-```sh
-make debug
-/Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
-```
-
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+LOAD finance;
 .read examples/hot_path_benchmark.sql
 ```
 
@@ -207,6 +213,8 @@ GitHub Pages source lives in `docs/` and is configured for:
 
 - [Getting started](docs/getting_started.md): local build, load, and first
   pricing queries.
+- [Installation](docs/installation.md): community extension installation,
+  source builds, and publication checklist.
 - [Function reference](docs/function_reference.md): usage and behavior notes for
   the `fin_*` function surface.
 - [Performance testing](docs/performance_testing.md): full-surface profiling
@@ -250,14 +258,10 @@ The hot scalar paths are implemented in native C++ and written for DuckDB's
 vectorized execution model. The option and portfolio paths avoid unnecessary
 allocation where practical and reuse per-row model state for related values.
 
-Run the local benchmark after building:
-
-```sh
-../duckdb/build/debug/duckdb -unsigned
-```
+Run the focused hot-path benchmark after loading the extension:
 
 ```sql
-LOAD '../duckdb/build/debug/extension/finance/finance.duckdb_extension';
+LOAD finance;
 .read examples/hot_path_benchmark.sql
 ```
 

@@ -3,7 +3,7 @@ layout: default
 title: Development Guide
 description: Build, test, document, and extend DuckDB Finance.
 permalink: /development/
-nav_order: 8
+nav_order: 9
 ---
 
 # Development Guide
@@ -32,21 +32,7 @@ standard out-of-tree DuckDB extension.
 - Python 3 for documentation coverage checks.
 - `make`.
 
-Recommended layout:
-
-```text
-workspace/
-  duckdb/
-  duckdb-finance/
-```
-
 Build:
-
-```sh
-make debug
-```
-
-If DuckDB is not adjacent to this repository:
 
 ```sh
 make debug DUCKDB_ROOT=/path/to/duckdb

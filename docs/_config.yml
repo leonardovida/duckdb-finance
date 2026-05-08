@@ -17,6 +17,8 @@ nav:
     url: /
   - title: Getting Started
     url: /getting-started/
+  - title: Installation
+    url: /installation/
   - title: Function Reference
     url: /function-reference/
   - title: Performance Testing

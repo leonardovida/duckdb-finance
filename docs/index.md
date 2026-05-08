@@ -18,7 +18,8 @@ It is built for local research, CI fixtures, scenario checks, desk sanity
 checks, and SQL-native portfolio analytics.
 
 ```sql
-LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+INSTALL finance FROM community;
+LOAD finance;
 
 SELECT
   fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
@@ -31,7 +32,11 @@ SELECT
 <div class="doc-grid">
   <a class="doc-link" href="{{ '/getting-started/' | relative_url }}">
     <strong>Getting Started</strong>
-    <span>Build the extension, load it in DuckDB, and run the first pricing and risk queries.</span>
+    <span>Install the extension, load it in DuckDB, and run the first pricing and risk queries.</span>
+  </a>
+  <a class="doc-link" href="{{ '/installation/' | relative_url }}">
+    <strong>Installation</strong>
+    <span>Install from DuckDB Community Extensions or build from source for development.</span>
   </a>
   <a class="doc-link" href="{{ '/function-reference/' | relative_url }}">
     <strong>Function Reference</strong>
