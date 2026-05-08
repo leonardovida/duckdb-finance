@@ -32,15 +32,26 @@ def registered_functions() -> set[str]:
 
 
 def main() -> int:
-    docs = read(ROOT / "docs" / "function_reference.md")
-    documented = set(re.findall(r"`(fin_[A-Za-z0-9_]+)`", docs))
-    missing = sorted(function for function in registered_functions() if function not in documented)
+    makefile = read(ROOT / "Makefile")
+    if not re.search(r"^perf:", makefile, re.M):
+        print("Missing Makefile perf target.")
+        return 1
+    if "PRAGMA enable_profiling" not in makefile or "$(GOLD_TEST_SQL)" not in makefile:
+        print("The perf target must profile the gold test corpus.")
+        return 1
+
+    tests = read(ROOT / "test" / "sql" / "gold_tests.sql")
+    missing = sorted(
+        function for function in registered_functions()
+        if not re.search(r"\b" + re.escape(function) + r"\s*\(", tests)
+    )
     if missing:
-        print("Missing function reference entries:")
+        print("Missing performance-test references through the profiled gold corpus:")
         for function in missing:
             print(f"  {function}")
         return 1
-    print(f"Function reference covers {len(registered_functions())} registered functions.")
+
+    print(f"Performance tests profile {len(registered_functions())} registered functions through make perf.")
     return 0
 
 

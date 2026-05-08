@@ -1,79 +1,104 @@
-# DuckDB Finance Documentation
+---
+layout: default
+title: DuckDB Finance Extension
+description: SQL-native quant analytics for DuckDB.
+permalink: /
+nav_order: 1
+---
 
-DuckDB Finance is an out-of-tree DuckDB extension that exposes SQL-native quant
-finance analytics through the `fin_` function namespace. It uses standard
-DuckDB values such as `DOUBLE`, `DATE`, `TIMESTAMP`, `VARCHAR`, `STRUCT`, and
-`LIST`, so workflows stay inspectable and portable.
+# DuckDB Finance Extension
 
-Start here:
+<p class="lead"><code>finance</code> is an out-of-tree DuckDB extension for quant developers, desk
+strategists, risk engineers, and finance users who want deterministic analytics
+close to their data.</p>
 
-- [Function Reference](function_reference.md) for callable `fin_*` usage.
-- [Quant Developer Guide](quant_developer_guide.md) for units, conventions, and
-  model boundaries.
-- [GS Quant-Inspired SQL Mapping](gs_quant_mapping.md) for local SQL analogues
-  of pricing-and-risk workflows.
-- [Finance SQL Playbooks](playbooks.md) for complete runnable workflows.
-- [Development Guide](development.md) for build, test, and contribution details.
+The public API lives in the `fin_` namespace and uses ordinary DuckDB types:
+`DOUBLE`, `DATE`, `TIMESTAMP`, `VARCHAR`, `STRUCT`, `LIST`, and table results.
+It is built for local research, CI fixtures, scenario checks, desk sanity
+checks, and SQL-native portfolio analytics.
+
+```sql
+LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+
+SELECT
+  fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
+  (fin_bsm_greeks('call', 100, 100, 1, 0.05, 0.20)).delta AS delta,
+  fin_bsm_implied_vol('call', 10.45058357, 100, 100, 1, 0.05) AS implied_vol;
+```
+
+## Explore The Docs
+
+<div class="doc-grid">
+  <a class="doc-link" href="{{ '/getting-started/' | relative_url }}">
+    <strong>Getting Started</strong>
+    <span>Build the extension, load it in DuckDB, and run the first pricing and risk queries.</span>
+  </a>
+  <a class="doc-link" href="{{ '/function-reference/' | relative_url }}">
+    <strong>Function Reference</strong>
+    <span>Search every registered <code>fin_*</code> function by usage, purpose, and return shape.</span>
+  </a>
+  <a class="doc-link" href="{{ '/performance-testing/' | relative_url }}">
+    <strong>Performance Testing</strong>
+    <span>Profile the full function surface and run focused hot-path benchmarks.</span>
+  </a>
+  <a class="doc-link" href="{{ '/quant-developer-guide/' | relative_url }}">
+    <strong>Quant Developer Guide</strong>
+    <span>Read the units, model boundaries, risk conventions, and reconciliation guidance.</span>
+  </a>
+  <a class="doc-link" href="{{ '/gs-quant-mapping/' | relative_url }}">
+    <strong>GS Quant Mapping</strong>
+    <span>Map familiar pricing-and-risk workflows to local DuckDB SQL helpers.</span>
+  </a>
+  <a class="doc-link" href="{{ '/playbooks/' | relative_url }}">
+    <strong>Finance SQL Playbooks</strong>
+    <span>Run desk-style examples for options, scenario PnL, rates, portfolios, factors, and ticks.</span>
+  </a>
+  <a class="doc-link" href="{{ '/development/' | relative_url }}">
+    <strong>Development Guide</strong>
+    <span>Build, test, document, and extend the out-of-tree extension.</span>
+  </a>
+</div>
 
 ## API Areas
 
-- Numerical helpers and distributions: normal, Student-t, chi-square, safe
-  division, basis-point conversion, clipping, and tick rounding.
-- Returns and risk: simple/log returns, total return, annualization, volatility,
-  Sharpe, native Sortino/EWMA/drawdown/outlier/quantile-spread aggregates,
-  VaR/CVaR-style helpers, capture ratios, and data-quality reports.
-- Options: BSM, Black-76, Bachelier, binomial, digital, Asian geometric, barrier,
-  SABR, SVI, Greeks, higher-order Greeks, and implied-vol solvers.
-- Fixed income and cash flows: day count, discount factors, forward rates, PV/FV,
-  NPV/IRR/XIRR/MIRR, annuities, bond price/YTM/duration/convexity/DV01, curve
-  interpolation, and curve bootstrapping.
-- Portfolio analytics: vector and matrix helpers, portfolio return, variance,
-  volatility, Sharpe, equal/inverse-vol weights, optimizer table functions, HRP
-  fallback weights, efficient-frontier points, and rebalance trades.
-- GS Quant-inspired pricing and risk: SQL-native descriptors for pricing
-  contexts, instruments, measures, scenarios, and portfolio aggregation, plus
-  deterministic local pricing/risk helpers for equity, FX, rates, inflation, and
-  credit fixtures.
-- Time series and technical indicators: SQL macro wrappers for common rolling
-  aggregates, OHLC/OHLCV, TA-style indicators, candlestick aliases, and grid/bar
-  table functions.
-- Market microstructure: mid, spread, spread bps, microprice, order imbalance,
-  trade sign, VWAP/TWAP, bar construction, and impact proxies.
-- Validation and schema helpers: OHLC validation, return validation, finite/price
-  checks, convention parsers, schema templates, and schema validation scaffolding.
+| Area | What It Covers |
+|---|---|
+| Numerical helpers and distributions | Normal, Student-t, chi-square, safe division, basis-point conversion, clipping, and tick rounding. |
+| Returns and risk | Simple/log returns, total return, annualization, volatility, Sharpe, Sortino, EWMA, drawdown, VaR/CVaR-style helpers, capture ratios, outliers, and data quality. |
+| Options and volatility | BSM, Black-76, Bachelier, binomial, digital, Asian geometric, barrier, SABR, SVI, Greeks, higher-order Greeks, and implied-vol solvers. |
+| Fixed income and cash flows | Day count, discount factors, forward rates, PV/FV, NPV/IRR/XIRR/MIRR, annuities, bond price/YTM/duration/convexity/DV01, and curve helpers. |
+| Portfolio analytics | Vector and matrix helpers, portfolio return/variance/volatility/Sharpe, equal and inverse-vol weights, optimizer table functions, HRP fallback weights, efficient-frontier points, and rebalance trades. |
+| GS Quant-inspired workflows | SQL-native descriptors for pricing contexts, instruments, measures, scenarios, and portfolio aggregation. |
+| Time series and technical indicators | Rolling aggregate macros, OHLC/OHLCV, TA-style indicators, candlestick aliases, grid functions, and bars. |
+| Market microstructure | Mid, spread, spread bps, microprice, order imbalance, trade sign, VWAP/TWAP, bar construction, and impact proxies. |
+| Validation and schema helpers | OHLC validation, return validation, finite/price checks, convention parsers, schema templates, and schema validation scaffolding. |
 
 ## Stability Notes
 
-Native C++ functions are used for formulas that need numerical control, nested
-list output, custom aggregate state, or table-function bind-time SQL generation.
-Macros are used for broad aggregate compatibility where DuckDB already has a
-good primitive such as `avg`, `stddev_samp`, `corr`, `quantile_cont`, or `fsum`.
-
-The regression smoke suite exercises the high-risk callable surface: optional
-aggregate arguments, bind-replace table-function overloads, option model
-round-trips, fixed-income helpers, portfolio/matrix helpers, calendar/session
-logic, grids, bars, and factor-report plumbing.
+Native C++ functions are used where numerical control, nested list output,
+custom aggregate state, or table-function bind-time SQL generation matters.
+SQL macros are used where DuckDB already has the right primitive, such as `avg`,
+`stddev_samp`, `corr`, `quantile_cont`, or `fsum`.
 
 Some broad catalog entries are pragmatic v1 aliases or approximations so the API
-surface is usable while the deeper statistical/optimization methods can be
-improved behind stable names.
+surface is usable while deeper statistical and optimization methods can improve
+behind stable names. Placeholder behavior is explicitly documented and covered
+by tests.
 
 Because this is pre-1.0 OSS software, users should pin a commit for production
 research workflows and reconcile model outputs against their official analytics
 stack before relying on them for trading, valuation, or risk sign-off.
 
-## Quant Developer Orientation
+## Repository Map
 
-The extension is intended for users who already think in PV, Greeks, rates,
-vols, curve shocks, returns, and portfolio aggregation. Inputs are explicit and
-caller-owned: rates are decimal rates, vols are annualized decimals, `ttm` is a
-year fraction, and portfolio risk aggregation assumes normalized risk units.
-
-The library favors reproducible local analytics over opaque calibration. It is
-appropriate for research, CI fixtures, desk sanity checks, and local scenario
-analysis. Official pricing, market-data entitlement, curve construction,
-calibration, and production risk governance remain outside the extension unless
-the caller supplies those inputs explicitly.
+| Path | Purpose |
+|---|---|
+| `src/scalar.cpp` | Native scalar registration unit; implementation lives in `src/scalar/*.inc`. |
+| `src/aggregate.cpp` | Native aggregate registration unit; implementation lives in `src/aggregate/*.inc`. |
+| `src/macros.cpp` | SQL macro registration unit; macro groups live in `src/macros/*.inc`. |
+| `src/table_functions.cpp` | Table-function registration unit; implementation lives in `src/table_functions/*.inc`. |
+| `test/sql/gold_dataset.sql` and `test/sql/gold_tests.sql` | Deterministic behavior coverage for the function surface. |
+| `docs/function_reference.md` | Source-derived function reference with usage, purpose, returns, and examples. |
 
 ## GS Quant-Inspired Surface
 
@@ -81,25 +106,17 @@ The GS Quant-inspired layer is documented in
 [GS Quant-Inspired SQL Mapping](gs_quant_mapping.md). It follows the shape of GS
 Quant pricing-and-risk workflows while remaining local to DuckDB: no Goldman
 Sachs API calls, sessions, entitlements, or remote market-data dependencies are
-required. The regression suite includes `gsq_goldman_*` fixtures in
-`test/sql/gold_dataset.sql` and row-wise expected-value checks in
-`test/sql/gold_tests.sql`.
+required.
 
 These helpers are not affiliated with Goldman Sachs and do not use GS APIs,
 sessions, entitlements, or market data.
 
 ## Playbooks
 
-[Finance SQL Playbooks](playbooks.md) contains runnable examples for:
-
-- Equity option desk snapshots.
-- Cross-asset portfolio rollups.
-- Scenario PnL explain.
-- Rates curve shifts and swap PV.
-- Factor and return tear sheets.
-- Market microstructure diagnostics and bars.
-
-The companion SQL is available at `examples/playbooks.sql`.
+[Finance SQL Playbooks](playbooks.md) contains runnable examples for option desk
+snapshots, cross-asset portfolio rollups, scenario PnL explain, rates curve
+shifts, factor tear sheets, and market microstructure diagnostics. The companion
+SQL is available at `examples/playbooks.sql`.
 
 ## Development And Contribution
 
@@ -107,3 +124,11 @@ Use [Development Guide](development.md) for local setup. Public contributions
 should include focused SQL tests, updated docs, and a passing `make check`.
 Synthetic fixtures are preferred; do not contribute proprietary market data,
 vendor marks, credentials, or entitlement-dependent examples.
+
+## Verification
+
+Run the complete local verification before handing off source or docs changes:
+
+```sh
+make check
+```

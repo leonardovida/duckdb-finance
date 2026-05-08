@@ -160,19 +160,66 @@ SELECT *
 FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol');
 ```
 
+## Playbooks
+
+The playbooks are practical SQL workflows that can be run after loading the
+extension:
+
+```sh
+make debug
+{
+  printf "LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';\n"
+  cat examples/playbooks.sql
+} | /Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+```
+
+The examples assume finance-native units: decimal returns and rates, annualized
+decimal vols, year-fraction option expiries, notional-scaled GSQ-style prices
+and Greeks, and portfolio risk columns normalized before aggregation.
+
+## Performance
+
+The scalar hot paths are optimized for vectorized DuckDB execution and reusable
+per-row model state. To profile the complete registered function surface through
+the gold-test corpus:
+
+```sh
+make perf
+```
+
+To run the heavier local hot-path benchmark:
+
+```sh
+make debug
+/Users/leov/workspace/motherduck/duckdb/build/debug/duckdb -unsigned
+```
+
+```sql
+LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+.read examples/hot_path_benchmark.sql
+```
+
 ## Documentation
 
-- [Documentation overview](docs/index.md): API areas, stability notes, and docs
-  map.
+GitHub Pages source lives in `docs/` and is configured for:
+
+- <https://leonardovida.github.io/duckdb-finance/>
+
+- [Getting started](docs/getting_started.md): local build, load, and first
+  pricing queries.
 - [Function reference](docs/function_reference.md): usage and behavior notes for
-  registered `fin_*` functions.
-- [Quant developer guide](docs/quant_developer_guide.md): units, conventions,
-  model boundaries, and reconciliation guidance.
-- [GS Quant-inspired SQL mapping](docs/gs_quant_mapping.md): local SQL analogues
-  for pricing contexts, instruments, measures, scenarios, portfolios, and
-  deterministic fixtures.
-- [Finance SQL playbooks](docs/playbooks.md): runnable workflows for option
-  desks, scenario PnL, rates, portfolios, factors, and microstructure.
+  the `fin_*` function surface.
+- [Performance testing](docs/performance_testing.md): full-surface profiling
+  and focused hot-path benchmark workflow.
+- [GS Quant-inspired SQL mapping](docs/gs_quant_mapping.md): local SQL
+  equivalents for GS Quant-style pricing contexts, instruments, measures,
+  scenarios, portfolios, and golden fixtures.
+- [Quant developer guide](docs/quant_developer_guide.md): assumptions, units,
+  model boundaries, risk conventions, and reconciliation guidance.
+- [Finance SQL playbooks](docs/playbooks.md): complete runnable workflows and
+  their intended use cases.
+- [Extension overview](docs/index.md): API areas, stability notes, and build
+  context.
 - [Development guide](docs/development.md): build, test, extension layout, and
   contribution workflow.
 

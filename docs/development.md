@@ -1,3 +1,11 @@
+---
+layout: default
+title: Development Guide
+description: Build, test, document, and extend DuckDB Finance.
+permalink: /development/
+nav_order: 8
+---
+
 # Development Guide
 
 This guide explains how to build, test, document, and extend DuckDB Finance as a
@@ -7,10 +15,10 @@ standard out-of-tree DuckDB extension.
 
 | Path | Purpose |
 |---|---|
-| `src/scalar.cpp` | Native scalar functions for math, rates, options, cash flows, portfolios, validation, calendars, and GSQ-style descriptors. |
-| `src/aggregate.cpp` | Native aggregate state for metrics such as Sortino, EWMA volatility, drawdowns, outliers, IV rank, and IV percentile. |
-| `src/macros.cpp` | SQL macro registrations and compatibility aliases. |
-| `src/table_functions.cpp` | Table functions and bind-replace SQL generators. |
+| `src/scalar.cpp` and `src/scalar/*.inc` | Native scalar functions for math, rates, options, cash flows, portfolios, validation, calendars, and GSQ-style descriptors. |
+| `src/aggregate.cpp` and `src/aggregate/*.inc` | Native aggregate state for metrics such as Sortino, EWMA volatility, drawdowns, outliers, IV rank, and IV percentile. |
+| `src/macros.cpp` and `src/macros/*.inc` | SQL macro registrations and compatibility aliases. |
+| `src/table_functions.cpp` and `src/table_functions/*.inc` | Table functions and bind-replace SQL generators. |
 | `include/finance/finance_extension.hpp` | Extension registration declarations. |
 | `test/sql/gold_dataset.sql` | Small deterministic fixture tables. |
 | `test/sql/gold_tests.sql` | Assertion-based behavior and edge-case tests. |
@@ -57,8 +65,14 @@ make check
 
 1. `scripts/check_function_docs.py` to confirm registered functions are covered
    in `docs/function_reference.md`.
-2. `make smoke` to load the extension and run broad smoke queries.
-3. `make gold` to run deterministic fixtures and assertions.
+2. `scripts/check_docs_site.py` to confirm the GitHub Pages navigation and
+   publishing workflow are wired.
+3. `scripts/check_function_tests.py` to confirm registered functions are covered
+   by the gold behavior tests.
+4. `scripts/check_function_perf_tests.py` to confirm the profiled gold corpus
+   covers registered functions.
+5. `make smoke` to load the extension and run broad smoke queries.
+6. `make gold` to run deterministic fixtures and assertions.
 
 Manual load:
 

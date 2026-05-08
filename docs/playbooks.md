@@ -1,3 +1,12 @@
+---
+layout: default
+title: Finance SQL Playbooks
+description: Runnable DuckDB Finance workflows for desk-style analysis.
+permalink: /playbooks/
+nav_order: 7
+wide: true
+---
+
 # Finance SQL Playbooks
 
 These playbooks show complete SQL workflows using the `finance` extension. They
@@ -10,7 +19,7 @@ and GSQ-style price and Greek helpers are notional-scaled. Currency labels are
 metadata unless a query explicitly performs FX pricing or conversion.
 
 For model and unit conventions, read the
-[Quant Developer Guide](quant_developer_guide.md) first.
+[Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}) first.
 
 Run the companion SQL file after building the extension:
 
