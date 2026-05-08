@@ -84,14 +84,29 @@ def main() -> int:
             print(f"  {fragment}")
         return 1
 
-    user_specific_paths = []
-    for path in [ROOT / "README.md", ROOT / "CONTRIBUTING.md", *DOCS.glob("*.md")]:
-        if "/Users/leov/" in read(path):
-            user_specific_paths.append(path.relative_to(ROOT))
-    if user_specific_paths:
-        print("Public docs contain user-specific local paths:")
-        for path in user_specific_paths:
-            print(f"  {path}")
+    forbidden_fragments = [
+        "/Users/" + "leov/",
+        "build/debug/" + "extension/finance/finance." + "duckdb_extension",
+        "LOAD '",
+    ]
+    public_doc_paths = [
+        ROOT / "README.md",
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "AGENTS.md",
+        *DOCS.glob("*.md"),
+        *DOCS.glob("_layouts/*.html"),
+        *ROOT.glob("examples/*.sql"),
+    ]
+    docs_with_forbidden_fragments = []
+    for path in public_doc_paths:
+        text = read(path)
+        matches = [fragment for fragment in forbidden_fragments if fragment in text]
+        if matches:
+            docs_with_forbidden_fragments.append((path.relative_to(ROOT), matches))
+    if docs_with_forbidden_fragments:
+        print("Docs contain local extension binary load requirements:")
+        for path, matches in docs_with_forbidden_fragments:
+            print(f"  {path}: {', '.join(matches)}")
         return 1
 
     print(f"Docs site nav covers {len(config_nav_urls())} pages and Pages publishing CI is configured.")

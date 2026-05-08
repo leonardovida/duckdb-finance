@@ -1,6 +1,5 @@
 -- DuckDB Finance playbook examples.
--- Run after loading the extension:
--- LOAD '/Users/leov/workspace/motherduck/duckdb/build/debug/extension/finance/finance.duckdb_extension';
+-- Run after installing and loading the community extension.
 
 CREATE OR REPLACE TEMP TABLE desk_options AS
 SELECT * FROM (VALUES

@@ -88,21 +88,16 @@ make debug DUCKDB_ROOT=/path/to/duckdb
 The Makefile also supports an adjacent `../duckdb` checkout by default for
 contributors who prefer that layout.
 
-## Load A Local Build
+## Validate A Local Build
 
-Start DuckDB with unsigned local extensions enabled:
+Run the local extension tests through the configured DuckDB checkout:
 
 ```sh
-DUCKDB_ROOT=/path/to/duckdb
-$DUCKDB_ROOT/build/debug/duckdb -unsigned
+make test DUCKDB_ROOT=/path/to/duckdb
 ```
 
-Load the built extension:
-
-```sql
-LOAD '/path/to/duckdb/build/debug/extension/finance/finance.duckdb_extension';
-SELECT fin_version();
-```
+For normal use, install the published community extension with `INSTALL finance
+FROM community;` instead of loading a local extension binary directly.
 
 ## Quick Start
 
