@@ -253,31 +253,49 @@ swaption, curve, OIS, and policy-rate datasets. The DuckDB forms operate on
 local SQL series and preserve the market-data parameters as optional metadata
 arguments.
 
+The first argument is always the local numeric series to summarize. Metadata
+arguments such as `swap_tenor`, `benchmark_type`, `expiration_tenor`,
+`termination_tenor`, `source`, and `real_time` are accepted for query
+compatibility and filtering conventions; they do not fetch Marquee data.
+
+```sql
+WITH curve AS (
+  SELECT * FROM (VALUES
+    (DATE '2026-01-02', 'USD-SOFR', '5y', 0.0361),
+    (DATE '2026-01-03', 'USD-SOFR', '5y', 0.0364)
+  ) AS t(as_of_date, benchmark_type, swap_tenor, rate)
+)
+SELECT
+  fin_swap_rate_calc(rate, swap_tenor := swap_tenor, benchmark_type := benchmark_type) AS latest_swap_rate,
+  fin_swap_term_structure(rate, benchmark_type := benchmark_type, tenor := swap_tenor) AS curve_point
+FROM curve;
+```
+
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
-| `fin_basis_swap_spread` | `fin_basis_swap_spread(spread, swap_tenor := NULL, spread_benchmark_type := NULL, spread_tenor := NULL)` | GS Quant basis swap spread compatibility. | Last-value local spread alias. |
-| `fin_basis_swap_term_structure` | `fin_basis_swap_term_structure(spread, spread_benchmark_type := NULL, spread_tenor := NULL, reference_benchmark_type := NULL)` | GS Quant basis swap term-structure compatibility. | Last-value local spread alias. |
-| `fin_index_forward_rate` | `fin_index_forward_rate(rate, forward_start_tenor := NULL, benchmark_type := NULL, fixing_tenor := NULL)` | GS Quant index forward rate compatibility. | Last-value local rate alias. |
-| `fin_instantaneous_forward_rate` | `fin_instantaneous_forward_rate(rate, tenor := NULL, csa := NULL, close_location := NULL)` | GS Quant instantaneous forward rate compatibility. | Last-value local rate alias. |
-| `fin_midcurve_annuity` | `fin_midcurve_annuity(annuity, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve annuity compatibility. | Last-value local annuity alias. |
-| `fin_midcurve_atm_fwd_rate` | `fin_midcurve_atm_fwd_rate(rate, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve ATM forward rate compatibility. | Last-value local rate alias. |
-| `fin_midcurve_premium` | `fin_midcurve_premium(premium, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve premium compatibility. | Last-value local premium alias. |
-| `fin_midcurve_vol` | `fin_midcurve_vol(vol, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | GS Quant midcurve volatility compatibility. | Last-value local vol alias. |
-| `fin_non_usd_ois` | `fin_non_usd_ois(rate, tenor := NULL)` | GS Quant non-USD OIS compatibility. | Last-value local rate alias. |
-| `fin_ois_xccy` | `fin_ois_xccy(rate, tenor := NULL)` | GS Quant OIS xccy compatibility. | Last-value local rate alias. |
-| `fin_ois_xccy_ex_spike` | `fin_ois_xccy_ex_spike(rate, tenor := NULL)` | GS Quant OIS xccy ex-spike compatibility. | Last-value local rate alias. |
-| `fin_policy_rate_expectation` | `fin_policy_rate_expectation(rate, event_type := NULL, rate_type := NULL, meeting_date := NULL)` | GS Quant policy rate expectation compatibility. | Last-value local rate alias. |
-| `fin_policy_rate_term_structure` | `fin_policy_rate_term_structure(rate, event_type := NULL, rate_type := NULL, valuation_date := NULL)` | GS Quant policy rate term-structure compatibility. | Last-value local rate alias. |
-| `fin_swap_annuity` | `fin_swap_annuity(annuity, swap_tenor := NULL, benchmark_type := NULL, floating_rate_tenor := NULL)` | GS Quant swap annuity compatibility. | Last-value local annuity alias. |
-| `fin_swap_rate_calc` | `fin_swap_rate_calc(rate, swap_tenor := NULL, benchmark_type := NULL, floating_rate_tenor := NULL)` | GS Quant swap rate calc compatibility. | Last-value local rate alias. |
-| `fin_swap_term_structure` | `fin_swap_term_structure(rate, benchmark_type := NULL, floating_rate_tenor := NULL, tenor_type := NULL)` | GS Quant swap term-structure compatibility. | Last-value local rate alias. |
-| `fin_swaption_annuity` | `fin_swaption_annuity(annuity, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | GS Quant swaption annuity compatibility. | Last-value local annuity alias. |
-| `fin_swaption_atm_fwd_rate` | `fin_swaption_atm_fwd_rate(rate, expiration_tenor := NULL, termination_tenor := NULL, benchmark_type := NULL)` | GS Quant swaption ATM forward rate compatibility. | Last-value local rate alias. |
-| `fin_swaption_premium` | `fin_swaption_premium(premium, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | GS Quant swaption premium compatibility. | Last-value local premium alias. |
-| `fin_swaption_vol` | `fin_swaption_vol(vol, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | GS Quant swaption volatility compatibility. | Last-value local vol alias. |
-| `fin_swaption_vol_smile` | `fin_swaption_vol_smile(vol, expiration_tenor := NULL, termination_tenor := NULL, pricing_date := NULL)` | GS Quant swaption vol-smile compatibility. | Last-value local vol alias. |
-| `fin_swaption_vol_term` | `fin_swaption_vol_term(vol, tenor_type := NULL, tenor := NULL, relative_strike := 0.0, pricing_date := NULL)` | GS Quant swaption vol-term compatibility. | Last-value local vol alias. |
-| `fin_usd_ois` | `fin_usd_ois(rate, tenor := NULL)` | GS Quant USD OIS compatibility. | Last-value local rate alias. |
+| `fin_basis_swap_spread` | `fin_basis_swap_spread(spread, swap_tenor := NULL, spread_benchmark_type := NULL, spread_tenor := NULL)` | Summarizes a caller-supplied basis-swap spread series for a selected swap tenor and spread/reference benchmark pair. | Returns the latest local spread value; metadata arguments are accepted for GS Quant query-shape compatibility. |
+| `fin_basis_swap_term_structure` | `fin_basis_swap_term_structure(spread, spread_benchmark_type := NULL, spread_tenor := NULL, reference_benchmark_type := NULL)` | Reads a local basis-swap spread curve or term-structure slice. | Returns the latest spread point supplied by the query; tenor and benchmark arguments label/filter the local data upstream. |
+| `fin_index_forward_rate` | `fin_index_forward_rate(rate, forward_start_tenor := NULL, benchmark_type := NULL, fixing_tenor := NULL)` | Summarizes local forward index-rate observations by forward-start tenor, benchmark, and fixing tenor. | Returns the latest rate from the supplied series. |
+| `fin_instantaneous_forward_rate` | `fin_instantaneous_forward_rate(rate, tenor := NULL, csa := NULL, close_location := NULL)` | Summarizes a local instantaneous forward-rate series for a tenor, CSA, and close location. | Returns the latest rate from the supplied series. |
+| `fin_midcurve_annuity` | `fin_midcurve_annuity(annuity, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | Reads a local midcurve option annuity series keyed by expiry, forward tenor, and termination tenor. | Returns the latest annuity value. |
+| `fin_midcurve_atm_fwd_rate` | `fin_midcurve_atm_fwd_rate(rate, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | Reads local midcurve ATM forward-rate observations. | Returns the latest ATM forward rate. |
+| `fin_midcurve_premium` | `fin_midcurve_premium(premium, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | Reads local midcurve option premium observations. | Returns the latest premium value. |
+| `fin_midcurve_vol` | `fin_midcurve_vol(vol, expiration_tenor := NULL, forward_tenor := NULL, termination_tenor := NULL)` | Reads local midcurve volatility observations across expiry, forward tenor, and termination tenor. | Returns the latest volatility value. |
+| `fin_non_usd_ois` | `fin_non_usd_ois(rate, tenor := NULL)` | Summarizes a local non-USD overnight indexed swap rate series. | Returns the latest local OIS rate for the supplied tenor. |
+| `fin_ois_xccy` | `fin_ois_xccy(rate, tenor := NULL)` | Summarizes a local cross-currency OIS basis/rate series. | Returns the latest rate value from the supplied series. |
+| `fin_ois_xccy_ex_spike` | `fin_ois_xccy_ex_spike(rate, tenor := NULL)` | Summarizes a caller-pre-filtered cross-currency OIS series with spike handling performed before the function call. | Returns the latest filtered rate value. |
+| `fin_policy_rate_expectation` | `fin_policy_rate_expectation(rate, event_type := NULL, rate_type := NULL, meeting_date := NULL)` | Reads local policy-rate expectation data for a meeting or event. | Returns the latest expectation rate supplied by the query. |
+| `fin_policy_rate_term_structure` | `fin_policy_rate_term_structure(rate, event_type := NULL, rate_type := NULL, valuation_date := NULL)` | Reads a local policy-rate expectation curve for a valuation date. | Returns the latest curve point supplied by the query. |
+| `fin_swap_annuity` | `fin_swap_annuity(annuity, swap_tenor := NULL, benchmark_type := NULL, floating_rate_tenor := NULL)` | Summarizes local swap annuity observations for a benchmark and floating-rate tenor. | Returns the latest annuity value. |
+| `fin_swap_rate_calc` | `fin_swap_rate_calc(rate, swap_tenor := NULL, benchmark_type := NULL, floating_rate_tenor := NULL)` | Reads local par swap-rate observations using the GS Quant swap-rate call shape. | Returns the latest swap rate from the supplied series. |
+| `fin_swap_term_structure` | `fin_swap_term_structure(rate, benchmark_type := NULL, floating_rate_tenor := NULL, tenor_type := NULL)` | Reads local swap-rate curve points or term-structure observations. | Returns the latest rate point supplied by the query. |
+| `fin_swaption_annuity` | `fin_swaption_annuity(annuity, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | Reads local swaption annuity observations by expiry, termination tenor, and strike offset. | Returns the latest annuity value. |
+| `fin_swaption_atm_fwd_rate` | `fin_swaption_atm_fwd_rate(rate, expiration_tenor := NULL, termination_tenor := NULL, benchmark_type := NULL)` | Reads local swaption ATM forward-rate observations. | Returns the latest ATM forward rate. |
+| `fin_swaption_premium` | `fin_swaption_premium(premium, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | Reads local swaption premium observations by expiry, termination tenor, and strike offset. | Returns the latest premium value. |
+| `fin_swaption_vol` | `fin_swaption_vol(vol, expiration_tenor := NULL, termination_tenor := NULL, relative_strike := 0.0)` | Reads local swaption volatility observations by expiry, termination tenor, and strike offset. | Returns the latest volatility value. |
+| `fin_swaption_vol_smile` | `fin_swaption_vol_smile(vol, expiration_tenor := NULL, termination_tenor := NULL, pricing_date := NULL)` | Reads local swaption smile observations for an expiry, termination tenor, pricing date, and strike offset. | Returns the latest smile volatility point. |
+| `fin_swaption_vol_term` | `fin_swaption_vol_term(vol, tenor_type := NULL, tenor := NULL, relative_strike := 0.0, pricing_date := NULL)` | Reads local swaption volatility term-structure observations. | Returns the latest volatility term point. |
+| `fin_usd_ois` | `fin_usd_ois(rate, tenor := NULL)` | Summarizes a local USD overnight indexed swap rate series. | Returns the latest local USD OIS rate for the supplied tenor. |
 
 ### GS Quant Data Vendor And Risk Model Compatibility
 
