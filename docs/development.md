@@ -15,7 +15,7 @@ standard out-of-tree DuckDB extension.
 
 | Path | Purpose |
 |---|---|
-| `src/scalar.cpp` and `src/scalar/*.inc` | Native scalar functions for math, rates, options, cash flows, portfolios, validation, calendars, and GSQ-style descriptors. |
+| `src/scalar.cpp` and `src/scalar/*.inc` | Native scalar functions for math, rates, options, cash flows, portfolios, validation, calendars, and compatibility structs. |
 | `src/aggregate.cpp` and `src/aggregate/*.inc` | Native aggregate state for metrics such as Sortino, EWMA volatility, drawdowns, outliers, IV rank, and IV percentile. |
 | `src/macros.cpp` and `src/macros/*.inc` | SQL macro registrations and compatibility aliases. |
 | `src/table_functions.cpp` and `src/table_functions/*.inc` | Table functions and bind-replace SQL generators. |

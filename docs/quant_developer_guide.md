@@ -39,7 +39,7 @@ unless it has been independently reconciled to the desk's official model stack.
 | Rates | Rates are decimal annualized rates. A 5bp shock is `0.0005` or `5.0` when a function takes bps. |
 | Option time | `ttm` is year fraction. The caller owns day-count and calendar conversion. |
 | Discounting | Local option helpers use continuous-rate formulas where the underlying primitive does. |
-| Notional | GSQ-style instrument helpers scale price and Greeks by `notional`. |
+| Notional | Core model helpers return per-unit values unless the function explicitly accepts or applies notional. |
 | Currency | Currency fields are labels. No FX conversion is performed unless the query explicitly prices an FX instrument or applies an FX conversion. |
 | Portfolio aggregation | Portfolio helpers aggregate supplied values and risks. They do not net Greeks across different units without caller normalization. |
 | NULLs | Functions generally follow DuckDB semantics. Validate upstream inputs where missing data should fail a workflow. |
@@ -50,8 +50,8 @@ The library deliberately exposes compact primitives, not hidden calibration:
 
 - BSM, Black-76, Bachelier, digital, barrier, SABR, and SVI helpers operate on
   caller-supplied model inputs.
-- Rates and credit GSQ-style helpers are deterministic approximations: annuity x
-  spread, Black-76 on a forward rate or spread, and scalar curve shocks.
+- Rates and credit helpers are deterministic approximations: annuity x spread,
+  Black-76 on a forward rate or spread, and scalar curve shocks.
 - Scenario helpers transform scalar inputs. They do not rebuild curves, surfaces,
   or dependency graphs.
 - Portfolio helpers are row aggregators. They do not perform official risk
@@ -91,27 +91,27 @@ The repository follows that pattern with `test/sql/gold_dataset.sql` and
 
 ## Query Design Patterns
 
-Prefer CTEs that make the economic object explicit:
+Prefer CTEs that make the economic inputs explicit:
 
 ```sql
-WITH instrument AS (
-  SELECT fin_gsq_eq_option('call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20) AS inst
+WITH option_inputs AS (
+  SELECT 'call' AS kind, 100.0 AS spot, 100.0 AS strike, 1.0 AS ttm, 0.05 AS rate, 0.20 AS vol
 )
 SELECT
-  fin_gsq_eq_option_price(inst) AS pv,
-  fin_gsq_eq_delta(inst) AS delta,
-  fin_gsq_eq_vega(inst) AS vega
-FROM instrument;
+  fin_bsm_price(kind, spot, strike, ttm, rate, vol) AS pv,
+  fin_bsm_delta(kind, spot, strike, ttm, rate, vol) AS delta,
+  fin_bsm_vega(kind, spot, strike, ttm, rate, vol) AS vega
+FROM option_inputs;
 ```
 
 For scenario work, separate base inputs, shocked inputs, and comparison:
 
 ```sql
 WITH base AS (
-  SELECT 0.04 AS par_rate, fin_gsq_curve_scenario(5.0, 0.0, 0.0, 30.0, 15.0) AS scenario
+  SELECT 0.04 AS par_rate, 0.0005 AS parallel_shift
 ),
 shocked AS (
-  SELECT par_rate, fin_gsq_curve_scenario_rate(par_rate, 5.0, scenario) AS shocked_par_rate
+  SELECT par_rate, par_rate + parallel_shift AS shocked_par_rate
   FROM base
 )
 SELECT par_rate, shocked_par_rate, shocked_par_rate - par_rate AS rate_move
@@ -132,8 +132,8 @@ WITH normalized AS (
 )
 SELECT
   portfolio_id,
-  fin_gsq_portfolio_value(pv, quantity) AS portfolio_pv,
-  fin_gsq_portfolio_risk(risk_usd_per_bp, quantity) AS portfolio_dv01_usd
+  sum(pv * quantity) AS portfolio_pv,
+  sum(risk_usd_per_bp * quantity) AS portfolio_dv01_usd
 FROM normalized
 GROUP BY portfolio_id;
 ```

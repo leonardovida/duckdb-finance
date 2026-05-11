@@ -15,19 +15,31 @@ local, inspectable analytics in DuckDB without an external pricing service.
 
 The examples assume market inputs are already normalized. Rates and returns are
 decimals, vols are annualized decimals, option `ttm` values are year fractions,
-and GSQ-style price and Greek helpers are notional-scaled. Currency labels are
-metadata unless a query explicitly performs FX pricing or conversion.
+and currency labels are metadata unless a query explicitly performs FX pricing
+or conversion.
 
 For model and unit conventions, read the
 [Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}) first.
 
-Run the companion SQL file after installing and loading the extension:
+Run the companion SQL file from a checkout of this repository after installing
+and loading the published extension:
 
 ```sql
 INSTALL finance FROM community;
 LOAD finance;
 .read examples/playbooks.sql
 ```
+
+Until the community package is published, build and validate through the local
+Makefile flow:
+
+```sh
+make debug DUCKDB_ROOT=/path/to/duckdb
+make smoke DUCKDB_ROOT=/path/to/duckdb
+```
+
+The `.read examples/playbooks.sql` path is relative to the repository checkout
+where the DuckDB shell is running.
 
 ## Playbook 1: Equity Option Desk Snapshot
 
@@ -41,28 +53,21 @@ SELECT * FROM (VALUES
   ('SX5E_OTM_PUT', 'put', 'SX5E', 4100.0, 4200.0, 0.75, 0.025, 0.220, 0.015, 5.0, 'EUR')
 ) AS t(trade_id, kind, underlier, spot, strike, ttm, rate, vol, dividend_yield, notional, currency);
 
-WITH instruments AS (
-  SELECT
-    trade_id,
-    fin_gsq_eq_option(kind, underlier, spot, strike, ttm, rate, vol, dividend_yield, notional, currency) AS inst
-  FROM desk_options
-)
 SELECT
   trade_id,
-  inst.underlier,
-  inst.currency,
-  fin_gsq_eq_option_price(inst) AS price,
-  fin_gsq_eq_delta(inst) AS delta,
-  fin_gsq_eq_gamma(inst) AS gamma,
-  fin_gsq_eq_vega(inst) AS vega
-FROM instruments
+  underlier,
+  currency,
+  notional * fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield) AS price,
+  notional * fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield) AS delta,
+  notional * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield) AS gamma,
+  notional * fin_bsm_vega(kind, spot, strike, ttm, rate, vol, dividend_yield) AS vega
+FROM desk_options
 ORDER BY trade_id;
 ```
 
-Desk note: this is a transparent local equivalent of a GS Quant-style
-instrument and risk loop. The model inputs are explicit: spot, strike, year
-fraction, rate, vol, dividend yield, notional, and currency. Reconcile the
-returned Vega unit before mixing it with a vendor or desk risk report.
+Desk note: the model inputs are explicit: spot, strike, year fraction, rate,
+vol, dividend yield, notional, and currency. Reconcile the returned Vega unit
+before mixing it with a vendor or desk risk report.
 
 ## Playbook 2: Cross-Asset Portfolio Rollup
 
@@ -80,15 +85,15 @@ SELECT * FROM (VALUES
 
 SELECT
   portfolio_id,
-  fin_gsq_portfolio_value(value, quantity) AS portfolio_value,
-  fin_gsq_portfolio_risk(risk, quantity) AS portfolio_risk
+  sum(value * quantity) AS portfolio_value,
+  sum(risk * quantity) AS portfolio_risk
 FROM portfolio_lines
 GROUP BY portfolio_id;
 ```
 
-Desk note: `fin_gsq_portfolio_risk` is an arithmetic aggregator. It assumes the
-input risk column is already in a common unit such as USD PnL under a named
-scenario, USD DV01, or another explicitly normalized quantity.
+Desk note: this assumes the input risk column is already in a common unit such
+as USD PnL under a named scenario, USD DV01, or another explicitly normalized
+quantity.
 
 ## Playbook 3: Scenario PnL Explain
 
@@ -98,30 +103,29 @@ Taylor approximation.
 ```sql
 WITH base AS (
   SELECT
-    fin_gsq_eq_option('call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20, 0.0, 1.0, 'USD') AS inst,
-    fin_gsq_market_data_shock('Proportional', 0.05) AS spot_shock
+    'call' AS kind,
+    100.0 AS spot,
+    100.0 AS strike,
+    1.0 AS ttm,
+    0.05 AS rate,
+    0.20 AS vol,
+    0.0 AS dividend_yield,
+    0.05 AS spot_shock
 ),
 shocked AS (
   SELECT
-    inst,
-    inst.spot AS base_spot,
-    fin_gsq_apply_shock(inst.spot, spot_shock) AS shocked_spot
+    *,
+    spot * (1.0 + spot_shock) AS shocked_spot
   FROM base
 )
 SELECT
-  fin_gsq_eq_option_price(inst) AS base_price,
-  fin_gsq_eq_option_price(
-    fin_gsq_eq_option(inst.kind, inst.underlier, shocked_spot, inst.strike, inst.ttm, inst.rate, inst.vol, inst.dividend_yield, inst.notional, inst.currency)
-  ) AS shocked_price,
-  fin_gsq_scenario_pnl(
-    fin_gsq_eq_option_price(inst),
-    fin_gsq_eq_option_price(fin_gsq_eq_option(inst.kind, inst.underlier, shocked_spot, inst.strike, inst.ttm, inst.rate, inst.vol, inst.dividend_yield, inst.notional, inst.currency))
-  ) AS full_reval_pnl,
-  fin_gsq_delta_gamma_pnl(
-    fin_gsq_eq_delta(inst),
-    fin_gsq_eq_gamma(inst),
-    shocked_spot - base_spot
-  ) AS delta_gamma_pnl
+  fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield) AS base_price,
+  fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield) AS shocked_price,
+  fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield)
+    - fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield) AS full_reval_pnl,
+  fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield) * (shocked_spot - spot)
+    + 0.5 * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield)
+      * (shocked_spot - spot) * (shocked_spot - spot) AS delta_gamma_pnl
 FROM shocked;
 ```
 
@@ -135,27 +139,23 @@ Goal: apply a curve scenario to a par rate and revalue a simple receive-fixed
 swap PV.
 
 ```sql
-WITH scenario AS (
-  SELECT fin_gsq_curve_scenario(5.0, 10.0, 0.0, 30.0, 15.0) AS shock
-),
-swap_inputs AS (
+WITH swap_inputs AS (
   SELECT
     0.045 AS fixed_rate,
     0.040 AS par_rate,
+    0.0005 AS parallel_shift,
     4.5 AS annuity,
     1000000.0 AS notional
 )
 SELECT
   par_rate AS base_par_rate,
-  fin_gsq_curve_scenario_rate(par_rate, 5.0, shock) AS shocked_par_rate,
-  fin_gsq_ir_swap_price(fin_gsq_ir_swap('Receive', '5y', 'USD', fixed_rate, par_rate, annuity, notional)) AS base_pv,
-  fin_gsq_ir_swap_price(
-    fin_gsq_ir_swap('Receive', '5y', 'USD', fixed_rate, fin_gsq_curve_scenario_rate(par_rate, 5.0, shock), annuity, notional)
-  ) AS shocked_pv
-FROM swap_inputs, scenario;
+  par_rate + parallel_shift AS shocked_par_rate,
+  (fixed_rate - par_rate) * annuity * notional AS base_pv,
+  (fixed_rate - (par_rate + parallel_shift)) * annuity * notional AS shocked_pv
+FROM swap_inputs;
 ```
 
-Desk note: this helper shocks a scalar par rate. It does not rebuild an
+Desk note: this query shocks a scalar par rate. It does not rebuild an
 interpolated discount curve, project cash flows, or apply day-count conventions.
 Use it as a deterministic rates what-if, not as a replacement for a full rates
 library.

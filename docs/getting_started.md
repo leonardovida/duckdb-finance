@@ -1,17 +1,21 @@
 ---
 layout: default
 title: Getting Started
-description: Install, load, and run the DuckDB Finance extension.
+description: Run first pricing and risk queries with DuckDB Finance.
 permalink: /getting-started/
 nav_order: 2
 ---
 
 # Getting Started
 
-<p class="lead">Install <code>finance</code> like a DuckDB community extension, load it, and run
-SQL-native pricing and risk queries directly in DuckDB.</p>
+<p class="lead">Run a first set of SQL-native pricing and risk queries with an already loadable
+<code>finance</code> extension.</p>
 
-## Install And Load
+## Before You Start
+
+This tutorial assumes DuckDB can already load `finance`.
+
+The intended public install path is DuckDB Community Extensions:
 
 After `finance` is published in the DuckDB Community Extensions repository, use
 DuckDB's standard community extension flow:
@@ -22,12 +26,25 @@ LOAD finance;
 SELECT fin_version();
 ```
 
-Community extensions are built and signed by DuckDB's community extension CI, so
-normal users should not need a local DuckDB source checkout or an unsigned local
-extension binary.
+Until that package is published, use the source-build path from a repository
+checkout:
 
-Until the community package is published, build from source using the
-[Development Guide]({{ '/development/' | relative_url }}).
+```sh
+git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
+git clone https://github.com/leonardovida/duckdb-finance.git /path/to/duckdb-finance
+cd /path/to/duckdb-finance
+make debug DUCKDB_ROOT=/path/to/duckdb
+```
+
+For source builds, the repository Makefile handles unsigned local extension
+loading for validation:
+
+```sh
+make smoke DUCKDB_ROOT=/path/to/duckdb
+```
+
+See [Installation]({{ '/installation/' | relative_url }}) for the practical
+install and build paths.
 
 ## First Queries
 
@@ -42,6 +59,9 @@ SELECT
 FROM (VALUES (0.01), (-0.02), (0.03)) AS t(r);
 ```
 
+Expected shape: one row with `simple_return` near `0.05`, `total_return` near
+`0.019494`, volatility near `0.3995`, and a positive Sharpe ratio.
+
 Options and implied volatility:
 
 ```sql
@@ -50,6 +70,9 @@ SELECT
   (fin_bsm_greeks('call', 100, 100, 1, 0.05, 0.20)).delta AS delta,
   fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05) AS implied_vol;
 ```
+
+Expected shape: one row with price near `10.450584`, delta near `0.636831`,
+and implied volatility near `0.20`.
 
 Fixed income and cash flows:
 
@@ -81,19 +104,6 @@ SELECT *
 FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
 ```
 
-GS Quant-inspired descriptors:
-
-```sql
-WITH option AS (
-  SELECT fin_gsq_eq_option('call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20) AS inst
-)
-SELECT
-  fin_gsq_eq_option_price(inst) AS price,
-  fin_gsq_eq_delta(inst) AS delta,
-  fin_gsq_eq_vega(inst) AS vega
-FROM option;
-```
-
 ## What To Read Next
 
 - [Installation]({{ '/installation/' | relative_url }}) for the community
@@ -104,3 +114,5 @@ FROM option;
   model boundaries, units, and risk aggregation conventions.
 - [Finance SQL Playbooks]({{ '/playbooks/' | relative_url }}) for complete
   desk-style workflows.
+- [Compatibility Notes]({{ '/gs-quant-mapping/' | relative_url }}) when porting
+  an existing compatibility-shaped workflow.

@@ -21,6 +21,7 @@ docs:
     DuckDB Finance adds SQL-native quant finance analytics to DuckDB under the
     fin_ namespace. It includes return and risk analytics, option pricing and
     Greeks, fixed-income and cash-flow helpers, portfolio math, technical
-    indicators, table functions, and GS Quant-inspired local workflow helpers.
+    indicators, table functions, and local compatibility helpers for ported
+    finance workflows.
     The extension is deterministic and local: it does not call Goldman Sachs,
     market-data vendors, or remote pricing services.

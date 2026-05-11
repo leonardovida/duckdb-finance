@@ -17,9 +17,12 @@ The public API lives in the `fin_` namespace and uses ordinary DuckDB types:
 It is built for local research, CI fixtures, scenario checks, desk sanity
 checks, and SQL-native portfolio analytics.
 
+Until the community package is published, build from source with a DuckDB
+checkout. The community install flow shown in the installation guide is the
+intended public path after upstream acceptance.
+
 ```sql
-INSTALL finance FROM community;
-LOAD finance;
+-- After loading finance:
 
 SELECT
   fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
@@ -36,7 +39,7 @@ SELECT
   </a>
   <a class="doc-link" href="{{ '/installation/' | relative_url }}">
     <strong>Installation</strong>
-    <span>Install from DuckDB Community Extensions or build from source for development.</span>
+    <span>Build from source today or install from DuckDB Community Extensions after publication.</span>
   </a>
   <a class="doc-link" href="{{ '/function-reference/' | relative_url }}">
     <strong>Function Reference</strong>
@@ -51,8 +54,8 @@ SELECT
     <span>Read the units, model boundaries, risk conventions, and reconciliation guidance.</span>
   </a>
   <a class="doc-link" href="{{ '/gs-quant-mapping/' | relative_url }}">
-    <strong>GS Quant Mapping</strong>
-    <span>Map familiar pricing-and-risk workflows to local DuckDB SQL helpers.</span>
+    <strong>Compatibility</strong>
+    <span>Understand the boundaries for compatibility helpers and ported workflows.</span>
   </a>
   <a class="doc-link" href="{{ '/playbooks/' | relative_url }}">
     <strong>Finance SQL Playbooks</strong>
@@ -73,7 +76,7 @@ SELECT
 | Options and volatility | BSM, Black-76, Bachelier, binomial, digital, Asian geometric, barrier, SABR, SVI, Greeks, higher-order Greeks, and implied-vol solvers. |
 | Fixed income and cash flows | Day count, discount factors, forward rates, PV/FV, NPV/IRR/XIRR/MIRR, annuities, bond price/YTM/duration/convexity/DV01, and curve helpers. |
 | Portfolio analytics | Vector and matrix helpers, portfolio return/variance/volatility/Sharpe, equal and inverse-vol weights, optimizer table functions, HRP fallback weights, efficient-frontier points, and rebalance trades. |
-| GS Quant-inspired workflows | SQL-native descriptors for pricing contexts, instruments, measures, scenarios, and portfolio aggregation. |
+| Compatibility helpers | Local aliases and focused struct helpers for porting existing finance workflows. |
 | Time series and technical indicators | Rolling aggregate macros, OHLC/OHLCV, TA-style indicators, candlestick aliases, grid functions, and bars. |
 | Market microstructure | Mid, spread, spread bps, microprice, order imbalance, trade sign, VWAP/TWAP, bar construction, and impact proxies. |
 | Validation and schema helpers | OHLC validation, return validation, finite/price checks, convention parsers, schema templates, and schema validation scaffolding. |
@@ -105,13 +108,12 @@ stack before relying on them for trading, valuation, or risk sign-off.
 | `test/sql/gold_dataset.sql` and `test/sql/gold_tests.sql` | Deterministic behavior coverage for the function surface. |
 | `docs/function_reference.md` | Source-derived function reference with usage, purpose, returns, and examples. |
 
-## GS Quant-Inspired Surface
+## Compatibility Layer
 
-The GS Quant-inspired layer is documented in
-[GS Quant-Inspired SQL Mapping](gs_quant_mapping.md). It follows the shape of GS
-Quant pricing-and-risk workflows while remaining local to DuckDB: no Goldman
-Sachs API calls, sessions, entitlements, or remote market-data dependencies are
-required.
+The compatibility layer is documented in
+[Compatibility Notes](gs_quant_mapping.md). It preserves familiar finance helper
+names and focused struct shapes where they make sense in SQL, while keeping all
+analytics local to DuckDB.
 
 These helpers are not affiliated with Goldman Sachs and do not use GS APIs,
 sessions, entitlements, or market data.

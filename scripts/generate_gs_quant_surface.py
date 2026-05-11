@@ -11,16 +11,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GS_QUANT_ROOT = ROOT.parent / "gs-quant" / "gs_quant"
 
-SURFACE_CSV = ROOT / "docs" / "gs_quant_surface.csv"
+SURFACE_CSV = ROOT / "test" / "fixtures" / "gs_quant_surface.csv"
 MACRO_INC = ROOT / "src" / "macros" / "gs_quant_surface.inc"
-FUNCTION_REFERENCE = ROOT / "docs" / "function_reference.md"
-GS_MAPPING = ROOT / "docs" / "gs_quant_mapping.md"
 GOLD_TESTS = ROOT / "test" / "sql" / "gold_tests.sql"
 
-REFERENCE_BEGIN = "<!-- BEGIN GENERATED GS QUANT SURFACE REFERENCE -->"
-REFERENCE_END = "<!-- END GENERATED GS QUANT SURFACE REFERENCE -->"
-MAPPING_BEGIN = "<!-- BEGIN GENERATED GS QUANT SURFACE SUMMARY -->"
-MAPPING_END = "<!-- END GENERATED GS QUANT SURFACE SUMMARY -->"
 TEST_BEGIN = "-- BEGIN GENERATED GS QUANT SURFACE TESTS"
 TEST_END = "-- END GENERATED GS QUANT SURFACE TESTS"
 
@@ -256,56 +250,6 @@ def replace_block(text: str, begin: str, end: str, block: str, insert_before: st
     return text.rstrip() + "\n\n" + replacement + "\n"
 
 
-def write_function_reference(rows: list[SurfaceRow]) -> None:
-    generated = [row for row in rows if row.status == "generated_descriptor"]
-    block_lines = [
-        "## GS Quant Source Descriptors",
-        "",
-        "These generated descriptor functions account for GS Quant public top-level helpers that do not have a hand-written local DuckDB analogue. They are deterministic local payload records: callers can pass local JSON, structs, or scalar values as `payload`, and DuckDB Finance returns that payload with source metadata. DuckDB Finance does not call GS Quant, Marquee, sessions, entitlements, or pandas runtime code.",
-        "",
-        "| Function | Usage | Purpose | Returns / notes |",
-        "|---|---|---|---|",
-    ]
-    for row in generated:
-        purpose = f"Local descriptor for `{row.source_path}` `{row.function}`."
-        returns = f"STRUCT with source path, source function, canonical function, status, category, and payload. Category: `{row.category}`."
-        block_lines.append(f"| `{row.canonical}` | `{row.canonical}(payload := NULL)` | {purpose} | {returns} |")
-    text = replace_block(
-        read(FUNCTION_REFERENCE),
-        REFERENCE_BEGIN,
-        REFERENCE_END,
-        "\n".join(block_lines),
-        insert_before="### GS Quant-Inspired Examples",
-    )
-    write_if_changed(FUNCTION_REFERENCE, text)
-
-
-def write_mapping_summary(rows: list[SurfaceRow]) -> None:
-    counts: dict[tuple[str, str], int] = {}
-    for row in rows:
-        counts[(row.category, row.status)] = counts.get((row.category, row.status), 0) + 1
-    block_lines = [
-        "## Full Source-Surface Audit",
-        "",
-        f"The checked GS Quant AST surface contains {len(rows)} public top-level functions. The generated manifest at [`gs_quant_surface.csv`](gs_quant_surface.csv) maps every source path and function to a DuckDB Finance canonical analogue, a `gs_*` source lookup alias, coverage status, category, and notes.",
-        "",
-        "| Category | Native mappings | Generated descriptors |",
-        "|---|---:|---:|",
-    ]
-    for category in sorted({row.category for row in rows}):
-        native = counts.get((category, "native"), 0)
-        generated = counts.get((category, "generated_descriptor"), 0)
-        block_lines.append(f"| `{category}` | {native} | {generated} |")
-    block_lines.extend(
-        [
-            "",
-            "Generated descriptors are explicit local payload analogues for helpers whose Python implementation depends on GS Quant SDK runtime objects, authenticated Marquee calls, pandas index behavior, or test scaffolding. They keep the source surface discoverable and tested, accept caller-supplied local payloads, and preserve the rule that DuckDB Finance remains local and deterministic.",
-        ]
-    )
-    text = replace_block(read(GS_MAPPING), MAPPING_BEGIN, MAPPING_END, "\n".join(block_lines))
-    write_if_changed(GS_MAPPING, text)
-
-
 def write_gold_tests(rows: list[SurfaceRow]) -> None:
     generated = [row for row in rows if row.status == "generated_descriptor"]
     block_lines = [
@@ -334,8 +278,6 @@ def main() -> int:
     rows = build_rows(source)
     write_manifest(rows)
     write_macros(rows)
-    write_function_reference(rows)
-    write_mapping_summary(rows)
     write_gold_tests(rows)
     print(f"Generated GS Quant surface coverage for {len(rows)} public top-level functions.")
     return 0

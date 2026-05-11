@@ -8,11 +8,13 @@ validation checks without sending data to a pricing service or hiding model
 assumptions behind an SDK session.
 
 It is built for quant developers, desk strategists, risk engineers, and finance
-users who want deterministic local analytics close to the data.
+users who want deterministic local analytics close to the data. Until the
+community package is published, build from source as described below; the
+`INSTALL finance FROM community` flow is the intended public distribution path
+after acceptance into DuckDB Community Extensions.
 
 ```sql
-INSTALL finance FROM community;
-LOAD finance;
+-- After loading finance:
 
 SELECT
   fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
@@ -32,18 +34,17 @@ DuckDB:
 - Aggregate portfolios with explicit caller-owned units and assumptions.
 - Build table-function workflows for calendars, option chains, efficient
   frontiers, factor reports, bars, and grids.
-- Use GS Quant-inspired local descriptors for pricing contexts, instruments,
-  measures, scenarios, and portfolios without Goldman Sachs APIs, sessions, or
-  entitled market data.
+- Keep compatibility helpers local and deterministic when porting existing
+  finance workflows.
 
 All public functions live in the `fin_` namespace and use ordinary DuckDB types:
 `DOUBLE`, `DATE`, `TIMESTAMP`, `VARCHAR`, `STRUCT`, `LIST`, and table results.
 
 ## 60 Seconds: How To Price And Risk An Option
 
-Prerequisite: DuckDB with the `finance` extension installed. The community
-extension install path below is the intended user flow; until publication, use
-the source build in [Installation](docs/installation.md).
+Prerequisite: DuckDB with the `finance` extension loaded. The community
+extension install path below is the intended user flow after publication; today,
+use the source build in [Installation](docs/installation.md).
 
 1. Install and load the extension.
 
@@ -60,22 +61,6 @@ the source build in [Installation](docs/installation.md).
      fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS price,
      (fin_bsm_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.20)).delta AS delta,
      (fin_bsm_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.20)).vega AS vega;
-   ```
-
-3. Wrap the same inputs in a local GS Quant-style descriptor when you want the
-   instrument specification to travel with the query.
-
-   ```sql
-   WITH option AS (
-     SELECT fin_gsq_eq_option(
-       'call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20, 0.0, 10.0, 'USD'
-     ) AS inst
-   )
-   SELECT
-     fin_gsq_eq_option_price(inst) AS pv,
-     fin_gsq_eq_delta(inst) AS delta,
-     fin_gsq_eq_vega(inst) AS vega
-   FROM option;
    ```
 
 Expected result: scalar price and risk columns you can join, aggregate, test,
@@ -106,7 +91,7 @@ The extension is local and deterministic:
 
 - It does not call Goldman Sachs, GS Quant, Marquee, market-data vendors, or any
   remote pricing service.
-- GS Quant-inspired names are SQL analogues for familiar pricing-and-risk
+- Compatibility names are local SQL analogues for familiar pricing-and-risk
   workflows.
 - Some broad catalog entries are pragmatic v1 aliases or approximations. Those
   entries are documented and tested so stronger implementations can replace them
@@ -139,7 +124,8 @@ The Makefile also supports an adjacent `../duckdb` checkout by default.
 
 ## More Examples
 
-Run the finance playbooks after loading the extension:
+Run the finance playbooks from this repository checkout after loading the
+extension:
 
 ```sql
 INSTALL finance FROM community;
@@ -147,13 +133,16 @@ LOAD finance;
 .read examples/playbooks.sql
 ```
 
+For current source builds, use `make smoke DUCKDB_ROOT=/path/to/duckdb` or run
+the same SQL file from a DuckDB shell that has loaded the local unsigned
+extension.
+
 Useful starting points:
 
 - [Getting Started](docs/getting_started.md): first pricing and risk queries.
 - [Finance SQL Playbooks](docs/playbooks.md): runnable desk-style workflows.
-- [GS Quant-Inspired SQL Mapping](docs/gs_quant_mapping.md): local SQL mappings
-  for pricing contexts, instruments, measures, scenarios, portfolios, and
-  golden fixtures.
+- [Compatibility Notes](docs/gs_quant_mapping.md): boundaries for compatibility
+  helpers and ported workflows.
 - [Quant Developer Guide](docs/quant_developer_guide.md): units, model
   boundaries, risk conventions, and reconciliation guidance.
 

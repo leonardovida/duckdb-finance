@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import csv
 import re
 import sys
 from pathlib import Path
@@ -31,16 +32,29 @@ def registered_functions() -> set[str]:
     return functions
 
 
+def generated_source_descriptors() -> set[str]:
+    manifest = ROOT / "test" / "fixtures" / "gs_quant_surface.csv"
+    if not manifest.exists():
+        return set()
+    with manifest.open(newline="", encoding="utf-8") as handle:
+        return {
+            row["canonical"]
+            for row in csv.DictReader(handle)
+            if row.get("status") == "generated_descriptor"
+        }
+
+
 def main() -> int:
     docs = read(ROOT / "docs" / "function_reference.md")
     documented = set(re.findall(r"`(fin_[A-Za-z0-9_]+)`", docs))
-    missing = sorted(function for function in registered_functions() if function not in documented)
+    public_functions = registered_functions().difference(generated_source_descriptors())
+    missing = sorted(function for function in public_functions if function not in documented)
     if missing:
         print("Missing function reference entries:")
         for function in missing:
             print(f"  {function}")
         return 1
-    print(f"Function reference covers {len(registered_functions())} registered functions.")
+    print(f"Function reference covers {len(public_functions)} public registered functions.")
     return 0
 
 
