@@ -9,7 +9,7 @@ GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 
-.PHONY: debug release test smoke gold perf check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -20,8 +20,14 @@ release:
 smoke: debug
 	{ printf "LOAD '$(EXTENSION_PATH)';\n"; cat $(SMOKE_SQL); } | $(DUCKDB) -unsigned
 
+smoke-quiet: debug
+	{ printf "LOAD '$(EXTENSION_PATH)';\n"; cat $(SMOKE_SQL); } | $(DUCKDB) -unsigned >/dev/null
+
 gold: debug
 	{ printf "LOAD '$(EXTENSION_PATH)';\n"; cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned
+
+gold-quiet: debug
+	{ printf "LOAD '$(EXTENSION_PATH)';\n"; cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned >/dev/null
 
 perf: debug
 	{ printf "LOAD '$(EXTENSION_PATH)';\n"; printf "PRAGMA enable_profiling='json';\nPRAGMA profiling_output='$(PERF_OUTPUT)';\n"; cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned
@@ -44,6 +50,8 @@ check-gs-quant-surface:
 	python3 scripts/check_gs_quant_surface.py
 
 check: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface test
+
+ci: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface gold-quiet
 
 clean:
 	cmake --build $(BUILD_DIR) --target clean
