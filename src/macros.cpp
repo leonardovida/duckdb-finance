@@ -57,7 +57,7 @@ static bool IsLoadTimeSafeMacro(const FinanceMacro &macro) {
 		return false;
 	}
 	return !Contains(macro.definition, "OVER") && !Contains(macro.definition, "->") &&
-	       !Contains(macro.definition, "generate_series") && !Contains(macro.definition, "lambda :=") &&
+	       !Contains(macro.definition, "generate_series(") && !Contains(macro.definition, "lambda :=") &&
 	       !Contains(macro.definition, "fin_delta(");
 }
 
@@ -68,6 +68,7 @@ static const FinanceMacro FINANCE_MACROS[] = {
 #include "macros/statistics_specs_portfolio.inc"
 #include "macros/compatibility.inc"
 #include "macros/gsq.inc"
+#include "macros/gs_quant_surface.inc"
     {nullptr, nullptr}};
 
 static const char *CDL_PATTERNS[] = {

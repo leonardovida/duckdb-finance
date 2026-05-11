@@ -14,11 +14,14 @@ The extension keeps two layers of performance coverage:
    profiling enabled. Because `scripts/check_function_tests.py` and
    `scripts/check_function_perf_tests.py` both verify that every registered
    `fin_*` function is referenced by `test/sql/gold_tests.sql`, this gives every
-   function at least one profiled execution.
+   function at least one profiled execution. The generated GS Quant surface
+   block in the same corpus also profiles every `gs_*` source lookup alias and
+   generated descriptor analogue.
 2. `examples/hot_path_benchmark.sql` contains heavier benchmark queries for the
    highest-volume model families, including option pricing and Greeks, binomial
-   pricing, bond analytics, cash-flow solvers, curve helpers, and portfolio
-   math.
+   pricing, bond analytics, cash-flow solvers, curve helpers, portfolio math,
+   returns/risk aggregates, date/calendar helpers, and GS Quant JSON,
+   backtest, and risk payload analogues.
 
 Run the full function-surface profile:
 
@@ -56,6 +59,10 @@ LOAD finance;
   referenced by the gold behavior tests.
 - `scripts/check_function_perf_tests.py`, which verifies the profiled corpus
   used by `make perf` covers every registered function.
+- `scripts/check_gs_quant_surface.py`, which verifies the checked GS Quant
+  source manifest, canonical analogues, compatibility aliases, docs entries,
+  gold-test references, and perf-path coverage. When a sibling GS Quant checkout
+  is present, it parses `gs_quant/**/*.py` and checks for source drift.
 - The DuckDB-backed smoke and gold SQL suites.
 
 The GitHub Pages workflow publishes the `docs/` site from `main`, so this page

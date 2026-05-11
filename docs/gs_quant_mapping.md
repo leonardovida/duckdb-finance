@@ -249,3 +249,23 @@ For only the deterministic golden dataset:
 ```sh
 make gold
 ```
+
+<!-- BEGIN GENERATED GS QUANT SURFACE SUMMARY -->
+## Full Source-Surface Audit
+
+The checked GS Quant AST surface contains 1641 public top-level functions. The generated manifest at [`gs_quant_surface.csv`](gs_quant_surface.csv) maps every source path and function to a DuckDB Finance canonical analogue, a `gs_*` source lookup alias, coverage status, category, and notes.
+
+| Category | Native mappings | Generated descriptors |
+|---|---:|---:|
+| `api_query` | 0 | 49 |
+| `backtests` | 0 | 14 |
+| `content` | 0 | 21 |
+| `datetime` | 12 | 0 |
+| `json_encoding` | 0 | 73 |
+| `risk` | 0 | 33 |
+| `support` | 0 | 58 |
+| `test_support` | 0 | 1037 |
+| `timeseries` | 296 | 48 |
+
+Generated descriptors are explicit local payload analogues for helpers whose Python implementation depends on GS Quant SDK runtime objects, authenticated Marquee calls, pandas index behavior, or test scaffolding. They keep the source surface discoverable and tested, accept caller-supplied local payloads, and preserve the rule that DuckDB Finance remains local and deterministic.
+<!-- END GENERATED GS QUANT SURFACE SUMMARY -->
