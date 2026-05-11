@@ -35,6 +35,8 @@ nav:
     url: /compatibility/
   - title: Performance Testing
     url: /performance-testing/
+  - title: Release
+    url: /release/
   - title: Development
     url: /development/
 

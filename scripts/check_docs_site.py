@@ -47,6 +47,7 @@ def main() -> int:
         "/best-practices/",
         "/quant-developer-guide/",
         "/compatibility/",
+        "/release/",
         "/performance-testing/",
         "/development/",
     ]
@@ -81,7 +82,7 @@ def main() -> int:
         "version:",
         "language: C++",
         "build: cmake",
-        "licence: MIT",
+        "license: MIT",
         "maintainers:",
         "github: leonardovida/duckdb-finance",
         "ref:",

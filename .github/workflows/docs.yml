@@ -1,0 +1,50 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "scripts/check_docs_site.py"
+      - "scripts/check_function_docs.py"
+      - "scripts/check_gs_quant_surface.py"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/pages.yml"
+      - "Makefile"
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "scripts/check_docs_site.py"
+      - "scripts/check_function_docs.py"
+      - "scripts/check_gs_quant_surface.py"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/pages.yml"
+      - "Makefile"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Check and build docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Run docs checks
+        run: make check-docs check-docs-site check-gs-quant-surface
+
+      - name: Build docs site
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site

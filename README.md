@@ -188,6 +188,7 @@ Main docs:
 - [Finance SQL Playbooks](docs/playbooks.md)
 - [Compatibility](docs/compatibility.md)
 - [Performance Testing](docs/performance_testing.md)
+- [Release](docs/release.md)
 - [Development Guide](docs/development.md)
 - [Contributing](CONTRIBUTING.md)
 
