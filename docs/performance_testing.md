@@ -14,19 +14,19 @@ The extension keeps two layers of performance coverage:
    profiling enabled. Because `scripts/check_function_tests.py` and
    `scripts/check_function_perf_tests.py` both verify that every registered
    `fin_*` function is referenced by `test/sql/gold_tests.sql`, this gives every
-   function at least one profiled execution. The generated GS Quant surface
-   block in the same corpus also profiles every `gs_*` source lookup alias and
-   generated descriptor analogue.
+   function at least one profiled execution. The compatibility coverage in the
+   same corpus also profiles the checked source-surface aliases used for
+   regression testing.
 2. `examples/hot_path_benchmark.sql` contains heavier benchmark queries for the
    highest-volume model families, including option pricing and Greeks, binomial
    pricing, bond analytics, cash-flow solvers, curve helpers, portfolio math,
-   returns/risk aggregates, date/calendar helpers, and GS Quant JSON,
-   backtest, and risk payload analogues.
+   returns/risk aggregates, date/calendar helpers, and compatibility payload
+   analogues used in regression coverage.
 
 Run the full function-surface profile:
 
 ```sh
-make perf
+make perf DUCKDB_ROOT=/path/to/duckdb
 ```
 
 By default the profile is written to:
@@ -38,16 +38,21 @@ By default the profile is written to:
 Use `PERF_OUTPUT` to write somewhere else:
 
 ```sh
-make perf PERF_OUTPUT=/tmp/finance-profile.json
+make perf DUCKDB_ROOT=/path/to/duckdb PERF_OUTPUT=/tmp/finance-profile.json
 ```
 
-Run the focused hot-path benchmark from DuckDB after loading the extension:
+Run the focused hot-path benchmark from a checkout of this repository after
+installing and loading the published extension:
 
 ```sql
 INSTALL finance FROM community;
 LOAD finance;
 .read examples/hot_path_benchmark.sql
 ```
+
+Until the community package is published, use the same source-built DuckDB and
+local extension flow as the Makefile targets above. The `.read` path is relative
+to the repository checkout where the DuckDB shell is running.
 
 ## CI Coverage
 
@@ -59,10 +64,10 @@ LOAD finance;
   referenced by the gold behavior tests.
 - `scripts/check_function_perf_tests.py`, which verifies the profiled corpus
   used by `make perf` covers every registered function.
-- `scripts/check_gs_quant_surface.py`, which verifies the checked GS Quant
-  source manifest, canonical analogues, compatibility aliases, docs entries,
-  gold-test references, and perf-path coverage. When a sibling GS Quant checkout
-  is present, it parses `gs_quant/**/*.py` and checks for source drift.
+- `scripts/check_gs_quant_surface.py`, which verifies the checked compatibility
+  manifest, canonical analogues, compatibility aliases, docs coverage, gold-test
+  references, and perf-path coverage. When a sibling GS Quant checkout is
+  present, it parses `gs_quant/**/*.py` and checks for source drift.
 - The DuckDB-backed smoke and gold SQL suites.
 
 The GitHub Pages workflow publishes the `docs/` site from `main`, so this page

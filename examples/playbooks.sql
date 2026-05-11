@@ -1,5 +1,6 @@
 -- DuckDB Finance playbook examples.
--- Run after installing and loading the community extension.
+-- Run from a repository checkout after loading the extension. Until the
+-- community package is published, use the source-built local extension.
 
 CREATE OR REPLACE TEMP TABLE desk_options AS
 SELECT * FROM (VALUES
@@ -7,22 +8,16 @@ SELECT * FROM (VALUES
   ('SX5E_OTM_PUT', 'put', 'SX5E', 4100.0, 4200.0, 0.75, 0.025, 0.220, 0.015, 5.0, 'EUR')
 ) AS t(trade_id, kind, underlier, spot, strike, ttm, rate, vol, dividend_yield, notional, currency);
 
-WITH instruments AS (
-  SELECT
-    trade_id,
-    fin_gsq_eq_option(kind, underlier, spot, strike, ttm, rate, vol, dividend_yield, notional, currency) AS inst
-  FROM desk_options
-)
 SELECT
   'equity_option_snapshot' AS playbook,
   trade_id,
-  inst.underlier,
-  inst.currency,
-  round(fin_gsq_eq_option_price(inst), 6) AS price,
-  round(fin_gsq_eq_delta(inst), 6) AS delta,
-  round(fin_gsq_eq_gamma(inst), 9) AS gamma,
-  round(fin_gsq_eq_vega(inst), 6) AS vega
-FROM instruments
+  underlier,
+  currency,
+  round(notional * fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS price,
+  round(notional * fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS delta,
+  round(notional * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield), 9) AS gamma,
+  round(notional * fin_bsm_vega(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS vega
+FROM desk_options
 ORDER BY trade_id;
 
 CREATE OR REPLACE TEMP TABLE portfolio_lines AS
@@ -36,60 +31,55 @@ SELECT * FROM (VALUES
 SELECT
   'cross_asset_portfolio_rollup' AS playbook,
   portfolio_id,
-  round(fin_gsq_portfolio_value(value, quantity), 6) AS portfolio_value,
-  round(fin_gsq_portfolio_risk(risk, quantity), 6) AS portfolio_risk
+  round(sum(value * quantity), 6) AS portfolio_value,
+  round(sum(risk * quantity), 6) AS portfolio_risk
 FROM portfolio_lines
 GROUP BY portfolio_id;
 
 WITH base AS (
   SELECT
-    fin_gsq_eq_option('call', 'SPX', 100.0, 100.0, 1.0, 0.05, 0.20, 0.0, 1.0, 'USD') AS inst,
-    fin_gsq_market_data_shock('Proportional', 0.05) AS spot_shock
+    'call' AS kind,
+    100.0 AS spot,
+    100.0 AS strike,
+    1.0 AS ttm,
+    0.05 AS rate,
+    0.20 AS vol,
+    0.0 AS dividend_yield,
+    0.05 AS spot_shock
 ),
 shocked AS (
   SELECT
-    inst,
-    inst.spot AS base_spot,
-    fin_gsq_apply_shock(inst.spot, spot_shock) AS shocked_spot
+    *,
+    spot * (1.0 + spot_shock) AS shocked_spot
   FROM base
 )
 SELECT
   'scenario_pnl_explain' AS playbook,
-  round(fin_gsq_eq_option_price(inst), 6) AS base_price,
+  round(fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS base_price,
+  round(fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield), 6) AS shocked_price,
+  round(fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield) - fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS full_reval_pnl,
   round(
-    fin_gsq_eq_option_price(fin_gsq_eq_option(inst.kind, inst.underlier, shocked_spot, inst.strike, inst.ttm, inst.rate, inst.vol, inst.dividend_yield, inst.notional, inst.currency)),
+    fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield) * (shocked_spot - spot)
+      + 0.5 * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield) * (shocked_spot - spot) * (shocked_spot - spot),
     6
-  ) AS shocked_price,
-  round(
-    fin_gsq_scenario_pnl(
-      fin_gsq_eq_option_price(inst),
-      fin_gsq_eq_option_price(fin_gsq_eq_option(inst.kind, inst.underlier, shocked_spot, inst.strike, inst.ttm, inst.rate, inst.vol, inst.dividend_yield, inst.notional, inst.currency))
-    ),
-    6
-  ) AS full_reval_pnl,
-  round(fin_gsq_delta_gamma_pnl(fin_gsq_eq_delta(inst), fin_gsq_eq_gamma(inst), shocked_spot - base_spot), 6) AS delta_gamma_pnl
+  ) AS delta_gamma_pnl
 FROM shocked;
 
-WITH scenario AS (
-  SELECT fin_gsq_curve_scenario(5.0, 10.0, 0.0, 30.0, 15.0) AS shock
-),
-swap_inputs AS (
+WITH swap_inputs AS (
   SELECT
     0.045 AS fixed_rate,
     0.040 AS par_rate,
+    0.0005 AS parallel_shift,
     4.5 AS annuity,
     1000000.0 AS notional
 )
 SELECT
   'rates_curve_shift' AS playbook,
   par_rate AS base_par_rate,
-  fin_gsq_curve_scenario_rate(par_rate, 5.0, shock) AS shocked_par_rate,
-  round(fin_gsq_ir_swap_price(fin_gsq_ir_swap('Receive', '5y', 'USD', fixed_rate, par_rate, annuity, notional)), 6) AS base_pv,
-  round(
-    fin_gsq_ir_swap_price(fin_gsq_ir_swap('Receive', '5y', 'USD', fixed_rate, fin_gsq_curve_scenario_rate(par_rate, 5.0, shock), annuity, notional)),
-    6
-  ) AS shocked_pv
-FROM swap_inputs, scenario;
+  par_rate + parallel_shift AS shocked_par_rate,
+  round((fixed_rate - par_rate) * annuity * notional, 6) AS base_pv,
+  round((fixed_rate - (par_rate + parallel_shift)) * annuity * notional, 6) AS shocked_pv
+FROM swap_inputs;
 
 CREATE OR REPLACE TEMP TABLE research_returns AS
 SELECT * FROM (VALUES

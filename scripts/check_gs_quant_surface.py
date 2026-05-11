@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GS_QUANT_ROOT = Path(os.environ.get("GS_QUANT_ROOT", ROOT.parent / "gs-quant" / "gs_quant"))
-SURFACE_CSV = ROOT / "docs" / "gs_quant_surface.csv"
+SURFACE_CSV = ROOT / "test" / "fixtures" / "gs_quant_surface.csv"
 
 
 def read(path: Path) -> str:
@@ -105,7 +105,9 @@ def main() -> int:
     missing_docs = sorted(
         row["canonical"]
         for row in rows
-        if row["canonical"].startswith("fin_") and f"`{row['canonical']}`" not in docs_text
+        if row["status"] != "generated_descriptor"
+        and row["canonical"].startswith("fin_")
+        and f"`{row['canonical']}`" not in docs_text
     )
     if missing_docs:
         errors.append(("Canonical analogues missing docs entries:", missing_docs))

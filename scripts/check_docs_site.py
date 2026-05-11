@@ -84,6 +84,32 @@ def main() -> int:
             print(f"  {fragment}")
         return 1
 
+    layout = read(DOCS / "_layouts" / "default.html")
+    required_layout_fragments = [
+        "<span>Namespace</span>",
+        "<code>fin_* functions</code>",
+    ]
+    missing_layout_fragments = [
+        fragment for fragment in required_layout_fragments if fragment not in layout
+    ]
+    if missing_layout_fragments:
+        print("Docs layout is missing the neutral sidebar namespace snippet:")
+        for fragment in missing_layout_fragments:
+            print(f"  {fragment}")
+        return 1
+
+    forbidden_layout_fragments = [
+        "INSTALL finance FROM community;",
+    ]
+    ambiguous_layout_fragments = [
+        fragment for fragment in forbidden_layout_fragments if fragment in layout
+    ]
+    if ambiguous_layout_fragments:
+        print("Docs layout should not advertise unpublished install commands site-wide:")
+        for fragment in ambiguous_layout_fragments:
+            print(f"  {fragment}")
+        return 1
+
     forbidden_fragments = [
         "/Users/" + "leov/",
         "build/debug/" + "extension/finance/finance." + "duckdb_extension",
