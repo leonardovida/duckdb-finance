@@ -66,6 +66,25 @@ The test targets start DuckDB with unsigned local extensions enabled:
 make test DUCKDB_ROOT=/path/to/duckdb
 ```
 
+## CI Scope
+
+CI always runs the static coverage gates:
+
+```sh
+make ci-static
+```
+
+Pull requests that touch source, tests, examples, build files, workflow files,
+or other runtime-sensitive paths also run the DuckDB-backed gate:
+
+```sh
+make ci-duckdb DUCKDB_ROOT=/path/to/duckdb
+```
+
+Protected-branch, merge-queue, and manual CI runs execute the full path. This
+keeps documentation-only checks fast without weakening behavior checks for
+extension changes.
+
 ## Adding A Function
 
 1. Choose the smallest native or SQL-macro implementation that fits the

@@ -100,7 +100,7 @@ def main() -> int:
         errors.append(("Compatibility aliases not registered:", missing_compat))
 
     function_reference = read(ROOT / "docs" / "function_reference.md")
-    mapping_doc = read(ROOT / "docs" / "gs_quant_mapping.md")
+    mapping_doc = read(ROOT / "docs" / "compatibility.md")
     docs_text = function_reference + "\n" + mapping_doc + "\n" + read(SURFACE_CSV)
     missing_docs = sorted(
         row["canonical"]

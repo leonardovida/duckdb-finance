@@ -17,18 +17,24 @@ nav:
     url: /
   - title: Getting Started
     url: /getting-started/
+  - title: Agent Guide
+    url: /agent-guide/
   - title: Installation
     url: /installation/
+  - title: Function Cookbook
+    url: /function-cookbook/
   - title: Function Reference
     url: /function-reference/
-  - title: Performance Testing
-    url: /performance-testing/
+  - title: Playbooks
+    url: /playbooks/
+  - title: Best Practices
+    url: /best-practices/
   - title: Quant Developer Guide
     url: /quant-developer-guide/
   - title: Compatibility
-    url: /gs-quant-mapping/
-  - title: Playbooks
-    url: /playbooks/
+    url: /compatibility/
+  - title: Performance Testing
+    url: /performance-testing/
   - title: Development
     url: /development/
 

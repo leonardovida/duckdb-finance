@@ -9,7 +9,7 @@ GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check ci clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check ci-static ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -51,7 +51,11 @@ check-gs-quant-surface:
 
 check: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface test
 
-ci: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface gold-quiet
+ci-static: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface
+
+ci-duckdb: gold-quiet
+
+ci: ci-static ci-duckdb
 
 clean:
 	cmake --build $(BUILD_DIR) --target clean

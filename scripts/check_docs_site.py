@@ -36,7 +36,20 @@ def main() -> int:
             print(f"  {url}")
         return 1
 
-    required_pages = ["/", "/getting-started/", "/installation/", "/function-reference/", "/performance-testing/"]
+    required_pages = [
+        "/",
+        "/getting-started/",
+        "/agent-guide/",
+        "/installation/",
+        "/function-cookbook/",
+        "/function-reference/",
+        "/playbooks/",
+        "/best-practices/",
+        "/quant-developer-guide/",
+        "/compatibility/",
+        "/performance-testing/",
+        "/development/",
+    ]
     missing_pages = [url for url in required_pages if url not in pages]
     if missing_pages:
         print("Missing required documentation pages:")
