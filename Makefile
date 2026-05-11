@@ -67,4 +67,11 @@ clean:
 
 ifneq ("$(wildcard $(CURDIR)/extension-ci-tools/makefiles/duckdb_extension.Makefile)","")
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
+
+set_duckdb_version:
+	if [ ! -d duckdb/.git ]; then \
+		git clone --depth=1 --branch "$(DUCKDB_GIT_VERSION)" https://github.com/duckdb/duckdb.git duckdb; \
+	else \
+		cd duckdb && git fetch --tags --depth=1 origin "$(DUCKDB_GIT_VERSION)" && git checkout "$(DUCKDB_GIT_VERSION)"; \
+	fi
 endif
