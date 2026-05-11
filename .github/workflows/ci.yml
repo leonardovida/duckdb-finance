@@ -26,12 +26,12 @@ jobs:
 
     steps:
       - name: Check out extension
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: duckdb-finance
 
       - name: Check out DuckDB
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: duckdb/duckdb
           ref: ${{ env.DUCKDB_REF }}
@@ -51,7 +51,7 @@ jobs:
             python3
 
       - name: Configure compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ccache
           key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/src/**', 'duckdb-finance/include/**', 'duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}
