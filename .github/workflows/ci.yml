@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   DUCKDB_REF: main
 
@@ -29,8 +33,49 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: duckdb-finance
+          fetch-depth: 1
+
+      - name: Determine check scope
+        id: scope
+        working-directory: duckdb-finance
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          full=true
+          changed="protected branch or manual run"
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            full=false
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+
+            while IFS= read -r path; do
+              [[ -z "$path" ]] && continue
+              case "$path" in
+                README.md|CONTRIBUTING.md|docs/*|scripts/check_*.py)
+                  ;;
+                *)
+                  full=true
+                  ;;
+              esac
+            done <<< "$changed"
+          fi
+
+          {
+            echo "full=$full"
+            echo "changed<<EOF"
+            printf "%s\n" "$changed"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run static checks
+        working-directory: duckdb-finance
+        run: make ci-static
 
       - name: Check out DuckDB
+        if: steps.scope.outputs.full == 'true'
         uses: actions/checkout@v6
         with:
           repository: duckdb/duckdb
@@ -40,6 +85,7 @@ jobs:
           fetch-depth: 1
 
       - name: Install build dependencies
+        if: steps.scope.outputs.full == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -51,6 +97,7 @@ jobs:
             python3
 
       - name: Configure compiler cache
+        if: steps.scope.outputs.full == 'true'
         uses: actions/cache@v5
         with:
           path: ~/.cache/ccache
@@ -59,16 +106,27 @@ jobs:
             ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-
 
       - name: Reset compiler cache stats
+        if: steps.scope.outputs.full == 'true'
         run: ccache --zero-stats
 
-      - name: Run checks
+      - name: Run DuckDB checks
+        if: steps.scope.outputs.full == 'true'
         working-directory: duckdb-finance
         env:
           DUCKDB_ROOT: ${{ github.workspace }}/duckdb
           CMAKE_BUILD_PARALLEL_LEVEL: 4
           DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-        run: make ci
+        run: make ci-duckdb
+
+      - name: Explain skipped DuckDB checks
+        if: steps.scope.outputs.full != 'true'
+        env:
+          CHANGED_FILES: ${{ steps.scope.outputs.changed }}
+        run: |
+          echo "Skipped DuckDB checkout/build because this pull request only changed static documentation or checker files."
+          echo "Changed files:"
+          printf "%s\n" "$CHANGED_FILES"
 
       - name: Show compiler cache stats
-        if: always()
+        if: always() && steps.scope.outputs.full == 'true'
         run: ccache --show-stats
