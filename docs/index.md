@@ -35,31 +35,43 @@ SELECT
 <div class="doc-grid">
   <a class="doc-link" href="{{ '/getting-started/' | relative_url }}">
     <strong>Getting Started</strong>
-    <span>Install the extension, load it in DuckDB, and run the first pricing and risk queries.</span>
+    <span>Run a controlled first set of pricing, risk, fixed-income, portfolio, and table-function queries.</span>
+  </a>
+  <a class="doc-link" href="{{ '/agent-guide/' | relative_url }}">
+    <strong>Agent Guide</strong>
+    <span>Route agent tasks to the right docs, examples, checks, and source files.</span>
   </a>
   <a class="doc-link" href="{{ '/installation/' | relative_url }}">
     <strong>Installation</strong>
     <span>Build from source today or install from DuckDB Community Extensions after publication.</span>
   </a>
+  <a class="doc-link" href="{{ '/function-cookbook/' | relative_url }}">
+    <strong>Function Cookbook</strong>
+    <span>Choose functions by task with small runnable SQL examples.</span>
+  </a>
   <a class="doc-link" href="{{ '/function-reference/' | relative_url }}">
     <strong>Function Reference</strong>
     <span>Search every registered <code>fin_*</code> function by usage, purpose, and return shape.</span>
   </a>
-  <a class="doc-link" href="{{ '/performance-testing/' | relative_url }}">
-    <strong>Performance Testing</strong>
-    <span>Profile the full function surface and run focused hot-path benchmarks.</span>
+  <a class="doc-link" href="{{ '/playbooks/' | relative_url }}">
+    <strong>Finance SQL Playbooks</strong>
+    <span>Run desk-style workflows for options, scenario PnL, rates, portfolios, factors, and ticks.</span>
+  </a>
+  <a class="doc-link" href="{{ '/best-practices/' | relative_url }}">
+    <strong>Best Practices</strong>
+    <span>Keep units, assumptions, validation, and aggregation explicit.</span>
   </a>
   <a class="doc-link" href="{{ '/quant-developer-guide/' | relative_url }}">
     <strong>Quant Developer Guide</strong>
     <span>Read the units, model boundaries, risk conventions, and reconciliation guidance.</span>
   </a>
-  <a class="doc-link" href="{{ '/gs-quant-mapping/' | relative_url }}">
+  <a class="doc-link" href="{{ '/compatibility/' | relative_url }}">
     <strong>Compatibility</strong>
     <span>Understand the boundaries for compatibility helpers and ported workflows.</span>
   </a>
-  <a class="doc-link" href="{{ '/playbooks/' | relative_url }}">
-    <strong>Finance SQL Playbooks</strong>
-    <span>Run desk-style examples for options, scenario PnL, rates, portfolios, factors, and ticks.</span>
+  <a class="doc-link" href="{{ '/performance-testing/' | relative_url }}">
+    <strong>Performance Testing</strong>
+    <span>Profile the full function surface and run focused hot-path benchmarks.</span>
   </a>
   <a class="doc-link" href="{{ '/development/' | relative_url }}">
     <strong>Development Guide</strong>
@@ -111,7 +123,7 @@ stack before relying on them for trading, valuation, or risk sign-off.
 ## Compatibility Layer
 
 The compatibility layer is documented in
-[Compatibility Notes](gs_quant_mapping.md). It preserves familiar finance helper
+[Compatibility](compatibility.md). It preserves familiar finance helper
 names and focused struct shapes where they make sense in SQL, while keeping all
 analytics local to DuckDB.
 

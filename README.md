@@ -140,9 +140,15 @@ extension.
 Useful starting points:
 
 - [Getting Started](docs/getting_started.md): first pricing and risk queries.
+- [Agent Guide](docs/agent_guide.md): routing guide for agents writing SQL or
+  changing the extension.
+- [Function Cookbook](docs/function_cookbook.md): task-based examples for
+  choosing functions.
 - [Finance SQL Playbooks](docs/playbooks.md): runnable desk-style workflows.
-- [Compatibility Notes](docs/gs_quant_mapping.md): boundaries for compatibility
-  helpers and ported workflows.
+- [Best Practices](docs/best_practices.md): units, validation, aggregation, and
+  reconciliation guidance.
+- [Compatibility](docs/compatibility.md): boundaries for compatibility helpers
+  and ported workflows.
 - [Quant Developer Guide](docs/quant_developer_guide.md): units, model
   boundaries, risk conventions, and reconciliation guidance.
 
@@ -174,8 +180,13 @@ GitHub Pages source lives in `docs/` and is published at:
 
 Main docs:
 
+- [Agent Guide](docs/agent_guide.md)
 - [Installation](docs/installation.md)
+- [Function Cookbook](docs/function_cookbook.md)
 - [Function Reference](docs/function_reference.md)
+- [Best Practices](docs/best_practices.md)
+- [Finance SQL Playbooks](docs/playbooks.md)
+- [Compatibility](docs/compatibility.md)
 - [Performance Testing](docs/performance_testing.md)
 - [Development Guide](docs/development.md)
 - [Contributing](CONTRIBUTING.md)

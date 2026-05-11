@@ -114,5 +114,9 @@ FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
   model boundaries, units, and risk aggregation conventions.
 - [Finance SQL Playbooks]({{ '/playbooks/' | relative_url }}) for complete
   desk-style workflows.
-- [Compatibility Notes]({{ '/gs-quant-mapping/' | relative_url }}) when porting
+- [Function Cookbook]({{ '/function-cookbook/' | relative_url }}) for task-based
+  examples.
+- [Best Practices]({{ '/best-practices/' | relative_url }}) for units,
+  validation, and aggregation guidance.
+- [Compatibility]({{ '/compatibility/' | relative_url }}) when porting
   an existing compatibility-shaped workflow.

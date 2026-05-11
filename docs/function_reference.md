@@ -907,7 +907,12 @@ examples, see [Finance SQL Playbooks]({{ '/playbooks/' | relative_url }}).
 
 ## GS Quant-Inspired Pricing And Risk Helpers
 
-These helpers port the parts of GS Quant's pricing-and-risk model that fit a local SQL extension: instrument descriptors, risk-measure descriptors, pricing context descriptors, scenario transforms, and portfolio aggregation. They are independent DuckDB implementations and do not call Goldman Sachs APIs. See [GS Quant-Inspired SQL Mapping]({{ '/gs-quant-mapping/' | relative_url }}) for model semantics, source-shape mapping, and the Goldman-style golden dataset.
+These helpers port the parts of GS Quant-shaped pricing-and-risk workflows that
+fit a local SQL extension: instrument descriptors, risk-measure descriptors,
+pricing context descriptors, scenario transforms, and portfolio aggregation.
+They are independent DuckDB implementations and do not call Goldman Sachs APIs.
+See [Compatibility]({{ '/compatibility/' | relative_url }}) for the supported
+boundary.
 
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
