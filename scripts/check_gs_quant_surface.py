@@ -5,6 +5,7 @@ import csv
 import os
 import re
 import sys
+import warnings
 from pathlib import Path
 
 
@@ -20,7 +21,9 @@ def read(path: Path) -> str:
 def scan_gs_quant(root: Path) -> set[tuple[str, str]]:
     rows: set[tuple[str, str]] = set()
     for path in sorted(root.rglob("*.py")):
-        module = ast.parse(read(path), filename=str(path))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            module = ast.parse(read(path), filename=str(path))
         source_path = path.relative_to(root.parent).as_posix()
         for node in module.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
