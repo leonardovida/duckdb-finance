@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  DUCKDB_VERSION: v1.5.1
+  EXTENSION_CI_TOOLS_VERSION: v1.5.1
+  EXTENSION_NAME: finance
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag and community manifest
+        id: version
+        run: |
+          set -euo pipefail
+          release_sha="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          python3 scripts/check_release_metadata.py \
+            --tag "$GITHUB_REF_NAME" \
+            --sha "$release_sha" \
+            --render dist/community-extension/description.yml
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=${release_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload rendered community manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-extension-description
+          path: dist/community-extension/description.yml
+
+  build-extension:
+    name: Build release artifacts
+    needs: validate
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.1
+    secrets: inherit
+    with:
+      duckdb_version: v1.5.1
+      ci_tools_version: v1.5.1
+      extension_name: finance
+      reduced_ci_mode: enabled
+
+  github-release:
+    name: Publish GitHub release
+    needs:
+      - validate
+      - build-extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/release-assets
+
+      - name: Write release notes
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          previous_tag="$(git describe --tags --abbrev=0 "${RELEASE_SHA}^" 2>/dev/null || true)"
+          if [[ -n "$previous_tag" ]]; then
+            full_diff="https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${GITHUB_REF_NAME}"
+          else
+            full_diff="https://github.com/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}"
+          fi
+          commit_url="https://github.com/${GITHUB_REPOSITORY}/commit/${RELEASE_SHA}"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          cat > release-notes.md <<EOF
+          ## Highlights
+
+          - Release DuckDB Finance ${VERSION} as a tagged community-extension build from ${commit_url}.
+
+          ## Tooling and Release
+
+          - Built release artifacts for DuckDB ${DUCKDB_VERSION} with DuckDB extension-ci-tools ${EXTENSION_CI_TOOLS_VERSION}. ${run_url}
+          - Included a release-ready community extension manifest with repo.ref pinned to ${RELEASE_SHA}. ${commit_url}
+
+          ## Compatibility
+
+          - No breaking changes are expected for ${VERSION}. This is the first tagged release line for the extension. ${commit_url}
+
+          ## Verification
+
+          - Release metadata validation and DuckDB extension distribution build completed in GitHub Actions. ${run_url}
+
+          **Full diff:** ${full_diff}
+          EOF
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find dist/release-assets -type f -print0)
+          gh release create "$GITHUB_REF_NAME" \
+            "${assets[@]}" \
+            --verify-tag \
+            --title "DuckDB Finance ${{ needs.validate.outputs.version }}" \
+            --notes-file release-notes.md

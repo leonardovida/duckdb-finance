@@ -73,6 +73,10 @@ SELECT
     <strong>Performance Testing</strong>
     <span>Profile the full function surface and run focused hot-path benchmarks.</span>
   </a>
+  <a class="doc-link" href="{{ '/release/' | relative_url }}">
+    <strong>Release</strong>
+    <span>Tag releases, build artifacts, and prepare the community extension manifest.</span>
+  </a>
   <a class="doc-link" href="{{ '/development/' | relative_url }}">
     <strong>Development Guide</strong>
     <span>Build, test, document, and extend the out-of-tree extension.</span>
