@@ -3,6 +3,8 @@ EXTENSION_CONFIG ?= $(CURDIR)/extension_config.cmake
 BUILD_DIR ?= $(DUCKDB_ROOT)/build/debug
 DUCKDB ?= $(BUILD_DIR)/duckdb
 EXTENSION_PATH ?= $(BUILD_DIR)/extension/finance/finance.duckdb_extension
+EXT_NAME ?= finance
+EXT_CONFIG ?= $(EXTENSION_CONFIG)
 SMOKE_SQL ?= test/sql/smoke_queries.sql
 GOLD_DATASET_SQL ?= test/sql/gold_dataset.sql
 GOLD_TEST_SQL ?= test/sql/gold_tests.sql
@@ -62,3 +64,7 @@ ci: ci-static ci-duckdb
 
 clean:
 	cmake --build $(BUILD_DIR) --target clean
+
+ifneq ("$(wildcard $(CURDIR)/extension-ci-tools/makefiles/duckdb_extension.Makefile)","")
+include extension-ci-tools/makefiles/duckdb_extension.Makefile
+endif
