@@ -9,7 +9,7 @@ GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 
-.PHONY: debug release test smoke gold perf check-docs check-docs-site check-tests check-perf-tests check clean
+.PHONY: debug release test smoke gold perf check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -40,7 +40,10 @@ check-tests:
 check-perf-tests:
 	python3 scripts/check_function_perf_tests.py
 
-check: check-docs check-docs-site check-tests check-perf-tests test
+check-gs-quant-surface:
+	python3 scripts/check_gs_quant_surface.py
+
+check: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface test
 
 clean:
 	cmake --build $(BUILD_DIR) --target clean

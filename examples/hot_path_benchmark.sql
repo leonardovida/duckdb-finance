@@ -105,3 +105,41 @@ FROM (
     [[0.04, 0.01, 0.00, 0.00], [0.01, 0.05, 0.01, 0.00], [0.00, 0.01, 0.06, 0.01], [0.00, 0.00, 0.01, 0.03]]::DOUBLE[][] AS cov
   FROM range(1000000) AS r(i)
 ) p;
+
+CREATE OR REPLACE TEMP TABLE bench_returns AS
+SELECT
+  (i % 100)::DOUBLE / 10000.0 - 0.004 AS r,
+  (i % 120)::DOUBLE / 10000.0 - 0.005 AS benchmark_r
+FROM range(1000000) AS r(i);
+
+SELECT
+  'returns_risk_aggregates_1m' AS benchmark,
+  fin_volatility(r, 252) AS volatility,
+  fin_sharpe(r, 0.0, 252) AS sharpe,
+  fin_tracking_error(r, benchmark_r, 252) AS tracking_error,
+  fin_information_ratio(r, benchmark_r, 252) AS information_ratio
+FROM bench_returns;
+
+CREATE OR REPLACE TEMP TABLE bench_dates AS
+SELECT
+  DATE '2026-01-01' + CAST(i % 365 AS INTEGER) AS start_date,
+  DATE '2026-01-01' + CAST((i % 365) + 30 AS INTEGER) AS end_date
+FROM range(1000000) AS r(i);
+
+SELECT
+  'date_calendar_1m' AS benchmark,
+  fsum(fin_business_days_between(start_date, end_date, 'weekday')) AS business_days,
+  fsum(fin_yearfrac(start_date, end_date, 'ACT/365F')) AS yearfrac_sum
+FROM bench_dates;
+
+CREATE OR REPLACE TEMP TABLE bench_gsq_payloads AS
+SELECT
+  '{"id":' || i::VARCHAR || ',"value":' || ((i % 100)::DOUBLE / 10.0)::VARCHAR || '}' AS payload
+FROM range(500000) AS r(i);
+
+SELECT
+  'gs_quant_json_backtest_risk_payloads_500k' AS benchmark,
+  count(fin_api_encode_request_object(payload).payload) AS encoded_requests,
+  count(fin_backtest_scale_trade(payload).payload) AS scaled_trades,
+  count(fin_risk_aggregate_results(payload).payload) AS risk_results
+FROM bench_gsq_payloads;
