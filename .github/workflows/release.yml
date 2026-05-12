@@ -77,6 +77,28 @@ jobs:
         with:
           path: dist/release-assets
 
+      - name: Stage uniquely named release assets
+        run: |
+          set -euo pipefail
+          rm -rf dist/release-upload
+          mkdir -p dist/release-upload
+
+          while IFS= read -r -d '' file; do
+            artifact="$(basename "$(dirname "$file")")"
+            base="$(basename "$file")"
+            case "$artifact/$base" in
+              community-extension-description/description.yml)
+                target="finance-${GITHUB_REF_NAME}-community-extension-description.yml"
+                ;;
+              *)
+                target="${artifact}-${base}"
+                ;;
+            esac
+            cp "$file" "dist/release-upload/$target"
+          done < <(find dist/release-assets -type f -print0)
+
+          find dist/release-upload -maxdepth 1 -type f -print | sort
+
       - name: Write release notes
         env:
           VERSION: ${{ needs.validate.outputs.version }}
@@ -118,9 +140,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mapfile -d '' assets < <(find dist/release-assets -type f -print0)
-          gh release create "$GITHUB_REF_NAME" \
-            "${assets[@]}" \
-            --verify-tag \
-            --title "DuckDB Finance ${{ needs.validate.outputs.version }}" \
-            --notes-file release-notes.md
+          mapfile -d '' assets < <(find dist/release-upload -type f -print0)
+          title="DuckDB Finance ${{ needs.validate.outputs.version }}"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "$title" \
+              --notes-file release-notes.md
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "${assets[@]}" \
+              --verify-tag \
+              --title "$title" \
+              --notes-file release-notes.md
+          fi
