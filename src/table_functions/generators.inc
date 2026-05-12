@@ -26,6 +26,20 @@ struct RowsGlobalState : public GlobalTableFunctionState {
 	idx_t offset = 0;
 };
 
+static void SetOutputCardinality(DataChunk &output, idx_t count) {
+	for (auto &vector : output.data) {
+#if FINANCE_HAS_FLAT_VECTOR_SET_SIZE
+		FlatVector::SetSize(vector, count);
+#else
+		auto buffer = vector.GetBuffer();
+		if (buffer) {
+			buffer->SetSize(count);
+		}
+#endif
+	}
+	output.SetCardinality(count);
+}
+
 static vector<SchemaRow> SchemaRows(const string &kind) {
 	auto normalized = StringUtil::Lower(kind);
 	vector<SchemaRow> rows;
@@ -88,14 +102,14 @@ static void SchemaTemplateFunction(ClientContext &, TableFunctionInput &data_p, 
 	idx_t count = 0;
 	while (state.offset < bind_data.rows.size() && count < STANDARD_VECTOR_SIZE) {
 		auto &row = bind_data.rows[state.offset++];
-		output.data[0].Append(Value(row.schema_kind));
-		output.data[1].Append(Value(row.column_name));
-		output.data[2].Append(Value(row.logical_type));
-		output.data[3].Append(Value::BOOLEAN(row.required));
-		output.data[4].Append(Value(row.description));
+		output.data[0].SetValue(count, Value(row.schema_kind));
+		output.data[1].SetValue(count, Value(row.column_name));
+		output.data[2].SetValue(count, Value(row.logical_type));
+		output.data[3].SetValue(count, Value::BOOLEAN(row.required));
+		output.data[4].SetValue(count, Value(row.description));
 		count++;
 	}
-	output.SetCardinality(count);
+	SetOutputCardinality(output, count);
 }
 
 struct PortfolioOptimizeBindData : public FunctionData {
@@ -135,12 +149,12 @@ static void PortfolioOptimizeFunction(ClientContext &, TableFunctionInput &data_
 	auto &state = data_p.global_state->Cast<RowsGlobalState>();
 	idx_t count = 0;
 	while (state.offset < bind_data.weights.size() && count < STANDARD_VECTOR_SIZE) {
-		output.data[0].Append(Value::BIGINT(NumericCast<int64_t>(state.offset)));
-		output.data[1].Append(Value::DOUBLE(bind_data.weights[state.offset]));
+		output.data[0].SetValue(count, Value::BIGINT(NumericCast<int64_t>(state.offset)));
+		output.data[1].SetValue(count, Value::DOUBLE(bind_data.weights[state.offset]));
 		state.offset++;
 		count++;
 	}
-	output.SetCardinality(count);
+	SetOutputCardinality(output, count);
 }
 
 struct FrontierRow {
@@ -254,10 +268,10 @@ static void EfficientFrontierFunction(ClientContext &, TableFunctionInput &data_
 	idx_t count = 0;
 	while (state.offset < bind_data.rows.size() && count < STANDARD_VECTOR_SIZE) {
 		auto &row = bind_data.rows[state.offset++];
-		output.data[0].Append(Value::BIGINT(row.point_idx));
-		output.data[1].Append(Value::DOUBLE(row.expected_return));
-		output.data[2].Append(Value::DOUBLE(row.volatility));
+		output.data[0].SetValue(count, Value::BIGINT(row.point_idx));
+		output.data[1].SetValue(count, Value::DOUBLE(row.expected_return));
+		output.data[2].SetValue(count, Value::DOUBLE(row.volatility));
 		count++;
 	}
-	output.SetCardinality(count);
+	SetOutputCardinality(output, count);
 }
