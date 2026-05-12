@@ -7,16 +7,16 @@
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/value.hpp"
 #if __has_include("duckdb/common/vector/flat_vector.hpp")
+#define FINANCE_OLD_DUCKDB_VECTOR_API 0
 #include "duckdb/common/vector/flat_vector.hpp"
-#endif
-#if __has_include("duckdb/common/vector/list_vector.hpp")
 #include "duckdb/common/vector/list_vector.hpp"
-#endif
-#if __has_include("duckdb/common/vector/string_vector.hpp")
 #include "duckdb/common/vector/string_vector.hpp"
-#endif
-#if __has_include("duckdb/common/vector/struct_vector.hpp")
 #include "duckdb/common/vector/struct_vector.hpp"
+#else
+#define FINANCE_OLD_DUCKDB_VECTOR_API 1
+#define CanHaveNull() AllValid() == false
+#define GetChildMutable GetEntry
+#define GetDataMutable GetData
 #endif
 #include "duckdb/common/vector_operations/binary_executor.hpp"
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
@@ -31,6 +31,12 @@
 
 namespace duckdb {
 namespace {
+
+#if FINANCE_OLD_DUCKDB_VECTOR_API
+#define FINANCE_STRUCT_CHILD(child) (*(child))
+#else
+#define FINANCE_STRUCT_CHILD(child) (child)
+#endif
 
 #include "scalar/common.inc"
 #include "scalar/distributions.inc"

@@ -344,8 +344,8 @@ static void MatrixShapeFunction(DataChunk &args, ExpressionState &, Vector &resu
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
-	auto rows_out = FlatVector::GetDataMutable<int64_t>(children[0]);
-	auto cols_out = FlatVector::GetDataMutable<int64_t>(children[1]);
+	auto rows_out = FlatVector::GetDataMutable<int64_t>(FINANCE_STRUCT_CHILD(children[0]));
+	auto cols_out = FlatVector::GetDataMutable<int64_t>(FINANCE_STRUCT_CHILD(children[1]));
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	for (idx_t row = 0; row < args.size(); row++) {
 		if (input.IsNull(0, row)) {
@@ -466,12 +466,13 @@ static void ValidateOhlcFunction(DataChunk &args, ExpressionState &, Vector &res
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
-	auto ok = FlatVector::GetDataMutable<bool>(children[0]);
-	auto reason = FlatVector::GetDataMutable<string_t>(children[1]);
+	auto &reason_vector = FINANCE_STRUCT_CHILD(children[1]);
+	auto ok = FlatVector::GetDataMutable<bool>(FINANCE_STRUCT_CHILD(children[0]));
+	auto reason = FlatVector::GetDataMutable<string_t>(reason_vector);
 	for (idx_t row = 0; row < args.size(); row++) {
 		if (input.HasNull(row, 4)) {
 			ok[row] = false;
-			reason[row] = StringVector::AddString(children[1], "null input");
+			reason[row] = StringVector::AddString(reason_vector, "null input");
 			continue;
 		}
 		double o = input.GetDouble(0, row);
@@ -480,16 +481,16 @@ static void ValidateOhlcFunction(DataChunk &args, ExpressionState &, Vector &res
 		double c = input.GetDouble(3, row);
 		if (!IsFinite(o) || !IsFinite(h) || !IsFinite(l) || !IsFinite(c)) {
 			ok[row] = false;
-			reason[row] = StringVector::AddString(children[1], "non-finite price");
+			reason[row] = StringVector::AddString(reason_vector, "non-finite price");
 		} else if (h < std::max({o, l, c})) {
 			ok[row] = false;
-			reason[row] = StringVector::AddString(children[1], "high below open/low/close");
+			reason[row] = StringVector::AddString(reason_vector, "high below open/low/close");
 		} else if (l > std::min({o, h, c})) {
 			ok[row] = false;
-			reason[row] = StringVector::AddString(children[1], "low above open/high/close");
+			reason[row] = StringVector::AddString(reason_vector, "low above open/high/close");
 		} else {
 			ok[row] = true;
-			reason[row] = StringVector::AddString(children[1], "ok");
+			reason[row] = StringVector::AddString(reason_vector, "ok");
 		}
 	}
 }
