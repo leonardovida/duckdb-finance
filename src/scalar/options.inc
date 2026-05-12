@@ -129,11 +129,11 @@ static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(children[0]);
-	auto gamma = FlatVector::GetDataMutable<double>(children[1]);
-	auto vega = FlatVector::GetDataMutable<double>(children[2]);
-	auto theta = FlatVector::GetDataMutable<double>(children[3]);
-	auto rho = FlatVector::GetDataMutable<double>(children[4]);
+	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
+	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
+	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
+	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
+	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
 	for (idx_t row = 0; row < args.size(); row++) {
 		if (input.HasNull(row)) {
 			FlatVector::SetNull(result, row, true);
@@ -165,7 +165,7 @@ static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	auto &children = StructVector::GetEntries(result);
 	vector<double *> out;
 	for (auto &child : children) {
-		out.push_back(FlatVector::GetDataMutable<double>(child));
+		out.push_back(FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(child)));
 	}
 	for (idx_t row = 0; row < args.size(); row++) {
 		if (input.HasNull(row)) {
@@ -330,11 +330,11 @@ static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &re
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(children[0]);
-	auto gamma = FlatVector::GetDataMutable<double>(children[1]);
-	auto vega = FlatVector::GetDataMutable<double>(children[2]);
-	auto theta = FlatVector::GetDataMutable<double>(children[3]);
-	auto rho = FlatVector::GetDataMutable<double>(children[4]);
+	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
+	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
+	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
+	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
+	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
 	for (idx_t row = 0; row < args.size(); row++) {
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
@@ -379,11 +379,11 @@ static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(children[0]);
-	auto gamma = FlatVector::GetDataMutable<double>(children[1]);
-	auto vega = FlatVector::GetDataMutable<double>(children[2]);
-	auto theta = FlatVector::GetDataMutable<double>(children[3]);
-	auto rho = FlatVector::GetDataMutable<double>(children[4]);
+	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
+	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
+	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
+	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
+	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
 	for (idx_t row = 0; row < args.size(); row++) {
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
