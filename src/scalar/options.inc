@@ -102,26 +102,26 @@ static void BSMRhoFunction(DataChunk &args, ExpressionState &, Vector &result) {
 
 static LogicalType GreeksType() {
 	child_list_t<LogicalType> children;
-	children.emplace_back("delta", LogicalType::DOUBLE);
-	children.emplace_back("gamma", LogicalType::DOUBLE);
-	children.emplace_back("vega", LogicalType::DOUBLE);
-	children.emplace_back("theta", LogicalType::DOUBLE);
-	children.emplace_back("rho", LogicalType::DOUBLE);
+	children.emplace_back("delta", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("gamma", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("vega", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("theta", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("rho", FinanceLogicalType(LogicalTypeId::DOUBLE));
 	return LogicalType::STRUCT(std::move(children));
 }
 
 static LogicalType BSMAllType() {
 	child_list_t<LogicalType> children;
-	children.emplace_back("price", LogicalType::DOUBLE);
-	children.emplace_back("delta", LogicalType::DOUBLE);
-	children.emplace_back("gamma", LogicalType::DOUBLE);
-	children.emplace_back("vega", LogicalType::DOUBLE);
-	children.emplace_back("theta", LogicalType::DOUBLE);
-	children.emplace_back("rho", LogicalType::DOUBLE);
-	children.emplace_back("d1", LogicalType::DOUBLE);
-	children.emplace_back("d2", LogicalType::DOUBLE);
-	children.emplace_back("intrinsic", LogicalType::DOUBLE);
-	children.emplace_back("time_value", LogicalType::DOUBLE);
+	children.emplace_back("price", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("delta", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("gamma", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("vega", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("theta", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("rho", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("d1", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("d2", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("intrinsic", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("time_value", FinanceLogicalType(LogicalTypeId::DOUBLE));
 	return LogicalType::STRUCT(std::move(children));
 }
 

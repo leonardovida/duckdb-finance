@@ -78,7 +78,7 @@ static void RegisterTableFunctionPrefixes(ExtensionLoader &loader, const string 
 
 static void RegisterGridFunction(ExtensionLoader &loader, const string &name, table_function_bind_replace_t bind_replace) {
 	RegisterBindReplacePrefixes(loader, name,
-	                            {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR,
-	                             LogicalType::TIMESTAMP, LogicalType::TIMESTAMP, LogicalType::INTERVAL},
-	                            {LogicalType::VARCHAR, LogicalType::INTERVAL}, bind_replace);
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
+	                             FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::INTERVAL)},
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::INTERVAL)}, bind_replace);
 }

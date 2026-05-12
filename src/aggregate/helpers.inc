@@ -1,6 +1,6 @@
 template <class STATE, class OP>
 static AggregateFunction UnaryDoubleAggregate(const string &name) {
-	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(LogicalType::DOUBLE, LogicalType::DOUBLE);
+	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
 	result.name = name;
 	return result;
 }
@@ -8,15 +8,15 @@ static AggregateFunction UnaryDoubleAggregate(const string &name) {
 template <class STATE, class B_TYPE, class OP>
 static AggregateFunction BinaryDoubleAggregate(const string &name, const LogicalType &b_type) {
 	auto result =
-	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, double, OP>(LogicalType::DOUBLE, b_type,
-	                                                                         LogicalType::DOUBLE);
+	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
+	                                                                         FinanceLogicalType(LogicalTypeId::DOUBLE));
 	result.name = name;
 	return result;
 }
 
 template <class STATE, class OP>
 static AggregateFunction UnaryBigintAggregate(const string &name) {
-	auto result = AggregateFunction::UnaryAggregate<STATE, double, int64_t, OP>(LogicalType::DOUBLE, LogicalType::BIGINT);
+	auto result = AggregateFunction::UnaryAggregate<STATE, double, int64_t, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
 	result.name = name;
 	return result;
 }
@@ -24,7 +24,7 @@ static AggregateFunction UnaryBigintAggregate(const string &name) {
 template <class STATE, class B_TYPE, class RESULT_TYPE, class OP>
 static AggregateFunction BinaryAggregate(const string &name, const LogicalType &b_type, const LogicalType &return_type) {
 	auto result =
-	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, RESULT_TYPE, OP>(LogicalType::DOUBLE, b_type,
+	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, RESULT_TYPE, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                              return_type);
 	result.name = name;
 	return result;
@@ -90,7 +90,7 @@ static void TernarySimpleUpdate(Vector inputs[], AggregateInputData &, idx_t inp
 template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
 static AggregateFunction TernaryDoubleAggregate(const string &name, const LogicalType &a_type,
                                                 const LogicalType &b_type, const LogicalType &c_type) {
-	AggregateFunction result({a_type, b_type, c_type}, LogicalType::DOUBLE, AggregateFunction::StateSize<STATE>,
+	AggregateFunction result({a_type, b_type, c_type}, FinanceLogicalType(LogicalTypeId::DOUBLE), AggregateFunction::StateSize<STATE>,
 	                         AggregateFunction::StateInitialize<STATE, OP>,
 	                         TernaryScatterUpdate<STATE, A_TYPE, B_TYPE, C_TYPE, OP>,
 	                         AggregateFunction::StateCombine<STATE, OP>,
@@ -159,7 +159,7 @@ static void TernaryDoubleVarcharDoubleSimpleUpdate(Vector inputs[], AggregateInp
 
 template <class STATE, class OP>
 static AggregateFunction TernaryDoubleVarcharDoubleBigintAggregate(const string &name) {
-	AggregateFunction result({LogicalType::DOUBLE, LogicalType::VARCHAR, LogicalType::DOUBLE}, LogicalType::BIGINT,
+	AggregateFunction result({FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BIGINT),
 	                         AggregateFunction::StateSize<STATE>,
 	                         AggregateFunction::StateInitialize<STATE, OP, AggregateDestructorType::LEGACY>,
 	                         TernaryDoubleVarcharDoubleScatterUpdate<STATE, OP>,
