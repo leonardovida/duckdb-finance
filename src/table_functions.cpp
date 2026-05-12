@@ -11,6 +11,13 @@
 #include "duckdb/parser/statement/select_statement.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
 
+#if __has_include("duckdb/common/vector/flat_vector.hpp")
+#include "duckdb/common/vector/flat_vector.hpp"
+#define FINANCE_HAS_FLAT_VECTOR_SET_SIZE 1
+#else
+#define FINANCE_HAS_FLAT_VECTOR_SET_SIZE 0
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <ctime>
