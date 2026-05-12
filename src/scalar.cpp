@@ -28,9 +28,13 @@
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <optional>
 
 namespace duckdb {
 namespace {
+
+using std::nullopt;
+using std::optional;
 
 #if FINANCE_OLD_DUCKDB_VECTOR_API
 #define FINANCE_STRUCT_CHILD(child) (*(child))
