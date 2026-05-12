@@ -17,4 +17,8 @@ void RegisterFinanceMacros(ExtensionLoader &loader);
 void RegisterFinanceAggregates(ExtensionLoader &loader);
 void RegisterFinanceTableFunctions(ExtensionLoader &loader);
 
+inline LogicalType FinanceLogicalType(LogicalTypeId id) {
+	return LogicalType(id);
+}
+
 } // namespace duckdb

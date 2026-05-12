@@ -81,8 +81,8 @@ static vector<SchemaRow> SchemaRows(const string &kind) {
 static unique_ptr<FunctionData> SchemaTemplateBind(ClientContext &, TableFunctionBindInput &input,
                                                    vector<LogicalType> &return_types, vector<string> &names) {
 	names = {"schema_kind", "column_name", "logical_type", "required", "description"};
-	return_types = {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::BOOLEAN,
-	                LogicalType::VARCHAR};
+	return_types = {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::BOOLEAN),
+	                FinanceLogicalType(LogicalTypeId::VARCHAR)};
 	auto kind = input.inputs.empty() || input.inputs[0].IsNull() ? "ohlcv" : input.inputs[0].GetValue<string>();
 	return make_uniq<SchemaTemplateBindData>(SchemaRows(kind));
 }
@@ -131,7 +131,7 @@ static vector<double> EqualWeights(idx_t n) {
 static unique_ptr<FunctionData> PortfolioOptimizeBind(ClientContext &, TableFunctionBindInput &input,
                                                       vector<LogicalType> &return_types, vector<string> &names) {
 	names = {"asset_idx", "weight"};
-	return_types = {LogicalType::BIGINT, LogicalType::DOUBLE};
+	return_types = {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::DOUBLE)};
 	if (input.inputs.empty() || input.inputs[0].IsNull()) {
 		return make_uniq<PortfolioOptimizeBindData>(vector<double>());
 	}
@@ -225,7 +225,7 @@ static double PortfolioVarianceValue(const vector<double> &weights, const vector
 static unique_ptr<FunctionData> HRPWeightsBind(ClientContext &, TableFunctionBindInput &input,
                                                vector<LogicalType> &return_types, vector<string> &names) {
 	names = {"asset_idx", "weight"};
-	return_types = {LogicalType::BIGINT, LogicalType::DOUBLE};
+	return_types = {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::DOUBLE)};
 	if (input.inputs.empty() || input.inputs[0].IsNull()) {
 		return make_uniq<PortfolioOptimizeBindData>(vector<double>());
 	}
@@ -236,7 +236,7 @@ static unique_ptr<FunctionData> HRPWeightsBind(ClientContext &, TableFunctionBin
 static unique_ptr<FunctionData> EfficientFrontierBind(ClientContext &, TableFunctionBindInput &input,
                                                       vector<LogicalType> &return_types, vector<string> &names) {
 	names = {"point_idx", "expected_return", "volatility"};
-	return_types = {LogicalType::BIGINT, LogicalType::DOUBLE, LogicalType::DOUBLE};
+	return_types = {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)};
 	auto mu = ReadDoubleListValue(input.inputs[0]);
 	auto cov = ReadDoubleMatrixValue(input.inputs[1]);
 	auto points = input.inputs.size() >= 3 ? input.inputs[2].GetValue<int32_t>() : 25;
