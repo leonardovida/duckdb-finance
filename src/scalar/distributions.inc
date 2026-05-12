@@ -9,33 +9,16 @@ static void FinanceVersionFunction(DataChunk &args, ExpressionState &state, Vect
 }
 
 static void UnaryDoubleFunction(DataChunk &args, ExpressionState &, Vector &result, double (*func)(double)) {
-	UnaryExecutor::Execute<double, double>(args.data[0], result, args.size(), [&](double x) -> optional<double> {
-		try {
-			auto v = func(x);
-			if (!std::isfinite(v)) {
-				return nullopt;
-			}
-			return v;
-		} catch (const std::exception &) {
-			return nullopt;
-		}
+	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
+		return func(input.GetDouble(0, row));
 	});
 }
 
 static void BinaryDoubleFunction(DataChunk &args, ExpressionState &, Vector &result,
                                  double (*func)(double, double)) {
-	BinaryExecutor::Execute<double, double, double>(
-	    args.data[0], args.data[1], result, args.size(), [&](double a, double b) -> optional<double> {
-		    try {
-			    auto v = func(a, b);
-			    if (!std::isfinite(v)) {
-				    return nullopt;
-			    }
-			    return v;
-		    } catch (const std::exception &) {
-			    return nullopt;
-		    }
-	    });
+	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
+		return func(input.GetDouble(0, row), input.GetDouble(1, row));
+	});
 }
 
 static void NormPDFFunction(DataChunk &args, ExpressionState &state, Vector &result) {
