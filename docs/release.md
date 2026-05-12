@@ -27,7 +27,8 @@ The first release line starts at `0.1.0`.
 
 4. The release workflow validates the tag, builds release artifacts through
    DuckDB extension-ci-tools, renders a community extension manifest with
-   `repo.ref` pinned to the tag commit, and creates the GitHub release.
+   `repo.ref` pinned to the tag commit, and creates the GitHub release. It
+   expects the tagged commit to have already passed `main` CI.
 5. Submit the rendered community manifest from the release assets to
    `duckdb/community-extensions` when publishing or updating the community
    catalog entry.

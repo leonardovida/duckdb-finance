@@ -58,6 +58,7 @@ jobs:
       ci_tools_version: v1.5.1
       extension_name: finance
       reduced_ci_mode: enabled
+      skip_tests: true
 
   github-release:
     name: Publish GitHub release
