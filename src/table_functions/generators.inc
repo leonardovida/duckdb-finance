@@ -27,16 +27,11 @@ struct RowsGlobalState : public GlobalTableFunctionState {
 };
 
 static void SetOutputCardinality(DataChunk &output, idx_t count) {
-	for (auto &vector : output.data) {
 #if FINANCE_HAS_FLAT_VECTOR_SET_SIZE
+	for (auto &vector : output.data) {
 		FlatVector::SetSize(vector, count);
-#else
-		auto buffer = vector.GetBuffer();
-		if (buffer) {
-			buffer->SetSize(count);
-		}
-#endif
 	}
+#endif
 	output.SetCardinality(count);
 }
 
