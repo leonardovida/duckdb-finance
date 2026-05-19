@@ -68,7 +68,7 @@ def main() -> int:
         "enablement: true",
         "actions/jekyll-build-pages@v1",
         "source: ./docs",
-        "actions/upload-pages-artifact@v6",
+        "actions/upload-pages-artifact@v5",
         "actions/deploy-pages@v5",
     ]
     missing_fragments = [fragment for fragment in required_workflow_fragments if fragment not in workflow]
