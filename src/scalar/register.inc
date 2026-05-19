@@ -224,8 +224,24 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	                 FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMD2Function);
 	loader.RegisterFunction(std::move(d2));
-	RegisterOptionFunction(loader, "fin_bsm_price", BSMPriceFunction);
-	RegisterOptionFunction(loader, "fin_bsm_delta", BSMDeltaFunction);
+	ScalarFunctionSet bsm_price("fin_bsm_price");
+	AddOverload(bsm_price, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMPriceFunction);
+	AddOverload(bsm_price, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMPriceFunction);
+	AddOverload(bsm_price, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMPriceSpecFunction);
+	loader.RegisterFunction(std::move(bsm_price));
+	ScalarFunctionSet bsm_delta("fin_bsm_delta");
+	AddOverload(bsm_delta, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMDeltaFunction);
+	AddOverload(bsm_delta, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMDeltaFunction);
+	AddOverload(bsm_delta, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMDeltaSpecFunction);
+	loader.RegisterFunction(std::move(bsm_delta));
 	ScalarFunctionSet gamma("fin_bsm_gamma");
 	AddOverload(gamma, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                    FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -233,8 +249,20 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(gamma, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                    FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMGammaFunction);
+	AddOverload(gamma, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMGammaSpecFunction);
 	loader.RegisterFunction(std::move(gamma));
-	RegisterOptionFunctionWithScale(loader, "fin_bsm_vega", BSMVegaFunction);
+	ScalarFunctionSet bsm_vega("fin_bsm_vega");
+	AddOverload(bsm_vega, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                       FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
+	AddOverload(bsm_vega, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                       FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
+	AddOverload(bsm_vega, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                       FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
+	AddOverload(bsm_vega, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaSpecFunction);
+	loader.RegisterFunction(std::move(bsm_vega));
 	RegisterOptionFunctionWithScale(loader, "fin_bsm_theta", BSMThetaFunction);
 	RegisterOptionFunctionWithScale(loader, "fin_bsm_rho", BSMRhoFunction);
 	ScalarFunctionSet greeks("fin_bsm_greeks");
@@ -246,6 +274,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            GreeksType(), BSMGreeksFunction);
+	AddOverload(greeks, {OptionSpecType()}, GreeksType(), BSMGreeksSpecFunction);
 	loader.RegisterFunction(std::move(greeks));
 	ScalarFunctionSet all("fin_bsm_all");
 	AddOverload(all,
@@ -256,6 +285,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            BSMAllType(), BSMAllFunction);
+	AddOverload(all, {OptionSpecType()}, BSMAllType(), BSMAllSpecFunction);
 	loader.RegisterFunction(std::move(all));
 	ScalarFunctionSet iv("fin_bsm_implied_vol");
 	AddOverload(iv,

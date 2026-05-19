@@ -132,15 +132,3 @@ SELECT
   fsum(fin_business_days_between(start_date, end_date, 'weekday')) AS business_days,
   fsum(fin_yearfrac(start_date, end_date, 'ACT/365F')) AS yearfrac_sum
 FROM bench_dates;
-
-CREATE OR REPLACE TEMP TABLE bench_gsq_payloads AS
-SELECT
-  '{"id":' || i::VARCHAR || ',"value":' || ((i % 100)::DOUBLE / 10.0)::VARCHAR || '}' AS payload
-FROM range(500000) AS r(i);
-
-SELECT
-  'gs_quant_json_backtest_risk_payloads_500k' AS benchmark,
-  count(fin_api_encode_request_object(payload).payload) AS encoded_requests,
-  count(fin_backtest_scale_trade(payload).payload) AS scaled_trades,
-  count(fin_risk_aggregate_results(payload).payload) AS risk_results
-FROM bench_gsq_payloads;

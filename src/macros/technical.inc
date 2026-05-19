@@ -53,7 +53,6 @@
     {"fin_twap", "(price, ts) AS avg(price)"},
     {"fin_volume_profile", "(price, volume, bins := 10) AS histogram(price)"},
     {"fin_bop", "(open, high, low, close) AS avg((close - open) / nullif(high - low, 0))"},
-    {"fin_cdl_pattern", "(open, high, low, close, pattern) AS 0"},
 
     {"fin_ohlc", "(price) AS struct_pack(open := first(price), high := max(price), low := min(price), close := last(price))"},
     {"fin_ohlcv", "(price, volume) AS struct_pack(open := first(price), high := max(price), low := min(price), close := last(price), volume := fsum(volume), vwap := fin_vwap(price, volume))"},

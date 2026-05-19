@@ -1,0 +1,68 @@
+name: Community Install Smoke
+
+on:
+  schedule:
+    - cron: "23 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      require_published:
+        description: "Fail instead of skip when finance is not in duckdb/community-extensions yet."
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-install-smoke
+  cancel-in-progress: false
+
+env:
+  DUCKDB_VERSION: v1.5.1
+
+jobs:
+  smoke:
+    name: Install from community and run smoke SQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Check upstream community catalog
+        id: catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRE_PUBLISHED: ${{ github.event.inputs.require_published || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if gh api repos/duckdb/community-extensions/contents/extensions/finance/description.yml >/tmp/finance-community-entry.json 2>/tmp/catalog.err; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "finance exists in duckdb/community-extensions."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            cat /tmp/catalog.err
+            if [[ "$REQUIRE_PUBLISHED" == "true" ]]; then
+              echo "finance is not published in duckdb/community-extensions." >&2
+              exit 1
+            fi
+            echo "Skipping install smoke until the community catalog entry is published."
+          fi
+
+      - name: Install DuckDB CLI
+        if: steps.catalog.outputs.published == 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" \
+            -o duckdb_cli.zip
+          unzip -q duckdb_cli.zip
+          chmod +x duckdb
+          ./duckdb --version
+
+      - name: Run community install smoke
+        if: steps.catalog.outputs.published == 'true'
+        run: ./duckdb -batch < examples/community_install_smoke.sql

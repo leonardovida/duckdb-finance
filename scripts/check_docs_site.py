@@ -43,10 +43,11 @@ def main() -> int:
         "/installation/",
         "/function-cookbook/",
         "/function-reference/",
+        "/data-source-compatibility/",
+        "/experimental-functions/",
         "/playbooks/",
         "/best-practices/",
         "/quant-developer-guide/",
-        "/compatibility/",
         "/release/",
         "/performance-testing/",
         "/development/",
@@ -63,11 +64,12 @@ def main() -> int:
         "branches:\n      - main",
         "pages: write",
         "id-token: write",
-        "actions/configure-pages@v5",
+        "actions/configure-pages@v6",
         "enablement: true",
         "actions/jekyll-build-pages@v1",
         "source: ./docs",
-        "actions/deploy-pages@v4",
+        "actions/upload-pages-artifact@v6",
+        "actions/deploy-pages@v5",
     ]
     missing_fragments = [fragment for fragment in required_workflow_fragments if fragment not in workflow]
     if missing_fragments:

@@ -25,9 +25,12 @@ intended public path after upstream acceptance.
 -- After loading finance:
 
 SELECT
-  fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
-  (fin_bsm_greeks('call', 100, 100, 1, 0.05, 0.20)).delta AS delta,
-  fin_bsm_implied_vol('call', 10.45058357, 100, 100, 1, 0.05) AS implied_vol;
+  fin_bsm_price(spec) AS price,
+  (fin_bsm_greeks(spec)).delta AS delta,
+  fin_bsm_implied_vol('call', 10.45058357, 100, 100, 1, 0.05) AS implied_vol
+FROM (
+  SELECT fin_option_spec('call', 100, 100, 1, 0.05, 0.20) AS spec
+);
 ```
 
 ## Explore The Docs
@@ -53,6 +56,10 @@ SELECT
     <strong>Function Reference</strong>
     <span>Search every registered <code>fin_*</code> function by usage, purpose, and return shape.</span>
   </a>
+  <a class="doc-link" href="{{ '/data-source-compatibility/' | relative_url }}">
+    <strong>Data Source Compatibility</strong>
+    <span>Normalize CSV, Parquet, MotherDuck, or vendor-shaped tables into canonical finance inputs.</span>
+  </a>
   <a class="doc-link" href="{{ '/playbooks/' | relative_url }}">
     <strong>Finance SQL Playbooks</strong>
     <span>Run desk-style workflows for options, scenario PnL, rates, portfolios, factors, and ticks.</span>
@@ -65,10 +72,6 @@ SELECT
     <strong>Quant Developer Guide</strong>
     <span>Read the units, model boundaries, risk conventions, and reconciliation guidance.</span>
   </a>
-  <a class="doc-link" href="{{ '/compatibility/' | relative_url }}">
-    <strong>Compatibility</strong>
-    <span>Understand the boundaries for compatibility helpers and ported workflows.</span>
-  </a>
   <a class="doc-link" href="{{ '/performance-testing/' | relative_url }}">
     <strong>Performance Testing</strong>
     <span>Profile the full function surface and run focused hot-path benchmarks.</span>
@@ -76,6 +79,10 @@ SELECT
   <a class="doc-link" href="{{ '/release/' | relative_url }}">
     <strong>Release</strong>
     <span>Tag releases, build artifacts, and prepare the community extension manifest.</span>
+  </a>
+  <a class="doc-link" href="{{ '/roadmap-0-2/' | relative_url }}">
+    <strong>0.2.0 Roadmap</strong>
+    <span>Plan publication, agent-ready examples, numerical review, and release quality for the next minor.</span>
   </a>
   <a class="doc-link" href="{{ '/development/' | relative_url }}">
     <strong>Development Guide</strong>
@@ -91,11 +98,10 @@ SELECT
 | Returns and risk | Simple/log returns, total return, annualization, volatility, Sharpe, Sortino, EWMA, drawdown, VaR/CVaR-style helpers, capture ratios, outliers, and data quality. |
 | Options and volatility | BSM, Black-76, Bachelier, binomial, digital, Asian geometric, barrier, SABR, SVI, Greeks, higher-order Greeks, and implied-vol solvers. |
 | Fixed income and cash flows | Day count, discount factors, forward rates, PV/FV, NPV/IRR/XIRR/MIRR, annuities, bond price/YTM/duration/convexity/DV01, and curve helpers. |
-| Portfolio analytics | Vector and matrix helpers, portfolio return/variance/volatility/Sharpe, equal and inverse-vol weights, optimizer table functions, HRP fallback weights, efficient-frontier points, and rebalance trades. |
-| Compatibility helpers | Local aliases and focused struct helpers for porting existing finance workflows. |
-| Time series and technical indicators | Rolling aggregate macros, OHLC/OHLCV, TA-style indicators, candlestick aliases, grid functions, and bars. |
+| Portfolio analytics | Vector and matrix helpers, table-shaped portfolio return/variance workflows, optimizer table functions, HRP fallback weights, efficient-frontier points, and rebalance trades. |
+| Time series and technical indicators | Rolling aggregate macros, OHLC/OHLCV, TA-style indicators, grid functions, and bars. |
 | Market microstructure | Mid, spread, spread bps, microprice, order imbalance, trade sign, VWAP/TWAP, bar construction, and impact proxies. |
-| Validation and schema helpers | OHLC validation, return validation, finite/price checks, convention parsers, schema templates, and schema validation scaffolding. |
+| Validation and schema helpers | OHLC validation, return validation, finite/price checks, convention parsers, source normalization, schema templates, and schema validation scaffolding. |
 
 ## Stability Notes
 
@@ -123,16 +129,6 @@ stack before relying on them for trading, valuation, or risk sign-off.
 | `src/table_functions.cpp` | Table-function registration unit; implementation lives in `src/table_functions/*.inc`. |
 | `test/sql/gold_dataset.sql` and `test/sql/gold_tests.sql` | Deterministic behavior coverage for the function surface. |
 | `docs/function_reference.md` | Source-derived function reference with usage, purpose, returns, and examples. |
-
-## Compatibility Layer
-
-The compatibility layer is documented in
-[Compatibility](compatibility.md). It preserves familiar finance helper
-names and focused struct shapes where they make sense in SQL, while keeping all
-analytics local to DuckDB.
-
-These helpers are not affiliated with Goldman Sachs and do not use GS APIs,
-sessions, entitlements, or market data.
 
 ## Playbooks
 

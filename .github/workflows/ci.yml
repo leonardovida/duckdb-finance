@@ -74,6 +74,12 @@ jobs:
         working-directory: duckdb-finance
         run: make ci-static
 
+      - name: Lint GitHub Actions workflows
+        working-directory: duckdb-finance
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          actionlint
+
       - name: Check out DuckDB
         if: steps.scope.outputs.full == 'true'
         uses: actions/checkout@v6

@@ -66,9 +66,12 @@ Options and implied volatility:
 
 ```sql
 SELECT
-  fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
-  (fin_bsm_greeks('call', 100, 100, 1, 0.05, 0.20)).delta AS delta,
-  fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05) AS implied_vol;
+  fin_bsm_price(spec) AS price,
+  (fin_bsm_greeks(spec)).delta AS delta,
+  fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05) AS implied_vol
+FROM (
+  SELECT fin_option_spec('call', 100, 100, 1, 0.05, 0.20) AS spec
+);
 ```
 
 Expected shape: one row with price near `10.450584`, delta near `0.636831`,
@@ -118,5 +121,3 @@ FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
   examples.
 - [Best Practices]({{ '/best-practices/' | relative_url }}) for units,
   validation, and aggregation guidance.
-- [Compatibility]({{ '/compatibility/' | relative_url }}) when porting
-  an existing compatibility-shaped workflow.

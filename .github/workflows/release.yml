@@ -43,7 +43,7 @@ jobs:
           echo "sha=${release_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Upload rendered community manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: community-extension-description
           path: dist/community-extension/description.yml
@@ -73,7 +73,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist/release-assets
 
@@ -124,9 +124,9 @@ jobs:
           - Built release artifacts for DuckDB ${DUCKDB_VERSION} with DuckDB extension-ci-tools ${EXTENSION_CI_TOOLS_VERSION}. ${run_url}
           - Included a release-ready community extension manifest with repo.ref pinned to ${RELEASE_SHA}. ${commit_url}
 
-          ## Compatibility
+          ## Breaking Changes
 
-          - No breaking changes are expected for ${VERSION}. This is the first tagged release line for the extension. ${commit_url}
+          - ${VERSION} is the breaking 0.2.0 cleanup line. The broad compatibility and generated descriptor surfaces are not part of this release. ${commit_url}
 
           ## Verification
 

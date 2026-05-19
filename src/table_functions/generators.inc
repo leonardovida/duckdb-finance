@@ -42,18 +42,18 @@ static vector<SchemaRow> SchemaRows(const string &kind) {
 		rows.push_back({normalized, name, type, required, description});
 	};
 	if (normalized == "returns") {
-		add("asset", "VARCHAR", true, "Asset identifier");
 		add("date", "DATE", true, "Observation date");
-		add("return", "DOUBLE", true, "Decimal return");
+		add("asset_id", "VARCHAR", true, "Asset identifier");
+		add("return_decimal", "DOUBLE", true, "Decimal return");
 		return rows;
 	}
 	if (normalized == "option_chain") {
-		add("kind", "VARCHAR", true, "call or put");
-		add("spot", "DOUBLE", true, "Underlying spot price");
-		add("strike", "DOUBLE", true, "Strike price");
-		add("ttm", "DOUBLE", true, "Time to maturity in years");
-		add("rate", "DOUBLE", true, "Annualized risk-free rate");
-		add("vol", "DOUBLE", true, "Annualized volatility");
+		add("option_kind", "VARCHAR", true, "call or put");
+		add("underlying_price", "DOUBLE", true, "Underlying price");
+		add("strike_price", "DOUBLE", true, "Strike price");
+		add("time_to_expiry_years", "DOUBLE", true, "Time to expiry in years");
+		add("risk_free_rate", "DOUBLE", true, "Annualized decimal risk-free rate");
+		add("implied_volatility", "DOUBLE", true, "Annualized decimal volatility");
 		add("dividend_yield", "DOUBLE", false, "Continuous dividend yield");
 		return rows;
 	}
@@ -64,12 +64,14 @@ static vector<SchemaRow> SchemaRows(const string &kind) {
 		return rows;
 	}
 	if (normalized == "portfolio") {
-		add("asset", "VARCHAR", true, "Asset identifier");
+		add("asset_id", "VARCHAR", true, "Asset identifier");
 		add("weight", "DOUBLE", true, "Portfolio weight");
+		add("expected_return", "DOUBLE", false, "Expected decimal return");
 		add("base_currency", "VARCHAR", false, "Base currency");
 		return rows;
 	}
 	add("ts", "TIMESTAMP", true, "Timestamp");
+	add("asset_id", "VARCHAR", false, "Asset identifier");
 	add("open", "DOUBLE", false, "Open price");
 	add("high", "DOUBLE", false, "High price");
 	add("low", "DOUBLE", false, "Low price");

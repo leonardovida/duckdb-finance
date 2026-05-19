@@ -20,14 +20,6 @@ def registered_functions() -> set[str]:
     source = "\n".join(read(path) for path in source_files())
     functions = set(re.findall(r'"(fin_[A-Za-z0-9_]+)"', source))
     functions.discard("fin_cdl_")
-
-    cdl_path = ROOT / "src" / "macros" / "candlestick_patterns.inc"
-    if cdl_path.exists():
-        pattern_source = read(cdl_path)
-    else:
-        match = re.search(r"static const char \*CDL_PATTERNS\[\] = \{(.*?)nullptr\};", source, re.S)
-        pattern_source = match.group(1) if match else ""
-    functions.update(f"fin_cdl_{name}" for name in re.findall(r'"([a-z0-9]+)"', pattern_source))
     return functions
 
 

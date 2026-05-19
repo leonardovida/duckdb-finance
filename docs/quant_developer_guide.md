@@ -98,10 +98,13 @@ WITH option_inputs AS (
   SELECT 'call' AS kind, 100.0 AS spot, 100.0 AS strike, 1.0 AS ttm, 0.05 AS rate, 0.20 AS vol
 )
 SELECT
-  fin_bsm_price(kind, spot, strike, ttm, rate, vol) AS pv,
-  fin_bsm_delta(kind, spot, strike, ttm, rate, vol) AS delta,
-  fin_bsm_vega(kind, spot, strike, ttm, rate, vol) AS vega
-FROM option_inputs;
+  fin_bsm_price(spec) AS pv,
+  fin_bsm_delta(spec) AS delta,
+  fin_bsm_vega(spec) AS vega
+FROM (
+  SELECT fin_option_spec(kind, spot, strike, ttm, rate, vol) AS spec
+  FROM option_inputs
+);
 ```
 
 For scenario work, separate base inputs, shocked inputs, and comparison:

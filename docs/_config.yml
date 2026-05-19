@@ -25,18 +25,22 @@ nav:
     url: /function-cookbook/
   - title: Function Reference
     url: /function-reference/
+  - title: Data Source Compatibility
+    url: /data-source-compatibility/
+  - title: Experimental Functions
+    url: /experimental-functions/
   - title: Playbooks
     url: /playbooks/
   - title: Best Practices
     url: /best-practices/
   - title: Quant Developer Guide
     url: /quant-developer-guide/
-  - title: Compatibility
-    url: /compatibility/
   - title: Performance Testing
     url: /performance-testing/
   - title: Release
     url: /release/
+  - title: 0.2.0 Roadmap
+    url: /roadmap-0-2/
   - title: Development
     url: /development/
 

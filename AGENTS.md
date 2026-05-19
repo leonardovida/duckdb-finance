@@ -9,7 +9,7 @@ work, and verify behavior with DuckDB after edits.
 - `src/scalar.cpp`: native scalar functions for distributions, rates, options,
   cash flows, portfolio math, validation, and calendars.
 - `src/aggregate.cpp`: native aggregate implementations that need custom state.
-- `src/macros.cpp`: SQL macro registrations and compatibility aliases.
+- `src/macros.cpp`: SQL macro registrations for finance-native analytics.
 - `src/table_functions.cpp`: table functions and bind-replace SQL generators.
 - `include/finance/finance_extension.hpp`: extension registration declarations.
 - `test/sql/smoke_queries.sql`: broad smoke coverage.
@@ -82,6 +82,4 @@ make check
 ```
 
 For function-surface changes, also check that every registered function is
-documented and exercised by the gold tests. The dynamic candlestick functions are
-registered from the `CDL_PATTERNS` array in `src/macros.cpp`; representative
-generated aliases such as `fin_cdl_doji` must stay covered.
+documented and exercised by the gold tests.

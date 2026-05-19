@@ -57,11 +57,14 @@ SELECT
   trade_id,
   underlier,
   currency,
-  notional * fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield) AS price,
-  notional * fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield) AS delta,
-  notional * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield) AS gamma,
-  notional * fin_bsm_vega(kind, spot, strike, ttm, rate, vol, dividend_yield) AS vega
-FROM desk_options
+  notional * fin_bsm_price(option_spec) AS model_price,
+  notional * fin_bsm_delta(option_spec) AS model_delta,
+  notional * fin_bsm_gamma(option_spec) AS model_gamma,
+  notional * fin_bsm_vega(option_spec) AS model_vega
+FROM (
+  SELECT *, fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield) AS option_spec
+  FROM desk_options
+)
 ORDER BY trade_id;
 ```
 
@@ -119,12 +122,12 @@ shocked AS (
   FROM base
 )
 SELECT
-  fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield) AS base_price,
-  fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield) AS shocked_price,
-  fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield)
-    - fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield) AS full_reval_pnl,
-  fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield) * (shocked_spot - spot)
-    + 0.5 * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield)
+  fin_bsm_price(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)) AS base_price,
+  fin_bsm_price(fin_option_spec(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield)) AS shocked_price,
+  fin_bsm_price(fin_option_spec(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield))
+    - fin_bsm_price(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)) AS full_reval_pnl,
+  fin_bsm_delta(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)) * (shocked_spot - spot)
+    + 0.5 * fin_bsm_gamma(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield))
       * (shocked_spot - spot) * (shocked_spot - spot) AS delta_gamma_pnl
 FROM shocked;
 ```
