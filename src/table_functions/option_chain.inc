@@ -21,14 +21,14 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	auto query = StringUtil::Format(
 	    "WITH priced AS (SELECT *, fin_bsm_all(%s) AS __finance_bsm_all FROM %s) "
 	    "SELECT * EXCLUDE (__finance_bsm_all), "
-	    "__finance_bsm_all.price AS price, "
-	    "__finance_bsm_all.delta AS delta, "
-	    "__finance_bsm_all.gamma AS gamma, "
-	    "__finance_bsm_all.vega AS vega, "
-	    "__finance_bsm_all.theta AS theta, "
-	    "__finance_bsm_all.rho AS rho, "
+	    "__finance_bsm_all.price AS model_price, "
+	    "__finance_bsm_all.delta AS model_delta, "
+	    "__finance_bsm_all.gamma AS model_gamma, "
+	    "__finance_bsm_all.vega AS model_vega, "
+	    "__finance_bsm_all.theta AS model_theta, "
+	    "__finance_bsm_all.rho AS model_rho, "
 	    "fin_bsm_implied_vol(%s, __finance_bsm_all.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
-	    "%s::DOUBLE) AS implied_vol "
+	    "%s::DOUBLE) AS model_implied_volatility "
 	    "FROM priced",
 	    args, table, kind, spot, strike, ttm, rate, q, vol);
 	return ParseSubquery(context, query);

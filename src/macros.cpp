@@ -66,13 +66,7 @@ static const FinanceMacro FINANCE_MACROS[] = {
 #include "macros/time_series.inc"
 #include "macros/technical.inc"
 #include "macros/statistics_specs_portfolio.inc"
-#include "macros/compatibility.inc"
-#include "macros/gsq.inc"
-#include "macros/gs_quant_surface.inc"
     {nullptr, nullptr}};
-
-static const char *CDL_PATTERNS[] = {
-#include "macros/candlestick_patterns.inc"
 
 } // namespace
 
@@ -86,13 +80,6 @@ void RegisterFinanceMacros(ExtensionLoader &loader) {
 			continue;
 		}
 		RegisterMacro(loader, FINANCE_MACROS[i]);
-	}
-	for (idx_t i = 0; CDL_PATTERNS[i] != nullptr; i++) {
-		auto name = "fin_cdl_" + string(CDL_PATTERNS[i]);
-		if (!registered_names.insert(name).second) {
-			continue;
-		}
-		RegisterMacro(loader, {name.c_str(), "(open, high, low, close) AS 0"});
 	}
 }
 

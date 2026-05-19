@@ -28,6 +28,7 @@ namespace {
 #include "table_functions/common.inc"
 #include "table_functions/option_chain.inc"
 #include "table_functions/grid.inc"
+#include "table_functions/normalization.inc"
 #include "table_functions/analytics.inc"
 #include "table_functions/bars.inc"
 #include "table_functions/generators.inc"

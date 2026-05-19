@@ -1,0 +1,154 @@
+{
+  "functions": [
+    {
+      "name": "fin_adf",
+      "reason": "returns NULL until an Augmented Dickey-Fuller implementation is added",
+      "replacement": "use explicit SQL regression diagnostics or keep this out of production workflows"
+    },
+    {
+      "name": "fin_anova_oneway",
+      "reason": "returns NULL until one-way ANOVA statistic and p-value support is added",
+      "replacement": "use grouped DuckDB aggregates for means, variances, and counts"
+    },
+    {
+      "name": "fin_apo",
+      "reason": "returns a constant placeholder instead of exponential moving-average spread",
+      "replacement": "compute fast and slow moving averages explicitly in SQL"
+    },
+    {
+      "name": "fin_aroon",
+      "reason": "returns fixed placeholder values instead of lookback high/low positions",
+      "replacement": "compute high/low lookback positions explicitly in SQL"
+    },
+    {
+      "name": "fin_aroonosc",
+      "reason": "returns a constant placeholder instead of Aroon oscillator",
+      "replacement": "compute Aroon up/down explicitly and subtract them"
+    },
+    {
+      "name": "fin_black_litterman_returns",
+      "reason": "returns input market weights until full Black-Litterman posterior support is added",
+      "replacement": "keep Black-Litterman calculations in reviewed SQL or an external model"
+    },
+    {
+      "name": "fin_corr_matrix",
+      "reason": "returns a one-cell placeholder rather than a grouped correlation matrix",
+      "replacement": "use pairwise DuckDB corr() grouped by asset pairs"
+    },
+    {
+      "name": "fin_cov_matrix",
+      "reason": "returns a one-cell variance placeholder rather than a grouped covariance matrix",
+      "replacement": "use pairwise DuckDB covar_samp() grouped by asset pairs"
+    },
+    {
+      "name": "fin_cramers_v",
+      "reason": "returns NULL until categorical association support is added",
+      "replacement": "build a contingency table and compute the statistic explicitly"
+    },
+    {
+      "name": "fin_half_life_mean_reversion",
+      "reason": "returns NULL until lagged-regression half-life support is added",
+      "replacement": "estimate lagged regression manually and compute -ln(2) / slope"
+    },
+    {
+      "name": "fin_hurst",
+      "reason": "returns a fixed neutral value until a rescaled-range or variance-scaling implementation is added",
+      "replacement": "use explicit log-log variance scaling in SQL"
+    },
+    {
+      "name": "fin_ks_test",
+      "reason": "returns NULL until Kolmogorov-Smirnov statistic support is added",
+      "replacement": "compare empirical distributions with explicit SQL quantiles"
+    },
+    {
+      "name": "fin_linear_trend",
+      "reason": "returns NULL trend fields except intercept",
+      "replacement": "use DuckDB regr_slope, regr_intercept, and regr_r2 directly"
+    },
+    {
+      "name": "fin_linearreg_slope",
+      "reason": "returns NULL until rolling/windowed regression slope support is added",
+      "replacement": "use DuckDB regr_slope over the desired window"
+    },
+    {
+      "name": "fin_ljung_box",
+      "reason": "returns NULL until autocorrelation test statistic support is added",
+      "replacement": "compute lagged autocorrelations explicitly in SQL"
+    },
+    {
+      "name": "fin_macd",
+      "reason": "returns zero MACD fields instead of exponential moving-average signals",
+      "replacement": "compute fast, slow, and signal EMAs explicitly before using the result"
+    },
+    {
+      "name": "fin_mann_whitney_u",
+      "reason": "returns NULL until rank-sum statistic support is added",
+      "replacement": "rank observations with DuckDB window functions and aggregate manually"
+    },
+    {
+      "name": "fin_max_sharpe_weights",
+      "reason": "returns equal weights until constrained optimizer support is added",
+      "replacement": "use fin_portfolio_optimize for diagnostic table output or an external optimizer"
+    },
+    {
+      "name": "fin_min_variance_weights",
+      "reason": "returns equal weights until closed-form or constrained optimizer support is added",
+      "replacement": "use fin_portfolio_optimize for diagnostic table output or an external optimizer"
+    },
+    {
+      "name": "fin_mutual_information",
+      "reason": "returns NULL until binned mutual-information support is added",
+      "replacement": "bin inputs explicitly and aggregate probabilities in SQL"
+    },
+    {
+      "name": "fin_newey_west_tstat",
+      "reason": "returns NULL until HAC standard-error support is added",
+      "replacement": "compute regression and HAC errors in reviewed SQL or an external stats package"
+    },
+    {
+      "name": "fin_ols",
+      "reason": "returns NULL model fields except intercept",
+      "replacement": "use DuckDB regr_* aggregates for single-factor regressions"
+    },
+    {
+      "name": "fin_ols_no_intercept",
+      "reason": "delegates to the placeholder OLS result",
+      "replacement": "use explicit SQL linear algebra or DuckDB regr_* aggregates where applicable"
+    },
+    {
+      "name": "fin_ppo",
+      "reason": "returns a constant placeholder instead of percentage price oscillator",
+      "replacement": "compute fast and slow moving averages explicitly in SQL"
+    },
+    {
+      "name": "fin_risk_parity_weights",
+      "reason": "returns equal weights until risk-budget optimizer support is added",
+      "replacement": "use fin_hrp_weights for a deterministic table output or an external optimizer"
+    },
+    {
+      "name": "fin_stability",
+      "reason": "returns a constant placeholder instead of log-equity trend stability",
+      "replacement": "compute NAV and regression r2 explicitly in SQL"
+    },
+    {
+      "name": "fin_theils_u",
+      "reason": "returns NULL until categorical association support is added",
+      "replacement": "build the contingency table and entropy terms explicitly"
+    },
+    {
+      "name": "fin_ttest_1samp",
+      "reason": "returns a statistic and degrees of freedom but not a p-value",
+      "replacement": "use the statistic as a diagnostic only or compute p-values externally"
+    },
+    {
+      "name": "fin_ttest_2samp",
+      "reason": "returns a statistic and degrees of freedom but not a p-value",
+      "replacement": "use the statistic as a diagnostic only or compute p-values externally"
+    },
+    {
+      "name": "fin_welch_ttest",
+      "reason": "delegates to two-sample t-test output that does not include a p-value",
+      "replacement": "use the statistic as a diagnostic only or compute p-values externally"
+    }
+  ]
+}

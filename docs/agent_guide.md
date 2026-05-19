@@ -19,23 +19,25 @@ the function reference.
 | Install or load the extension | [Installation]({{ '/installation/' | relative_url }}) | `make smoke DUCKDB_ROOT=/path/to/duckdb` |
 | Learn the first queries | [Getting Started]({{ '/getting-started/' | relative_url }}) | Run the SQL snippets against a loaded extension |
 | Choose a function for a task | [Function Cookbook]({{ '/function-cookbook/' | relative_url }}) | [Function Reference]({{ '/function-reference/' | relative_url }}) |
+| Adapt source data | [Data Source Compatibility]({{ '/data-source-compatibility/' | relative_url }}) | Normalization helper gold tests |
 | Build a desk-style workflow | [Finance SQL Playbooks]({{ '/playbooks/' | relative_url }}) | `examples/playbooks.sql` |
 | Explain units or model boundaries | [Best Practices]({{ '/best-practices/' | relative_url }}) and [Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}) | Relevant gold tests |
-| Check compatibility behavior | [Compatibility]({{ '/compatibility/' | relative_url }}) | `scripts/check_gs_quant_surface.py` |
 | Change code or docs | [Development Guide]({{ '/development/' | relative_url }}) | `make check DUCKDB_ROOT=/path/to/duckdb` |
 
 ## Working Rules
 
-1. Prefer core `fin_*` functions before compatibility helpers.
+1. Prefer the documented finance-native `fin_*` function for the task.
 2. Keep all rates, returns, and volatilities in decimal units unless a function
    says it takes basis points.
 3. Treat currency fields as labels unless the function explicitly performs FX
    pricing or conversion.
-4. Do not infer market data, curves, calendars, or official risk units. Ask the
+4. Normalize source-specific columns into canonical names before pricing or
+   portfolio aggregation.
+5. Do not infer market data, curves, calendars, or official risk units. Ask the
    caller or make the assumption explicit in SQL.
-5. Use the function reference for signatures and return shapes, then run the
+6. Use the function reference for signatures and return shapes, then run the
    query. Do not rely on memory for exact overloads.
-6. For source builds, use the Makefile targets. They load the local unsigned
+7. For source builds, use the Makefile targets. They load the local unsigned
    extension correctly.
 
 ## Function Lookup Pattern

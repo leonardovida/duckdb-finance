@@ -13,11 +13,14 @@ SELECT
   trade_id,
   underlier,
   currency,
-  round(notional * fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS price,
-  round(notional * fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS delta,
-  round(notional * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield), 9) AS gamma,
-  round(notional * fin_bsm_vega(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS vega
-FROM desk_options
+  round(notional * fin_bsm_price(option_spec), 6) AS model_price,
+  round(notional * fin_bsm_delta(option_spec), 6) AS model_delta,
+  round(notional * fin_bsm_gamma(option_spec), 9) AS model_gamma,
+  round(notional * fin_bsm_vega(option_spec), 6) AS model_vega
+FROM (
+  SELECT *, fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield) AS option_spec
+  FROM desk_options
+)
 ORDER BY trade_id;
 
 CREATE OR REPLACE TEMP TABLE portfolio_lines AS
@@ -55,12 +58,12 @@ shocked AS (
 )
 SELECT
   'scenario_pnl_explain' AS playbook,
-  round(fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS base_price,
-  round(fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield), 6) AS shocked_price,
-  round(fin_bsm_price(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield) - fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 6) AS full_reval_pnl,
+  round(fin_bsm_price(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)), 6) AS base_price,
+  round(fin_bsm_price(fin_option_spec(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield)), 6) AS shocked_price,
+  round(fin_bsm_price(fin_option_spec(kind, shocked_spot, strike, ttm, rate, vol, dividend_yield)) - fin_bsm_price(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)), 6) AS full_reval_pnl,
   round(
-    fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield) * (shocked_spot - spot)
-      + 0.5 * fin_bsm_gamma(spot, strike, ttm, rate, vol, dividend_yield) * (shocked_spot - spot) * (shocked_spot - spot),
+    fin_bsm_delta(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)) * (shocked_spot - spot)
+      + 0.5 * fin_bsm_gamma(fin_option_spec(kind, spot, strike, ttm, rate, vol, dividend_yield)) * (shocked_spot - spot) * (shocked_spot - spot),
     6
   ) AS delta_gamma_pnl
 FROM shocked;

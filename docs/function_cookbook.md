@@ -41,11 +41,14 @@ Price an option and return risk columns in one row:
 
 ```sql
 SELECT
-  fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS price,
-  fin_bsm_delta('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS delta,
-  fin_bsm_gamma(100.0, 100.0, 1.0, 0.05, 0.20) AS gamma,
-  fin_bsm_vega('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS vega,
-  fin_bsm_implied_vol('call', 10.450583572185565, 100.0, 100.0, 1.0, 0.05) AS implied_vol;
+  fin_bsm_price(spec) AS price,
+  fin_bsm_delta(spec) AS delta,
+  fin_bsm_gamma(spec) AS gamma,
+  fin_bsm_vega(spec) AS vega,
+  fin_bsm_implied_vol('call', 10.450583572185565, 100.0, 100.0, 1.0, 0.05) AS implied_vol
+FROM (
+  SELECT fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS spec
+);
 ```
 
 Use `fin_black76_price` for futures or forward-style underliers,
@@ -87,6 +90,24 @@ SELECT *
 FROM fin_efficient_frontier([0.08, 0.12], [[0.04, 0.01], [0.01, 0.09]], 5);
 ```
 
+When portfolio inputs already live in tables, keep them table-shaped:
+
+```sql
+SELECT *
+FROM fin_portfolio_return_table('portfolio_inputs', 'asset_id', 'weight', 'expected_return');
+
+SELECT *
+FROM fin_portfolio_variance_table(
+  'portfolio_inputs',
+  'asset_id',
+  'weight',
+  'covariance_rows',
+  'asset_i',
+  'asset_j',
+  'covariance'
+);
+```
+
 ## Technical Indicators And Microstructure
 
 Compute indicators from rows already in DuckDB:
@@ -125,14 +146,39 @@ SELECT
 
 Use validation helpers at ingestion boundaries so invalid data fails early.
 
+## Source Normalization
+
+Normalize source-specific column names before applying analytics. These helpers
+do not fetch vendor data; they reshape tables, views, or external-file scans
+that are already queryable by DuckDB.
+
+```sql
+SELECT *
+FROM fin_normalize_returns('raw_returns', 'trade_date', 'ticker', 'return_1d');
+
+SELECT
+  option_kind,
+  fin_bsm_price(option_spec) AS model_price
+FROM fin_normalize_option_chain(
+  'raw_options',
+  'cp',
+  'underlying_px',
+  'strike_px',
+  'expiry_dt',
+  'valuation_dt',
+  'zero_rate',
+  'iv',
+  'q'
+);
+```
+
 ## Choosing Between Similar Functions
 
 | Need | Prefer | Notes |
 |---|---|---|
 | Pairwise return from two prices | `fin_simple_return`, `fin_log_return` | Use before aggregating returns. |
 | Aggregate total performance | `fin_total_return` | Takes return rows. |
-| Option PV and basic Greeks | `fin_bsm_price`, `fin_bsm_delta`, `fin_bsm_gamma`, `fin_bsm_vega` | Explicit inputs, per unit notional. |
+| Option PV and basic Greeks | `fin_option_spec` with `fin_bsm_price`, `fin_bsm_delta`, `fin_bsm_gamma`, `fin_bsm_vega` | Prefer specs when a workflow reuses the same option inputs across multiple functions. |
 | Implied volatility | `fin_bsm_implied_vol`, `fin_black76_implied_vol`, `fin_bachelier_implied_vol` | Match the pricing model. |
 | Bond analytics | `fin_bond_price`, `fin_bond_ytm`, `fin_bond_duration`, `fin_bond_convexity` | Caller owns coupon, yield, maturity, frequency, face. |
 | Portfolio frontier rows | `fin_efficient_frontier` | Table function, useful for examples and local diagnostics. |
-| Compatibility-shaped workflow | Compatibility helpers in [Compatibility]({{ '/compatibility/' | relative_url }}) | Use only when the shape helps. |

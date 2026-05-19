@@ -24,8 +24,7 @@ make check DUCKDB_ROOT=/path/to/duckdb
 
 ## Contribution Standards
 
-- Keep functions under the `fin_` namespace unless there is a compatibility
-  alias with a clear reason.
+- Keep functions under the `fin_` namespace with finance-native names.
 - Use standard DuckDB SQL types (`DOUBLE`, `DATE`, `TIMESTAMP`, `VARCHAR`,
   `STRUCT`, and `LIST`) instead of hidden external state.
 - Prefer deterministic local models with explicit inputs over opaque
@@ -42,7 +41,13 @@ make check DUCKDB_ROOT=/path/to/duckdb
 - Edge cases are covered, especially NULLs, invalid dimensions, boundary rates,
   zero denominators, and option model round trips.
 - Public docs describe units, assumptions, and return semantics.
+- Cookbook, playbook, or example docs are updated when a common workflow
+  changes.
+- Performance coverage is added or explicitly unnecessary for the change.
 - `make check` passes locally, or the PR explains the environment blocker.
+
+GitHub issue and pull request templates include the same checks so agents and
+human contributors have one review standard.
 
 ## Model And Data Policy
 

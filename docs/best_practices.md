@@ -107,14 +107,21 @@ FROM quotes;
 For schema-sensitive workflows, document the expected input columns and fail
 early when data is missing or in the wrong unit.
 
-## Use Compatibility Helpers Deliberately
+## Adapt Sources Into Canonical Views
 
-Compatibility helpers are useful when porting an existing workflow, but core
-finance functions are usually clearer for new SQL. Prefer the core function
-unless the compatibility shape carries useful structure across queries.
+External feeds rarely agree on names or units. Create a canonical view before
+running analytics:
 
-See [Compatibility]({{ '/compatibility/' | relative_url }}) for the supported
-boundary.
+```sql
+CREATE OR REPLACE VIEW canonical_returns AS
+SELECT *
+FROM fin_normalize_returns('raw_returns', 'trade_date', 'ticker', 'return_1d');
+```
+
+Prefer names such as `asset_id`, `return_decimal`, `underlying_price`,
+`strike_price`, `time_to_expiry_years`, `risk_free_rate`, and
+`implied_volatility` in shared views. Keep source-specific names in raw staging
+tables where they are easier to audit.
 
 ## Verify Changes
 
@@ -123,10 +130,10 @@ Run local validation before handing off a change:
 ```sh
 python3 scripts/check_docs_site.py
 python3 scripts/check_function_docs.py
-python3 scripts/check_gs_quant_surface.py
+python3 scripts/check_function_surface.py
 make check DUCKDB_ROOT=/path/to/duckdb
 ```
 
 When the change only edits prose, the Python docs checks catch navigation,
-function-reference, and compatibility-manifest drift. When SQL examples change,
-run those examples against the local extension too.
+function-reference, and function-surface drift. When SQL examples change, run
+those examples against the local extension too.

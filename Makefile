@@ -11,7 +11,7 @@ GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check-release-metadata check ci-static ci-duckdb ci clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -36,6 +36,9 @@ perf: debug
 
 test: smoke gold
 
+check-yaml:
+	ruby -e 'require "yaml"; Dir[".github/workflows/*.yml", ".github/ISSUE_TEMPLATE/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'
+
 check-docs:
 	python3 scripts/check_function_docs.py
 
@@ -48,15 +51,18 @@ check-tests:
 check-perf-tests:
 	python3 scripts/check_function_perf_tests.py
 
-check-gs-quant-surface:
-	python3 scripts/check_gs_quant_surface.py
+check-function-surface:
+	python3 scripts/check_function_surface.py
+
+check-function-usability:
+	python3 scripts/check_function_usability.py
 
 check-release-metadata:
 	python3 scripts/check_release_metadata.py
 
-check: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check-release-metadata test
+check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata test
 
-ci-static: check-docs check-docs-site check-tests check-perf-tests check-gs-quant-surface check-release-metadata
+ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata
 
 ci-duckdb: gold-quiet
 

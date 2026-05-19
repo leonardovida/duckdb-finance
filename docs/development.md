@@ -15,9 +15,9 @@ standard out-of-tree DuckDB extension.
 
 | Path | Purpose |
 |---|---|
-| `src/scalar.cpp` and `src/scalar/*.inc` | Native scalar functions for math, rates, options, cash flows, portfolios, validation, calendars, and compatibility structs. |
+| `src/scalar.cpp` and `src/scalar/*.inc` | Native scalar functions for math, rates, options, cash flows, portfolios, validation, and calendars. |
 | `src/aggregate.cpp` and `src/aggregate/*.inc` | Native aggregate state for metrics such as Sortino, EWMA volatility, drawdowns, outliers, IV rank, and IV percentile. |
-| `src/macros.cpp` and `src/macros/*.inc` | SQL macro registrations and compatibility aliases. |
+| `src/macros.cpp` and `src/macros/*.inc` | SQL macro registrations for returns, risk, statistics, portfolios, time series, and technical indicators. |
 | `src/table_functions.cpp` and `src/table_functions/*.inc` | Table functions and bind-replace SQL generators. |
 | `include/finance/finance_extension.hpp` | Extension registration declarations. |
 | `test/sql/gold_dataset.sql` | Small deterministic fixture tables. |

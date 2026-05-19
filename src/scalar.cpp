@@ -24,6 +24,7 @@
 #include "duckdb/function/scalar_function.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>

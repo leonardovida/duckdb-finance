@@ -74,6 +74,11 @@ jobs:
         working-directory: duckdb-finance
         run: make ci-static
 
+      - name: Lint GitHub Actions workflows
+        working-directory: duckdb-finance
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
       - name: Check out DuckDB
         if: steps.scope.outputs.full == 'true'
         uses: actions/checkout@v6
@@ -129,4 +134,9 @@ jobs:
 
       - name: Show compiler cache stats
         if: always() && steps.scope.outputs.full == 'true'
-        run: ccache --show-stats
+        run: |
+          if command -v ccache >/dev/null 2>&1; then
+            ccache --show-stats
+          else
+            echo "ccache is unavailable because the build dependency step did not complete."
+          fi

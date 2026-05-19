@@ -95,7 +95,7 @@ static AggregateFunction TernaryDoubleAggregate(const string &name, const Logica
 	                         TernaryScatterUpdate<STATE, A_TYPE, B_TYPE, C_TYPE, OP>,
 	                         AggregateFunction::StateCombine<STATE, OP>,
 	                         AggregateFunction::StateFinalize<STATE, double, OP>,
-	                         TernarySimpleUpdate<STATE, A_TYPE, B_TYPE, C_TYPE, OP>);
+	                         FunctionNullHandling::DEFAULT_NULL_HANDLING);
 	result.name = name;
 	return result;
 }
@@ -165,7 +165,7 @@ static AggregateFunction TernaryDoubleVarcharDoubleBigintAggregate(const string 
 	                         TernaryDoubleVarcharDoubleScatterUpdate<STATE, OP>,
 	                         AggregateFunction::StateCombine<STATE, OP>,
 	                         AggregateFunction::StateFinalize<STATE, int64_t, OP>,
-	                         TernaryDoubleVarcharDoubleSimpleUpdate<STATE, OP>, nullptr,
+	                         FunctionNullHandling::DEFAULT_NULL_HANDLING, nullptr, nullptr,
 	                         AggregateFunction::StateDestroy<STATE, OP>);
 	result.name = name;
 	return result;

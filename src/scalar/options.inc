@@ -125,6 +125,113 @@ static LogicalType BSMAllType() {
 	return LogicalType::STRUCT(std::move(children));
 }
 
+static LogicalType OptionSpecType() {
+	child_list_t<LogicalType> children;
+	children.emplace_back("kind", FinanceLogicalType(LogicalTypeId::VARCHAR));
+	children.emplace_back("spot", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("strike", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("ttm", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("rate", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("vol", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("dividend_yield", FinanceLogicalType(LogicalTypeId::DOUBLE));
+	children.emplace_back("exercise", FinanceLogicalType(LogicalTypeId::VARCHAR));
+	children.emplace_back("model", FinanceLogicalType(LogicalTypeId::VARCHAR));
+	return LogicalType::STRUCT(std::move(children));
+}
+
+struct OptionSpecData {
+	UnifiedVectorFormat spec;
+	array<UnifiedVectorFormat, 9> children;
+};
+
+struct OptionSpecRow {
+	bool call;
+	double spot;
+	double strike;
+	double ttm;
+	double rate;
+	double vol;
+	double dividend_yield;
+};
+
+static OptionSpecData PrepareOptionSpecData(DataChunk &args) {
+	OptionSpecData data;
+	args.data[0].ToUnifiedFormat(args.size(), data.spec);
+	auto &children = StructVector::GetEntries(args.data[0]);
+	if (children.size() != data.children.size()) {
+		throw InvalidInputException("Option spec must come from fin_option_spec or fin_option_spec_dates");
+	}
+	for (idx_t i = 0; i < children.size(); i++) {
+		FINANCE_STRUCT_CHILD(children[i]).ToUnifiedFormat(args.size(), data.children[i]);
+	}
+	return data;
+}
+
+static bool ReadOptionSpecRow(OptionSpecData &data, idx_t row, OptionSpecRow &out) {
+	auto spec_idx = data.spec.sel->get_index(row);
+	if (!data.spec.validity.RowIsValid(spec_idx)) {
+		return false;
+	}
+	for (auto &child : data.children) {
+		auto child_idx = child.sel->get_index(row);
+		if (!child.validity.RowIsValid(child_idx)) {
+			return false;
+		}
+	}
+	auto kind = UnifiedVectorFormat::GetData<string_t>(data.children[0])[data.children[0].sel->get_index(row)];
+	out.call = IsCallKind(kind.GetString());
+	out.spot = UnifiedVectorFormat::GetData<double>(data.children[1])[data.children[1].sel->get_index(row)];
+	out.strike = UnifiedVectorFormat::GetData<double>(data.children[2])[data.children[2].sel->get_index(row)];
+	out.ttm = UnifiedVectorFormat::GetData<double>(data.children[3])[data.children[3].sel->get_index(row)];
+	out.rate = UnifiedVectorFormat::GetData<double>(data.children[4])[data.children[4].sel->get_index(row)];
+	out.vol = UnifiedVectorFormat::GetData<double>(data.children[5])[data.children[5].sel->get_index(row)];
+	out.dividend_yield = UnifiedVectorFormat::GetData<double>(data.children[6])[data.children[6].sel->get_index(row)];
+	return true;
+}
+
+template <class FUNC>
+static void ExecuteOptionSpecDouble(DataChunk &args, Vector &result, FUNC func) {
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto output = FlatVector::GetDataMutable<double>(result);
+	auto spec_data = PrepareOptionSpecData(args);
+	for (idx_t row = 0; row < args.size(); row++) {
+		OptionSpecRow spec;
+		if (!ReadOptionSpecRow(spec_data, row, spec)) {
+			FlatVector::SetNull(result, row, true);
+			continue;
+		}
+		try {
+			output[row] = func(spec);
+		} catch (const std::exception &) {
+			FlatVector::SetNull(result, row, true);
+		}
+	}
+}
+
+static void BSMPriceSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ExecuteOptionSpecDouble(args, result, [](const OptionSpecRow &spec) {
+		return BSMPrice(spec.call, spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
+	});
+}
+
+static void BSMDeltaSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ExecuteOptionSpecDouble(args, result, [](const OptionSpecRow &spec) {
+		return BSMDelta(spec.call, spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
+	});
+}
+
+static void BSMGammaSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ExecuteOptionSpecDouble(args, result, [](const OptionSpecRow &spec) {
+		return BSMGamma(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
+	});
+}
+
+static void BSMVegaSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ExecuteOptionSpecDouble(args, result, [](const OptionSpecRow &spec) {
+		return BSMVega(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
+	});
+}
+
 static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
@@ -153,6 +260,34 @@ static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result
 			vega[row] = BSMVegaFromKernel(k);
 			theta[row] = BSMThetaFromKernel(call, k);
 			rho[row] = BSMRhoFromKernel(call, k);
+		} catch (const std::exception &) {
+			FlatVector::SetNull(result, row, true);
+		}
+	}
+}
+
+static void BSMGreeksSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto spec_data = PrepareOptionSpecData(args);
+	auto &children = StructVector::GetEntries(result);
+	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
+	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
+	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
+	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
+	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
+	for (idx_t row = 0; row < args.size(); row++) {
+		OptionSpecRow spec;
+		if (!ReadOptionSpecRow(spec_data, row, spec)) {
+			FlatVector::SetNull(result, row, true);
+			continue;
+		}
+		try {
+			auto k = MakeBSMKernel(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
+			delta[row] = BSMDeltaFromKernel(spec.call, k);
+			gamma[row] = BSMGammaFromKernel(k);
+			vega[row] = BSMVegaFromKernel(k);
+			theta[row] = BSMThetaFromKernel(spec.call, k);
+			rho[row] = BSMRhoFromKernel(spec.call, k);
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
 		}
@@ -189,6 +324,40 @@ static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
 			out[3][row] = BSMVegaFromKernel(k);
 			out[4][row] = BSMThetaFromKernel(call, k);
 			out[5][row] = BSMRhoFromKernel(call, k);
+			out[6][row] = k.d1;
+			out[7][row] = k.d2;
+			out[8][row] = intrinsic;
+			out[9][row] = price - intrinsic;
+		} catch (const std::exception &) {
+			FlatVector::SetNull(result, row, true);
+		}
+	}
+}
+
+static void BSMAllSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto spec_data = PrepareOptionSpecData(args);
+	auto &children = StructVector::GetEntries(result);
+	vector<double *> out;
+	for (auto &child : children) {
+		out.push_back(FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(child)));
+	}
+	for (idx_t row = 0; row < args.size(); row++) {
+		OptionSpecRow spec;
+		if (!ReadOptionSpecRow(spec_data, row, spec)) {
+			FlatVector::SetNull(result, row, true);
+			continue;
+		}
+		try {
+			auto k = MakeBSMKernel(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
+			double price = BSMPriceFromKernel(spec.call, k);
+			double intrinsic = OptionPayoff(spec.call, spec.spot, spec.strike);
+			out[0][row] = price;
+			out[1][row] = BSMDeltaFromKernel(spec.call, k);
+			out[2][row] = BSMGammaFromKernel(k);
+			out[3][row] = BSMVegaFromKernel(k);
+			out[4][row] = BSMThetaFromKernel(spec.call, k);
+			out[5][row] = BSMRhoFromKernel(spec.call, k);
 			out[6][row] = k.d1;
 			out[7][row] = k.d2;
 			out[8][row] = intrinsic;

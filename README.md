@@ -17,9 +17,12 @@ after acceptance into DuckDB Community Extensions.
 -- After loading finance:
 
 SELECT
-  fin_bsm_price('call', 100, 100, 1, 0.05, 0.20) AS price,
-  (fin_bsm_greeks('call', 100, 100, 1, 0.05, 0.20)).delta AS delta,
-  fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05) AS iv;
+  fin_bsm_price(spec) AS price,
+  (fin_bsm_greeks(spec)).delta AS delta,
+  fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05) AS iv
+FROM (
+  SELECT fin_option_spec('call', 100, 100, 1, 0.05, 0.20) AS spec
+);
 ```
 
 ## Why It Exists
@@ -34,8 +37,8 @@ DuckDB:
 - Aggregate portfolios with explicit caller-owned units and assumptions.
 - Build table-function workflows for calendars, option chains, efficient
   frontiers, factor reports, bars, and grids.
-- Keep compatibility helpers local and deterministic when porting existing
-  finance workflows.
+- Keep analytics local, deterministic, and explicit when moving finance
+  workflows into SQL.
 
 All public functions live in the `fin_` namespace and use ordinary DuckDB types:
 `DOUBLE`, `DATE`, `TIMESTAMP`, `VARCHAR`, `STRUCT`, `LIST`, and table results.
@@ -58,9 +61,12 @@ use the source build in [Installation](docs/installation.md).
 
    ```sql
    SELECT
-     fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS price,
-     (fin_bsm_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.20)).delta AS delta,
-     (fin_bsm_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.20)).vega AS vega;
+     fin_bsm_price(spec) AS price,
+     (fin_bsm_greeks(spec)).delta AS delta,
+     (fin_bsm_greeks(spec)).vega AS vega
+   FROM (
+     SELECT fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS spec
+   );
    ```
 
 Expected result: scalar price and risk columns you can join, aggregate, test,
@@ -73,12 +79,14 @@ or write into a DuckDB table like any other SQL result.
 | Returns and risk | Simple/log returns, annualization, volatility, Sharpe, Sortino, EWMA volatility, drawdowns, outliers, quantile spread, capture ratios, VaR/CVaR-style helpers, and data-quality reports. |
 | Options and volatility | Black-Scholes-Merton, Black-76, Bachelier, binomial trees, digital, Asian geometric, barrier, SABR/SVI helpers, Greeks, higher-order Greeks, and implied-volatility solvers. |
 | Fixed income and cash flows | Discount factors, forward rates, PV/FV, NPV/IRR/XIRR/MIRR, annuities, bond price/YTM/duration/convexity/DV01, curve interpolation, and curve bootstrapping. |
-| Portfolio analytics | Portfolio return, variance, volatility, Sharpe, equal/inverse-vol weights, optimizer table functions, HRP fallback weights, efficient-frontier points, and rebalance trades. |
-| Technical analysis and microstructure | OHLC/OHLCV helpers, indicators, candlestick aliases, VWAP/TWAP, spreads, microprice, imbalance, impact proxies, and tick/volume/dollar/imbalance bars. |
-| Validation and schemas | Checks for prices, returns, OHLC rows, conventions, calendars, sessions, and expected schemas. |
+| Portfolio analytics | Portfolio return, variance, volatility, Sharpe, table-shaped portfolio return/variance helpers, optimizer table functions, HRP fallback weights, efficient-frontier points, and rebalance trades. |
+| Technical analysis and microstructure | OHLC/OHLCV helpers, indicators, VWAP/TWAP, spreads, microprice, imbalance, impact proxies, and tick/volume/dollar/imbalance bars. |
+| Validation and schemas | Checks for prices, returns, OHLC rows, conventions, calendars, sessions, expected schemas, and source-normalized returns/OHLCV/options. |
 
 See the [Function Reference](docs/function_reference.md) for the complete
-registered surface.
+registered surface and [Data Source Compatibility](docs/data_source_compatibility.md)
+for adapting CSV, Parquet, MotherDuck, or vendor-shaped tables into canonical
+finance columns.
 
 ## Status And Boundaries
 
@@ -89,10 +97,7 @@ for production research workflows.
 
 The extension is local and deterministic:
 
-- It does not call Goldman Sachs, GS Quant, Marquee, market-data vendors, or any
-  remote pricing service.
-- Compatibility names are local SQL analogues for familiar pricing-and-risk
-  workflows.
+- It does not call market-data vendors or remote pricing services.
 - Some broad catalog entries are pragmatic v1 aliases or approximations. Those
   entries are documented and tested so stronger implementations can replace them
   behind stable names.
@@ -147,8 +152,6 @@ Useful starting points:
 - [Finance SQL Playbooks](docs/playbooks.md): runnable desk-style workflows.
 - [Best Practices](docs/best_practices.md): units, validation, aggregation, and
   reconciliation guidance.
-- [Compatibility](docs/compatibility.md): boundaries for compatibility helpers
-  and ported workflows.
 - [Quant Developer Guide](docs/quant_developer_guide.md): units, model
   boundaries, risk conventions, and reconciliation guidance.
 
@@ -186,7 +189,6 @@ Main docs:
 - [Function Reference](docs/function_reference.md)
 - [Best Practices](docs/best_practices.md)
 - [Finance SQL Playbooks](docs/playbooks.md)
-- [Compatibility](docs/compatibility.md)
 - [Performance Testing](docs/performance_testing.md)
 - [Release](docs/release.md)
 - [Development Guide](docs/development.md)

@@ -48,7 +48,7 @@ SELECT
 
 CREATE OR REPLACE TEMP TABLE option_inputs(kind VARCHAR, spot DOUBLE, strike DOUBLE, ttm DOUBLE, rate DOUBLE, vol DOUBLE);
 INSERT INTO option_inputs VALUES ('call', 100, 100, 1, 0.05, 0.2), ('put', 100, 95, 0.5, 0.04, 0.25);
-SELECT kind, round(price, 6) AS price, round(delta, 6) AS delta
+SELECT kind, round(model_price, 6) AS model_price, round(model_delta, 6) AS model_delta
 FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol')
 ORDER BY kind;
 

@@ -1,0 +1,41 @@
+name: Documentation improvement
+description: Improve tutorials, how-to guides, reference, examples, or agent guidance.
+title: "Docs: "
+labels:
+  - documentation
+  - needs-triage
+body:
+  - type: dropdown
+    id: doc_type
+    attributes:
+      label: Documentation type
+      options:
+        - Tutorial
+        - How-to guide
+        - Reference
+        - Explanation
+        - Agent routing or examples
+    validations:
+      required: true
+  - type: textarea
+    id: reader_problem
+    attributes:
+      label: Reader problem
+      description: What is confusing, missing, stale, or hard to run?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_fix
+    attributes:
+      label: Proposed fix
+      description: Name pages, examples, commands, or screenshots that should change.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Completion checklist
+      options:
+        - label: "Examples are runnable or clearly marked as illustrative."
+        - label: "`make check-docs check-docs-site check-gs-quant-surface` passes."
+        - label: "Function docs stay aligned with the registered `fin_*` surface."

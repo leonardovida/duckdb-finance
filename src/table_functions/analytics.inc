@@ -28,6 +28,53 @@ static unique_ptr<TableRef> PortfolioOptimizeTableBindReplace(ClientContext &con
 	return ParseSubquery(context, query);
 }
 
+static unique_ptr<TableRef> PortfolioReturnTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
+	if (input.inputs.size() != 4) {
+		throw BinderException("fin_portfolio_return_table expects table_name, asset_col, weight_col, return_col");
+	}
+	auto table = SqlTableName(input.inputs[0]);
+	auto asset = SqlColumn(input.inputs[1]);
+	auto weight = SqlColumn(input.inputs[2]);
+	auto ret = SqlColumn(input.inputs[3]);
+	auto query = StringUtil::Format(
+	    "WITH source AS ("
+	    "  SELECT %s::VARCHAR AS asset_id, %s::DOUBLE AS weight, %s::DOUBLE AS return_decimal FROM %s"
+	    ") "
+	    "SELECT fsum(weight * return_decimal) AS portfolio_return, fsum(weight) AS weight_sum, "
+	    "count(DISTINCT asset_id) AS asset_count "
+	    "FROM source",
+	    asset, weight, ret, table);
+	return ParseSubquery(context, query);
+}
+
+static unique_ptr<TableRef> PortfolioVarianceTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
+	if (input.inputs.size() != 7) {
+		throw BinderException("fin_portfolio_variance_table expects weights_table, asset_col, weight_col, covariance_table, "
+		                      "asset_i_col, asset_j_col, covariance_col");
+	}
+	auto weights_table = SqlTableName(input.inputs[0]);
+	auto weight_asset = SqlColumn(input.inputs[1]);
+	auto weight = SqlColumn(input.inputs[2]);
+	auto covariance_table = SqlTableName(input.inputs[3]);
+	auto asset_i = SqlColumn(input.inputs[4]);
+	auto asset_j = SqlColumn(input.inputs[5]);
+	auto covariance = SqlColumn(input.inputs[6]);
+	auto query = StringUtil::Format(
+	    "WITH weights AS ("
+	    "  SELECT %s::VARCHAR AS asset_id, %s::DOUBLE AS weight FROM %s"
+	    "), covariance AS ("
+	    "  SELECT %s::VARCHAR AS asset_i, %s::VARCHAR AS asset_j, %s::DOUBLE AS covariance FROM %s"
+	    "), risk AS ("
+	    "  SELECT fsum(wi.weight * c.covariance * wj.weight) AS portfolio_variance "
+	    "  FROM covariance c "
+	    "  JOIN weights wi ON wi.asset_id = c.asset_i "
+	    "  JOIN weights wj ON wj.asset_id = c.asset_j"
+	    ") "
+	    "SELECT portfolio_variance, sqrt(greatest(portfolio_variance, 0.0)) AS portfolio_volatility FROM risk",
+	    weight_asset, weight, weights_table, asset_i, asset_j, covariance, covariance_table);
+	return ParseSubquery(context, query);
+}
+
 static unique_ptr<TableRef> FactorReportBindReplace(ClientContext &context, TableFunctionBindInput &input) {
 	if (input.inputs.size() < 5) {
 		throw BinderException("fin_factor_report expects table_name, date_col, asset_col, factor_col, return_col");

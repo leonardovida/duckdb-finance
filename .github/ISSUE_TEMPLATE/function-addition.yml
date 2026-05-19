@@ -1,0 +1,61 @@
+name: Function addition
+description: Propose or track a new DuckDB Finance function.
+title: "Add fin_<function_name>"
+labels:
+  - function
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for new `fin_*` behavior. Keep the request narrow enough that tests, docs, and examples can land in one reviewable change.
+  - type: input
+    id: function_name
+    attributes:
+      label: Function name
+      description: Use the public SQL name, including the `fin_` prefix.
+      placeholder: fin_bsm_price
+    validations:
+      required: true
+  - type: textarea
+    id: user_workflow
+    attributes:
+      label: User workflow
+      description: What finance, risk, desk, or agent task should this function support?
+      placeholder: "As a user, I need to..."
+    validations:
+      required: true
+  - type: textarea
+    id: sql_shape
+    attributes:
+      label: Proposed SQL shape
+      description: Include arguments, return type or struct/list shape, units, and NULL/error behavior.
+      render: sql
+      placeholder: |
+        SELECT fin_example(input_1, input_2) AS result;
+    validations:
+      required: true
+  - type: textarea
+    id: model_assumptions
+    attributes:
+      label: Model assumptions
+      description: State formulas, conventions, approximations, calendars, rates, volatility units, or references needed to review the behavior.
+    validations:
+      required: true
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Acceptance checklist
+      options:
+        - label: "Behavior has focused DuckDB SQL coverage in `test/sql/gold_tests.sql`."
+          required: true
+        - label: "Synthetic fixture data is added to `test/sql/gold_dataset.sql` only if it makes tests clearer."
+          required: true
+        - label: "`docs/function_reference.md` documents usage, purpose, return shape, units, assumptions, and invalid-input behavior."
+          required: true
+        - label: "A cookbook, playbook, or example is updated if this function supports a common workflow."
+          required: true
+        - label: "Performance coverage is added or explicitly marked unnecessary for this change."
+          required: true
+        - label: "`make check DUCKDB_ROOT=/path/to/duckdb` passes or the environment blocker is documented."
+          required: true
