@@ -1,7 +1,7 @@
 template <class STATE, class OP>
 static AggregateFunction UnaryDoubleAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -10,14 +10,14 @@ static AggregateFunction BinaryDoubleAggregate(const string &name, const Logical
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                         FinanceLogicalType(LogicalTypeId::DOUBLE));
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
 template <class STATE, class OP>
 static AggregateFunction UnaryBigintAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, int64_t, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -26,7 +26,7 @@ static AggregateFunction BinaryAggregate(const string &name, const LogicalType &
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, RESULT_TYPE, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                              return_type);
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -38,10 +38,10 @@ static void TernaryScatterUpdate(Vector inputs[], AggregateInputData &, idx_t in
 	UnifiedVectorFormat bdata;
 	UnifiedVectorFormat cdata;
 	UnifiedVectorFormat sdata;
-	inputs[0].ToUnifiedFormat(count, adata);
-	inputs[1].ToUnifiedFormat(count, bdata);
-	inputs[2].ToUnifiedFormat(count, cdata);
-	states.ToUnifiedFormat(count, sdata);
+	FinanceToUnifiedFormat(inputs[0], count, adata);
+	FinanceToUnifiedFormat(inputs[1], count, bdata);
+	FinanceToUnifiedFormat(inputs[2], count, cdata);
+	FinanceToUnifiedFormat(states, count, sdata);
 
 	auto a_values = UnifiedVectorFormat::GetData<A_TYPE>(adata);
 	auto b_values = UnifiedVectorFormat::GetData<B_TYPE>(bdata);
@@ -67,9 +67,9 @@ static void TernarySimpleUpdate(Vector inputs[], AggregateInputData &, idx_t inp
 	UnifiedVectorFormat adata;
 	UnifiedVectorFormat bdata;
 	UnifiedVectorFormat cdata;
-	inputs[0].ToUnifiedFormat(count, adata);
-	inputs[1].ToUnifiedFormat(count, bdata);
-	inputs[2].ToUnifiedFormat(count, cdata);
+	FinanceToUnifiedFormat(inputs[0], count, adata);
+	FinanceToUnifiedFormat(inputs[1], count, bdata);
+	FinanceToUnifiedFormat(inputs[2], count, cdata);
 
 	auto a_values = UnifiedVectorFormat::GetData<A_TYPE>(adata);
 	auto b_values = UnifiedVectorFormat::GetData<B_TYPE>(bdata);
@@ -96,7 +96,7 @@ static AggregateFunction TernaryDoubleAggregate(const string &name, const Logica
 	                         AggregateFunction::StateCombine<STATE, OP>,
 	                         AggregateFunction::StateFinalize<STATE, double, OP>,
 	                         FunctionNullHandling::DEFAULT_NULL_HANDLING);
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -108,10 +108,10 @@ static void TernaryDoubleVarcharDoubleScatterUpdate(Vector inputs[], AggregateIn
 	UnifiedVectorFormat method_data;
 	UnifiedVectorFormat threshold_data;
 	UnifiedVectorFormat sdata;
-	inputs[0].ToUnifiedFormat(count, xdata);
-	inputs[1].ToUnifiedFormat(count, method_data);
-	inputs[2].ToUnifiedFormat(count, threshold_data);
-	states.ToUnifiedFormat(count, sdata);
+	FinanceToUnifiedFormat(inputs[0], count, xdata);
+	FinanceToUnifiedFormat(inputs[1], count, method_data);
+	FinanceToUnifiedFormat(inputs[2], count, threshold_data);
+	FinanceToUnifiedFormat(states, count, sdata);
 
 	auto x_values = UnifiedVectorFormat::GetData<double>(xdata);
 	auto method_values = UnifiedVectorFormat::GetData<string_t>(method_data);
@@ -137,9 +137,9 @@ static void TernaryDoubleVarcharDoubleSimpleUpdate(Vector inputs[], AggregateInp
 	UnifiedVectorFormat xdata;
 	UnifiedVectorFormat method_data;
 	UnifiedVectorFormat threshold_data;
-	inputs[0].ToUnifiedFormat(count, xdata);
-	inputs[1].ToUnifiedFormat(count, method_data);
-	inputs[2].ToUnifiedFormat(count, threshold_data);
+	FinanceToUnifiedFormat(inputs[0], count, xdata);
+	FinanceToUnifiedFormat(inputs[1], count, method_data);
+	FinanceToUnifiedFormat(inputs[2], count, threshold_data);
 
 	auto x_values = UnifiedVectorFormat::GetData<double>(xdata);
 	auto method_values = UnifiedVectorFormat::GetData<string_t>(method_data);
@@ -167,6 +167,6 @@ static AggregateFunction TernaryDoubleVarcharDoubleBigintAggregate(const string 
 	                         AggregateFunction::StateFinalize<STATE, int64_t, OP>,
 	                         FunctionNullHandling::DEFAULT_NULL_HANDLING, nullptr, nullptr,
 	                         AggregateFunction::StateDestroy<STATE, OP>);
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }

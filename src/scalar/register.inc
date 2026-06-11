@@ -1,5 +1,5 @@
 void RegisterFinanceScalars(ExtensionLoader &loader) {
-	loader.RegisterFunction(ScalarFunction("fin_version", {}, FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceVersionFunction));
+	loader.RegisterFunction(ScalarFunction(FinanceFunctionName("fin_version"), {}, FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceVersionFunction));
 
 	AddScalar(loader, "fin_norm_pdf", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), NormPDFFunction);
 	AddScalar(loader, "fin_norm_cdf", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), NormCDFFunction);

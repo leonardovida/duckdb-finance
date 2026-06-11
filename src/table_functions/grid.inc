@@ -5,15 +5,27 @@ static string GridSubquery(TableFunctionBindInput &input, const string &value_ex
 	auto start_ts = SqlLiteral(input.inputs[3]);
 	auto end_ts = SqlLiteral(input.inputs[4]);
 	auto step = SqlLiteral(input.inputs[5]);
+	if (input.inputs.size() >= 7 && !input.inputs[6].IsNull()) {
+		auto method = StringUtil::Lower(input.inputs[6].GetValue<string>());
+		if (method != "last") {
+			throw BinderException("Finance grid table functions currently support only method 'last'");
+		}
+	}
+	auto sampled_value = string("s.value");
+	if (input.inputs.size() >= 8 && !input.inputs[7].IsNull()) {
+		auto staleness = SqlLiteral(input.inputs[7]);
+		sampled_value = StringUtil::Format("CASE WHEN s.ts IS NOT NULL AND s.ts >= g.ts - (%s)::INTERVAL THEN s.value ELSE NULL END",
+		                                   staleness);
+	}
 	return StringUtil::Format(
 	    "WITH grid AS ("
 	    "  SELECT generate_series AS ts FROM generate_series(%s::TIMESTAMP, %s::TIMESTAMP, %s::INTERVAL)"
 	    "), source AS ("
-	    "  SELECT %s::TIMESTAMP AS ts, %s::DOUBLE AS value FROM %s"
+	    "  SELECT %s::TIMESTAMP AS ts, %s::DOUBLE AS value FROM %s WHERE %s IS NOT NULL"
 	    "), sampled AS ("
-	    "  SELECT g.ts, (SELECT s.value FROM source s WHERE s.ts <= g.ts ORDER BY s.ts DESC LIMIT 1) AS value FROM grid g"
+	    "  SELECT g.ts, %s AS value FROM grid g ASOF LEFT JOIN source s ON g.ts >= s.ts"
 	    ") SELECT ts, %s AS value FROM sampled ORDER BY ts",
-	    start_ts, end_ts, step, ts_col, value_col, table, value_expr);
+	    start_ts, end_ts, step, ts_col, value_col, table, ts_col, sampled_value, value_expr);
 }
 
 static unique_ptr<TableRef> ResampleGridBindReplace(ClientContext &context, TableFunctionBindInput &input) {

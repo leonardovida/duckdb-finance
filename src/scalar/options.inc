@@ -156,13 +156,13 @@ struct OptionSpecRow {
 
 static OptionSpecData PrepareOptionSpecData(DataChunk &args) {
 	OptionSpecData data;
-	args.data[0].ToUnifiedFormat(args.size(), data.spec);
+	FinanceToUnifiedFormat(args.data[0], args.size(), data.spec);
 	auto &children = StructVector::GetEntries(args.data[0]);
 	if (children.size() != data.children.size()) {
 		throw InvalidInputException("Option spec must come from fin_option_spec or fin_option_spec_dates");
 	}
 	for (idx_t i = 0; i < children.size(); i++) {
-		FINANCE_STRUCT_CHILD(children[i]).ToUnifiedFormat(args.size(), data.children[i]);
+		FinanceToUnifiedFormat(FINANCE_STRUCT_CHILD(children[i]), args.size(), data.children[i]);
 	}
 	return data;
 }
