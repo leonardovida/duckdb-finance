@@ -806,6 +806,16 @@ FROM fin_resample_grid(
   INTERVAL '10 minutes'
 );
 
+SELECT assert_eq('grid staleness nulls stale samples', count(*) FILTER (WHERE value IS NULL), 1::BIGINT)
+FROM fin_resample_grid(
+  'gold_prices', 'ts', 'close',
+  TIMESTAMP '2026-01-02 09:30:00',
+  TIMESTAMP '2026-01-02 09:31:00',
+  INTERVAL '30 seconds',
+  'last',
+  INTERVAL '29 seconds'
+);
+
 SELECT assert_eq('last grid rows', count(*), 5::BIGINT)
 FROM fin_last_to_grid(
   'gold_prices', 'ts', 'close',

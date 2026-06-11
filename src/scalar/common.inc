@@ -857,7 +857,7 @@ static bool IsBusinessDay(date_t date) {
 struct PreparedInputs {
 	explicit PreparedInputs(DataChunk &args) : formats(args.ColumnCount()) {
 		for (idx_t col = 0; col < args.ColumnCount(); col++) {
-			args.data[col].ToUnifiedFormat(args.size(), formats[col]);
+			FinanceToUnifiedFormat(args.data[col], args.size(), formats[col]);
 			if (formats[col].validity.CanHaveNull()) {
 				nullable_cols.push_back(col);
 			}
@@ -1003,7 +1003,7 @@ static void ExecuteString(DataChunk &args, Vector &result, FUNC func) {
 static vector<double> ReadDoubleList(Vector &list_vec, const list_entry_t &entry) {
 	auto list_size = ListVector::GetListSize(list_vec);
 	auto &child = ListVector::GetChildMutable(list_vec);
-	child.Flatten(list_size);
+	FinanceFlatten(child, list_size);
 	auto &validity = FlatVector::Validity(child);
 	auto data = FlatVector::GetData<double>(child);
 	vector<double> result;
@@ -1031,7 +1031,7 @@ static void ValidateListEntryNoNull(const ValidityMask &validity, const list_ent
 static vector<vector<double>> ReadDoubleMatrix(Vector &matrix_vec, const list_entry_t &entry) {
 	auto outer_size = ListVector::GetListSize(matrix_vec);
 	auto &inner_vec = ListVector::GetChildMutable(matrix_vec);
-	inner_vec.Flatten(outer_size);
+	FinanceFlatten(inner_vec, outer_size);
 	ValidateListEntryNoNull(FlatVector::Validity(inner_vec), entry, "Matrix rows must not be NULL");
 	auto inner_entries = FlatVector::GetData<list_entry_t>(inner_vec);
 	vector<vector<double>> matrix;
@@ -1459,7 +1459,7 @@ static double SumList(const double *x, const list_entry_t &entry) {
 
 static void AddScalar(ExtensionLoader &loader, const string &name, vector<LogicalType> args, LogicalType ret,
                       scalar_function_t func) {
-	ScalarFunction scalar(name, std::move(args), std::move(ret), std::move(func));
+	ScalarFunction scalar(FinanceFunctionName(name), std::move(args), std::move(ret), std::move(func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
 	loader.RegisterFunction(std::move(scalar));
 }
@@ -1471,7 +1471,7 @@ static void AddOverload(ScalarFunctionSet &set, vector<LogicalType> args, Logica
 }
 
 static void RegisterOptionFunction(ExtensionLoader &loader, const string &name, scalar_function_t func) {
-	ScalarFunctionSet set(name);
+	ScalarFunctionSet set(FinanceFunctionName(name));
 	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
@@ -1482,7 +1482,7 @@ static void RegisterOptionFunction(ExtensionLoader &loader, const string &name, 
 }
 
 static void RegisterOptionFunctionWithScale(ExtensionLoader &loader, const string &name, scalar_function_t func) {
-	ScalarFunctionSet set(name);
+	ScalarFunctionSet set(FinanceFunctionName(name));
 	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);

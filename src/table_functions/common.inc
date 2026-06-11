@@ -50,7 +50,7 @@ static unique_ptr<TableRef> ParseSubquery(ClientContext &context, const string &
 
 static void RegisterBindReplace(ExtensionLoader &loader, const string &name, vector<LogicalType> args,
                                 table_function_bind_replace_t bind_replace) {
-	TableFunction function(name, std::move(args), nullptr, nullptr);
+	TableFunction function(FinanceFunctionName(name), std::move(args), nullptr, nullptr);
 	function.bind_replace = bind_replace;
 	loader.RegisterFunction(std::move(function));
 }
@@ -72,7 +72,7 @@ static void RegisterTableFunctionPrefixes(ExtensionLoader &loader, const string 
 	for (idx_t optional_count = 0; optional_count <= optional_args.size(); optional_count++) {
 		auto args = required_args;
 		args.insert(args.end(), optional_args.begin(), optional_args.begin() + optional_count);
-		loader.RegisterFunction(TableFunction(name, std::move(args), function, bind, init));
+		loader.RegisterFunction(TableFunction(FinanceFunctionName(name), std::move(args), function, bind, init));
 	}
 }
 

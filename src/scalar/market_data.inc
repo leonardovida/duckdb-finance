@@ -70,7 +70,7 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto &child = ListVector::GetChildMutable(args.data[0]);
 	auto list_size = ListVector::GetListSize(args.data[0]);
-	child.Flatten(list_size);
+	FinanceFlatten(child, list_size);
 	auto &validity = FlatVector::Validity(child);
 	auto values = FlatVector::GetData<double>(child);
 	vector<vector<double>> output_lists(count);
@@ -133,8 +133,8 @@ static void BinaryListFunction(DataChunk &args, ExpressionState &, Vector &resul
 	auto &right_child = ListVector::GetChildMutable(args.data[1]);
 	auto left_size = ListVector::GetListSize(args.data[0]);
 	auto right_size = ListVector::GetListSize(args.data[1]);
-	left_child.Flatten(left_size);
-	right_child.Flatten(right_size);
+	FinanceFlatten(left_child, left_size);
+	FinanceFlatten(right_child, right_size);
 	auto &left_validity = FlatVector::Validity(left_child);
 	auto &right_validity = FlatVector::Validity(right_child);
 	auto left_values = FlatVector::GetData<double>(left_child);
@@ -212,7 +212,7 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 	auto weight_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto &weight_child = ListVector::GetChildMutable(args.data[0]);
 	auto weight_size = ListVector::GetListSize(args.data[0]);
-	weight_child.Flatten(weight_size);
+	FinanceFlatten(weight_child, weight_size);
 	auto &weight_validity = FlatVector::Validity(weight_child);
 	auto weights = FlatVector::GetData<double>(weight_child);
 
@@ -220,7 +220,7 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 		auto return_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
 		auto &return_child = ListVector::GetChildMutable(args.data[1]);
 		auto return_size = ListVector::GetListSize(args.data[1]);
-		return_child.Flatten(return_size);
+		FinanceFlatten(return_child, return_size);
 		auto &return_validity = FlatVector::Validity(return_child);
 		auto returns = FlatVector::GetData<double>(return_child);
 		for (idx_t row = 0; row < args.size(); row++) {
@@ -246,12 +246,12 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 	auto matrix_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
 	auto &matrix_rows_vec = ListVector::GetChildMutable(args.data[1]);
 	auto matrix_row_count = ListVector::GetListSize(args.data[1]);
-	matrix_rows_vec.Flatten(matrix_row_count);
+	FinanceFlatten(matrix_rows_vec, matrix_row_count);
 	auto &matrix_row_validity = FlatVector::Validity(matrix_rows_vec);
 	auto matrix_rows = FlatVector::GetData<list_entry_t>(matrix_rows_vec);
 	auto &matrix_values_vec = ListVector::GetChildMutable(matrix_rows_vec);
 	auto matrix_value_count = ListVector::GetListSize(matrix_rows_vec);
-	matrix_values_vec.Flatten(matrix_value_count);
+	FinanceFlatten(matrix_values_vec, matrix_value_count);
 	auto &matrix_value_validity = FlatVector::Validity(matrix_values_vec);
 	auto matrix_values = FlatVector::GetData<double>(matrix_values_vec);
 	for (idx_t row = 0; row < args.size(); row++) {
@@ -297,9 +297,9 @@ static void PortfolioSharpeFunction(DataChunk &args, ExpressionState &, Vector &
 	auto weight_size = ListVector::GetListSize(args.data[0]);
 	auto mu_size = ListVector::GetListSize(args.data[1]);
 	auto matrix_row_count = ListVector::GetListSize(args.data[2]);
-	weight_child.Flatten(weight_size);
-	mu_child.Flatten(mu_size);
-	matrix_rows_vec.Flatten(matrix_row_count);
+	FinanceFlatten(weight_child, weight_size);
+	FinanceFlatten(mu_child, mu_size);
+	FinanceFlatten(matrix_rows_vec, matrix_row_count);
 	auto &weight_validity = FlatVector::Validity(weight_child);
 	auto &mu_validity = FlatVector::Validity(mu_child);
 	auto &matrix_row_validity = FlatVector::Validity(matrix_rows_vec);
@@ -308,7 +308,7 @@ static void PortfolioSharpeFunction(DataChunk &args, ExpressionState &, Vector &
 	auto matrix_rows = FlatVector::GetData<list_entry_t>(matrix_rows_vec);
 	auto &matrix_values_vec = ListVector::GetChildMutable(matrix_rows_vec);
 	auto matrix_value_count = ListVector::GetListSize(matrix_rows_vec);
-	matrix_values_vec.Flatten(matrix_value_count);
+	FinanceFlatten(matrix_values_vec, matrix_value_count);
 	auto &matrix_value_validity = FlatVector::Validity(matrix_values_vec);
 	auto matrix_values = FlatVector::GetData<double>(matrix_values_vec);
 	for (idx_t row = 0; row < args.size(); row++) {

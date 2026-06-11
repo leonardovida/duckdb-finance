@@ -129,7 +129,7 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 	auto cashflow_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[cf_col]);
 	auto &cashflow_child = ListVector::GetChildMutable(args.data[cf_col]);
 	auto cashflow_size = ListVector::GetListSize(args.data[cf_col]);
-	cashflow_child.Flatten(cashflow_size);
+	FinanceFlatten(cashflow_child, cashflow_size);
 	auto &cashflow_validity = FlatVector::Validity(cashflow_child);
 	auto cashflow_values = FlatVector::GetData<double>(cashflow_child);
 	const list_entry_t *date_entries = nullptr;
@@ -139,7 +139,7 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 		date_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
 		auto &date_child = ListVector::GetChildMutable(args.data[1]);
 		auto date_size = ListVector::GetListSize(args.data[1]);
-		date_child.Flatten(date_size);
+		FinanceFlatten(date_child, date_size);
 		date_validity = &FlatVector::Validity(date_child);
 		date_values = FlatVector::GetData<date_t>(date_child);
 	}
@@ -214,8 +214,8 @@ static void NPVWithTimesFunction(DataChunk &args, ExpressionState &, Vector &res
 	auto &time_child = ListVector::GetChildMutable(args.data[1]);
 	auto cashflow_size = ListVector::GetListSize(args.data[0]);
 	auto time_size = ListVector::GetListSize(args.data[1]);
-	cashflow_child.Flatten(cashflow_size);
-	time_child.Flatten(time_size);
+	FinanceFlatten(cashflow_child, cashflow_size);
+	FinanceFlatten(time_child, time_size);
 	auto &cashflow_validity = FlatVector::Validity(cashflow_child);
 	auto &time_validity = FlatVector::Validity(time_child);
 	auto cashflow_values = FlatVector::GetData<double>(cashflow_child);
@@ -274,8 +274,8 @@ static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result
 	auto &y_child = ListVector::GetChildMutable(args.data[1]);
 	auto x_size = ListVector::GetListSize(args.data[0]);
 	auto y_size = ListVector::GetListSize(args.data[1]);
-	x_child.Flatten(x_size);
-	y_child.Flatten(y_size);
+	FinanceFlatten(x_child, x_size);
+	FinanceFlatten(y_child, y_size);
 	auto &x_validity = FlatVector::Validity(x_child);
 	auto &y_validity = FlatVector::Validity(y_child);
 	auto x_values = FlatVector::GetData<double>(x_child);
@@ -312,8 +312,8 @@ static void SwapRateFunction(DataChunk &args, ExpressionState &, Vector &result)
 	auto &discount_child = ListVector::GetChildMutable(args.data[1]);
 	auto maturity_size = ListVector::GetListSize(args.data[0]);
 	auto discount_size = ListVector::GetListSize(args.data[1]);
-	maturity_child.Flatten(maturity_size);
-	discount_child.Flatten(discount_size);
+	FinanceFlatten(maturity_child, maturity_size);
+	FinanceFlatten(discount_child, discount_size);
 	auto &maturity_validity = FlatVector::Validity(maturity_child);
 	auto &discount_validity = FlatVector::Validity(discount_child);
 	auto maturities = FlatVector::GetData<double>(maturity_child);
