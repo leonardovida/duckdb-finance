@@ -2,6 +2,16 @@ static string SqlIdentifier(const string &name) {
 	return "\"" + StringUtil::Replace(name, "\"", "\"\"") + "\"";
 }
 
+#if __has_include("duckdb/common/identifier.hpp")
+static Identifier FinanceFunctionName(const string &name) {
+	return Identifier(name);
+}
+#else
+static const string &FinanceFunctionName(const string &name) {
+	return name;
+}
+#endif
+
 static string SqlTableName(const Value &value) {
 	if (value.IsNull()) {
 		throw BinderException("Table name cannot be NULL");

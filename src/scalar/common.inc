@@ -1456,6 +1456,15 @@ static double SumList(const double *x, const list_entry_t &entry) {
 	return sum;
 }
 
+#if __has_include("duckdb/common/identifier.hpp")
+static Identifier FinanceFunctionName(const string &name) {
+	return Identifier(name);
+}
+#else
+static const string &FinanceFunctionName(const string &name) {
+	return name;
+}
+#endif
 
 static void AddScalar(ExtensionLoader &loader, const string &name, vector<LogicalType> args, LogicalType ret,
                       scalar_function_t func) {
