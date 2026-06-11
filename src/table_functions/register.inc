@@ -1,7 +1,7 @@
 void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
-	loader.RegisterFunction(TableFunction("fin_schema_template", {FinanceLogicalType(LogicalTypeId::VARCHAR)}, SchemaTemplateFunction,
+	loader.RegisterFunction(TableFunction(FinanceFunctionName("fin_schema_template"), {FinanceLogicalType(LogicalTypeId::VARCHAR)}, SchemaTemplateFunction,
 	                                      SchemaTemplateBind, RowsInit));
-	loader.RegisterFunction(TableFunction("fin_validate_schema", {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	loader.RegisterFunction(TableFunction(FinanceFunctionName("fin_validate_schema"), {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                                      SchemaTemplateFunction, SchemaTemplateBind, RowsInit));
 
 	auto list_double = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));

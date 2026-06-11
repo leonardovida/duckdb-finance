@@ -154,6 +154,59 @@ struct OptionSpecRow {
 	double dividend_yield;
 };
 
+struct GreeksOutput {
+	double *delta;
+	double *gamma;
+	double *vega;
+	double *theta;
+	double *rho;
+};
+
+static GreeksOutput GetGreeksOutput(Vector &result) {
+	auto &children = StructVector::GetEntries(result);
+	return {FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0])),
+	        FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1])),
+	        FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2])),
+	        FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3])),
+	        FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]))};
+}
+
+static void WriteBSMGreeks(const GreeksOutput &out, idx_t row, bool call, const BSMKernel &k) {
+	out.delta[row] = BSMDeltaFromKernel(call, k);
+	out.gamma[row] = BSMGammaFromKernel(k);
+	out.vega[row] = BSMVegaFromKernel(k);
+	out.theta[row] = BSMThetaFromKernel(call, k);
+	out.rho[row] = BSMRhoFromKernel(call, k);
+}
+
+struct BSMAllOutput {
+	array<double *, 10> values;
+};
+
+static BSMAllOutput GetBSMAllOutput(Vector &result) {
+	BSMAllOutput output;
+	auto &children = StructVector::GetEntries(result);
+	for (idx_t i = 0; i < output.values.size(); i++) {
+		output.values[i] = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[i]));
+	}
+	return output;
+}
+
+static void WriteBSMAll(const BSMAllOutput &out, idx_t row, bool call, const BSMKernel &k) {
+	double price = BSMPriceFromKernel(call, k);
+	double intrinsic = OptionPayoff(call, k.spot, k.strike);
+	out.values[0][row] = price;
+	out.values[1][row] = BSMDeltaFromKernel(call, k);
+	out.values[2][row] = BSMGammaFromKernel(k);
+	out.values[3][row] = BSMVegaFromKernel(k);
+	out.values[4][row] = BSMThetaFromKernel(call, k);
+	out.values[5][row] = BSMRhoFromKernel(call, k);
+	out.values[6][row] = k.d1;
+	out.values[7][row] = k.d2;
+	out.values[8][row] = intrinsic;
+	out.values[9][row] = price - intrinsic;
+}
+
 static OptionSpecData PrepareOptionSpecData(DataChunk &args) {
 	OptionSpecData data;
 	args.data[0].ToUnifiedFormat(args.size(), data.spec);
@@ -235,12 +288,7 @@ static void BSMVegaSpecFunction(DataChunk &args, ExpressionState &, Vector &resu
 static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
-	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
-	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
-	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
-	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
-	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
+	auto out = GetGreeksOutput(result);
 	for (idx_t row = 0; row < args.size(); row++) {
 		if (input.HasNull(row)) {
 			FlatVector::SetNull(result, row, true);
@@ -255,11 +303,7 @@ static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result
 			double rate = input.GetDouble(4, row);
 			double vol = input.GetDouble(5, row);
 			auto k = MakeBSMKernel(spot, strike, ttm, rate, vol, q);
-			delta[row] = BSMDeltaFromKernel(call, k);
-			gamma[row] = BSMGammaFromKernel(k);
-			vega[row] = BSMVegaFromKernel(k);
-			theta[row] = BSMThetaFromKernel(call, k);
-			rho[row] = BSMRhoFromKernel(call, k);
+			WriteBSMGreeks(out, row, call, k);
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
 		}
@@ -269,12 +313,7 @@ static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result
 static void BSMGreeksSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto spec_data = PrepareOptionSpecData(args);
-	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
-	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
-	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
-	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
-	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
+	auto out = GetGreeksOutput(result);
 	for (idx_t row = 0; row < args.size(); row++) {
 		OptionSpecRow spec;
 		if (!ReadOptionSpecRow(spec_data, row, spec)) {
@@ -283,11 +322,7 @@ static void BSMGreeksSpecFunction(DataChunk &args, ExpressionState &, Vector &re
 		}
 		try {
 			auto k = MakeBSMKernel(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
-			delta[row] = BSMDeltaFromKernel(spec.call, k);
-			gamma[row] = BSMGammaFromKernel(k);
-			vega[row] = BSMVegaFromKernel(k);
-			theta[row] = BSMThetaFromKernel(spec.call, k);
-			rho[row] = BSMRhoFromKernel(spec.call, k);
+			WriteBSMGreeks(out, row, spec.call, k);
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
 		}
@@ -297,11 +332,7 @@ static void BSMGreeksSpecFunction(DataChunk &args, ExpressionState &, Vector &re
 static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
-	auto &children = StructVector::GetEntries(result);
-	vector<double *> out;
-	for (auto &child : children) {
-		out.push_back(FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(child)));
-	}
+	auto out = GetBSMAllOutput(result);
 	for (idx_t row = 0; row < args.size(); row++) {
 		if (input.HasNull(row)) {
 			FlatVector::SetNull(result, row, true);
@@ -316,18 +347,7 @@ static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
 			double rate = input.GetDouble(4, row);
 			double vol = input.GetDouble(5, row);
 			auto k = MakeBSMKernel(spot, strike, ttm, rate, vol, q);
-			double price = BSMPriceFromKernel(call, k);
-			double intrinsic = OptionPayoff(call, spot, strike);
-			out[0][row] = price;
-			out[1][row] = BSMDeltaFromKernel(call, k);
-			out[2][row] = BSMGammaFromKernel(k);
-			out[3][row] = BSMVegaFromKernel(k);
-			out[4][row] = BSMThetaFromKernel(call, k);
-			out[5][row] = BSMRhoFromKernel(call, k);
-			out[6][row] = k.d1;
-			out[7][row] = k.d2;
-			out[8][row] = intrinsic;
-			out[9][row] = price - intrinsic;
+			WriteBSMAll(out, row, call, k);
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
 		}
@@ -337,11 +357,7 @@ static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
 static void BSMAllSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto spec_data = PrepareOptionSpecData(args);
-	auto &children = StructVector::GetEntries(result);
-	vector<double *> out;
-	for (auto &child : children) {
-		out.push_back(FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(child)));
-	}
+	auto out = GetBSMAllOutput(result);
 	for (idx_t row = 0; row < args.size(); row++) {
 		OptionSpecRow spec;
 		if (!ReadOptionSpecRow(spec_data, row, spec)) {
@@ -350,18 +366,7 @@ static void BSMAllSpecFunction(DataChunk &args, ExpressionState &, Vector &resul
 		}
 		try {
 			auto k = MakeBSMKernel(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
-			double price = BSMPriceFromKernel(spec.call, k);
-			double intrinsic = OptionPayoff(spec.call, spec.spot, spec.strike);
-			out[0][row] = price;
-			out[1][row] = BSMDeltaFromKernel(spec.call, k);
-			out[2][row] = BSMGammaFromKernel(k);
-			out[3][row] = BSMVegaFromKernel(k);
-			out[4][row] = BSMThetaFromKernel(spec.call, k);
-			out[5][row] = BSMRhoFromKernel(spec.call, k);
-			out[6][row] = k.d1;
-			out[7][row] = k.d2;
-			out[8][row] = intrinsic;
-			out[9][row] = price - intrinsic;
+			WriteBSMAll(out, row, spec.call, k);
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
 		}
@@ -498,12 +503,7 @@ static double ImpliedVolBisection(const std::function<double(double)> &price_fn,
 static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
-	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
-	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
-	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
-	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
-	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
+	auto out = GetGreeksOutput(result);
 	for (idx_t row = 0; row < args.size(); row++) {
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
@@ -516,12 +516,12 @@ static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &re
 			double st = vol * std::sqrt(ttm);
 			double d1 = (std::log(forward / strike) + 0.5 * vol * vol * ttm) / st;
 			double d2 = d1 - st;
-			delta[row] = call ? df * NormCDF(d1) : -df * NormCDF(-d1);
-			gamma[row] = df * NormPDF(d1) / (forward * st);
-			vega[row] = df * forward * NormPDF(d1) * std::sqrt(ttm);
+			out.delta[row] = call ? df * NormCDF(d1) : -df * NormCDF(-d1);
+			out.gamma[row] = df * NormPDF(d1) / (forward * st);
+			out.vega[row] = df * forward * NormPDF(d1) * std::sqrt(ttm);
 			double price = Black76Price(call, forward, strike, ttm, rate, vol);
-			theta[row] = -forward * df * NormPDF(d1) * vol / (2.0 * std::sqrt(ttm)) + rate * price;
-			rho[row] = -ttm * price;
+			out.theta[row] = -forward * df * NormPDF(d1) * vol / (2.0 * std::sqrt(ttm)) + rate * price;
+			out.rho[row] = -ttm * price;
 			(void)d2;
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
@@ -547,12 +547,7 @@ static void Black76ImpliedVolFunction(DataChunk &args, ExpressionState &, Vector
 static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	PreparedInputs input(args);
-	auto &children = StructVector::GetEntries(result);
-	auto delta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0]));
-	auto gamma = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[1]));
-	auto vega = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[2]));
-	auto theta = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[3]));
-	auto rho = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[4]));
+	auto out = GetGreeksOutput(result);
 	for (idx_t row = 0; row < args.size(); row++) {
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
@@ -565,11 +560,11 @@ static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &
 			double stddev = normal_vol * std::sqrt(ttm);
 			double d = (forward - strike) / stddev;
 			double price = BachelierPrice(call, forward, strike, ttm, rate, normal_vol);
-			delta[row] = call ? df * NormCDF(d) : -df * NormCDF(-d);
-			gamma[row] = df * NormPDF(d) / stddev;
-			vega[row] = df * std::sqrt(ttm) * NormPDF(d);
-			theta[row] = -0.5 * df * normal_vol * NormPDF(d) / std::sqrt(ttm) + rate * price;
-			rho[row] = -ttm * price;
+			out.delta[row] = call ? df * NormCDF(d) : -df * NormCDF(-d);
+			out.gamma[row] = df * NormPDF(d) / stddev;
+			out.vega[row] = df * std::sqrt(ttm) * NormPDF(d);
+			out.theta[row] = -0.5 * df * normal_vol * NormPDF(d) / std::sqrt(ttm) + rate * price;
+			out.rho[row] = -ttm * price;
 		} catch (const std::exception &) {
 			FlatVector::SetNull(result, row, true);
 		}

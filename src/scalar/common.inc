@@ -1456,10 +1456,19 @@ static double SumList(const double *x, const list_entry_t &entry) {
 	return sum;
 }
 
+#if __has_include("duckdb/common/identifier.hpp")
+static Identifier FinanceFunctionName(const string &name) {
+	return Identifier(name);
+}
+#else
+static const string &FinanceFunctionName(const string &name) {
+	return name;
+}
+#endif
 
 static void AddScalar(ExtensionLoader &loader, const string &name, vector<LogicalType> args, LogicalType ret,
                       scalar_function_t func) {
-	ScalarFunction scalar(name, std::move(args), std::move(ret), std::move(func));
+	ScalarFunction scalar(FinanceFunctionName(name), std::move(args), std::move(ret), std::move(func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
 	loader.RegisterFunction(std::move(scalar));
 }
@@ -1471,7 +1480,7 @@ static void AddOverload(ScalarFunctionSet &set, vector<LogicalType> args, Logica
 }
 
 static void RegisterOptionFunction(ExtensionLoader &loader, const string &name, scalar_function_t func) {
-	ScalarFunctionSet set(name);
+	ScalarFunctionSet set(FinanceFunctionName(name));
 	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
@@ -1482,7 +1491,7 @@ static void RegisterOptionFunction(ExtensionLoader &loader, const string &name, 
 }
 
 static void RegisterOptionFunctionWithScale(ExtensionLoader &loader, const string &name, scalar_function_t func) {
-	ScalarFunctionSet set(name);
+	ScalarFunctionSet set(FinanceFunctionName(name));
 	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);

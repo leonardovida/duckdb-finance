@@ -1,7 +1,17 @@
+#if __has_include("duckdb/common/identifier.hpp")
+static Identifier FinanceFunctionName(const string &name) {
+	return Identifier(name);
+}
+#else
+static const string &FinanceFunctionName(const string &name) {
+	return name;
+}
+#endif
+
 template <class STATE, class OP>
 static AggregateFunction UnaryDoubleAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -10,14 +20,14 @@ static AggregateFunction BinaryDoubleAggregate(const string &name, const Logical
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                         FinanceLogicalType(LogicalTypeId::DOUBLE));
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
 template <class STATE, class OP>
 static AggregateFunction UnaryBigintAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, int64_t, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -26,7 +36,7 @@ static AggregateFunction BinaryAggregate(const string &name, const LogicalType &
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, RESULT_TYPE, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                              return_type);
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -96,7 +106,7 @@ static AggregateFunction TernaryDoubleAggregate(const string &name, const Logica
 	                         AggregateFunction::StateCombine<STATE, OP>,
 	                         AggregateFunction::StateFinalize<STATE, double, OP>,
 	                         FunctionNullHandling::DEFAULT_NULL_HANDLING);
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
 
@@ -167,6 +177,6 @@ static AggregateFunction TernaryDoubleVarcharDoubleBigintAggregate(const string 
 	                         AggregateFunction::StateFinalize<STATE, int64_t, OP>,
 	                         FunctionNullHandling::DEFAULT_NULL_HANDLING, nullptr, nullptr,
 	                         AggregateFunction::StateDestroy<STATE, OP>);
-	result.name = name;
+	result.name = FinanceFunctionName(name);
 	return result;
 }
