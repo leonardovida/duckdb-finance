@@ -1,13 +1,3 @@
-#if __has_include("duckdb/common/identifier.hpp")
-static Identifier FinanceFunctionName(const string &name) {
-	return Identifier(name);
-}
-#else
-static const string &FinanceFunctionName(const string &name) {
-	return name;
-}
-#endif
-
 template <class STATE, class OP>
 static AggregateFunction UnaryDoubleAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
