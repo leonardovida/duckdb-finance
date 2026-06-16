@@ -1,8 +1,12 @@
+static AggregateFunction NamedAggregateFunction(const string &name, AggregateFunction function) {
+	function.name = FinanceFunctionName(name);
+	return function;
+}
+
 template <class STATE, class OP>
 static AggregateFunction UnaryDoubleAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
-	result.name = FinanceFunctionName(name);
-	return result;
+	return NamedAggregateFunction(name, std::move(result));
 }
 
 template <class STATE, class B_TYPE, class OP>
@@ -10,15 +14,13 @@ static AggregateFunction BinaryDoubleAggregate(const string &name, const Logical
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                         FinanceLogicalType(LogicalTypeId::DOUBLE));
-	result.name = FinanceFunctionName(name);
-	return result;
+	return NamedAggregateFunction(name, std::move(result));
 }
 
 template <class STATE, class OP>
 static AggregateFunction UnaryBigintAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, int64_t, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
-	result.name = FinanceFunctionName(name);
-	return result;
+	return NamedAggregateFunction(name, std::move(result));
 }
 
 template <class STATE, class B_TYPE, class RESULT_TYPE, class OP>
@@ -26,8 +28,7 @@ static AggregateFunction BinaryAggregate(const string &name, const LogicalType &
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, RESULT_TYPE, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                              return_type);
-	result.name = FinanceFunctionName(name);
-	return result;
+	return NamedAggregateFunction(name, std::move(result));
 }
 
 template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
@@ -96,8 +97,7 @@ static AggregateFunction TernaryDoubleAggregate(const string &name, const Logica
 	                         AggregateFunction::StateCombine<STATE, OP>,
 	                         AggregateFunction::StateFinalize<STATE, double, OP>,
 	                         FunctionNullHandling::DEFAULT_NULL_HANDLING);
-	result.name = FinanceFunctionName(name);
-	return result;
+	return NamedAggregateFunction(name, std::move(result));
 }
 
 template <class STATE, class OP>
@@ -167,6 +167,5 @@ static AggregateFunction TernaryDoubleVarcharDoubleBigintAggregate(const string 
 	                         AggregateFunction::StateFinalize<STATE, int64_t, OP>,
 	                         FunctionNullHandling::DEFAULT_NULL_HANDLING, nullptr, nullptr,
 	                         AggregateFunction::StateDestroy<STATE, OP>);
-	result.name = FinanceFunctionName(name);
-	return result;
+	return NamedAggregateFunction(name, std::move(result));
 }
