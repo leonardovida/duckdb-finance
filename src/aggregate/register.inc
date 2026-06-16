@@ -74,10 +74,10 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 
 	AggregateFunctionSet outlier_count_set(FinanceFunctionName("fin_outlier_count"));
 	auto outlier_count =
-	    AggregateFunction::UnaryAggregateDestructor<OutlierCountState, double, int64_t, OutlierCountOperation,
-	                                                AggregateDestructorType::LEGACY>(FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                                                                                 FinanceLogicalType(LogicalTypeId::BIGINT));
-	outlier_count.name = FinanceFunctionName("fin_outlier_count");
+	    NamedAggregateFunction("fin_outlier_count",
+	                           AggregateFunction::UnaryAggregateDestructor<OutlierCountState, double, int64_t, OutlierCountOperation,
+	                                                                       AggregateDestructorType::LEGACY>(
+	                               FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)));
 	outlier_count_set.AddFunction(outlier_count);
 	auto outlier_count_threshold =
 	    BinaryAggregate<OutlierCountState, double, int64_t, OutlierCountWithThresholdOperation>(
@@ -92,10 +92,11 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 
 	AggregateFunctionSet quantile_spread_set(FinanceFunctionName("fin_quantile_spread"));
 	auto quantile_spread =
-	    AggregateFunction::BinaryAggregate<QuantileSpreadState, double, double, double, QuantileSpreadOperation,
-	                                       AggregateDestructorType::LEGACY>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                                                                        FinanceLogicalType(LogicalTypeId::DOUBLE));
-	quantile_spread.name = FinanceFunctionName("fin_quantile_spread");
+	    NamedAggregateFunction("fin_quantile_spread",
+	                           AggregateFunction::BinaryAggregate<QuantileSpreadState, double, double, double, QuantileSpreadOperation,
+	                                                               AggregateDestructorType::LEGACY>(
+	                               FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	                               FinanceLogicalType(LogicalTypeId::DOUBLE)));
 	quantile_spread.SetStateDestructorCallback(
 	    AggregateFunction::StateDestroy<QuantileSpreadState, QuantileSpreadOperation>);
 	quantile_spread_set.AddFunction(quantile_spread);
