@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DUCKDB_VERSION: v1.5.1
-  EXTENSION_CI_TOOLS_VERSION: v1.5.1
+  DUCKDB_VERSION: v1.5.3
+  EXTENSION_CI_TOOLS_VERSION: v1.5.3
   EXTENSION_NAME: finance
 
 jobs:
@@ -51,11 +51,11 @@ jobs:
   build-extension:
     name: Build release artifacts
     needs: validate
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.1
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.3
     secrets: inherit
     with:
-      duckdb_version: v1.5.1
-      ci_tools_version: v1.5.1
+      duckdb_version: v1.5.3
+      ci_tools_version: v1.5.3
       extension_name: finance
       reduced_ci_mode: enabled
       skip_tests: true

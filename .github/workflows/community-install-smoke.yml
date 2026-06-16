@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DUCKDB_VERSION: v1.5.1
+  DUCKDB_VERSION: v1.5.3
 
 jobs:
   smoke:
