@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Check out extension
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: duckdb-finance
           fetch-depth: 1
@@ -77,11 +77,11 @@ jobs:
       - name: Lint GitHub Actions workflows
         working-directory: duckdb-finance
         run: |
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
       - name: Check out DuckDB
         if: steps.scope.outputs.full == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: duckdb/duckdb
           ref: ${{ env.DUCKDB_REF }}

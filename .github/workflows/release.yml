@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DUCKDB_VERSION: v1.5.3
-  EXTENSION_CI_TOOLS_VERSION: v1.5.3
+  DUCKDB_VERSION: v1.5.4
+  EXTENSION_CI_TOOLS_VERSION: v1.5.4
   EXTENSION_NAME: finance
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
       sha: ${{ steps.version.outputs.sha }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -51,14 +51,13 @@ jobs:
   build-extension:
     name: Build release artifacts
     needs: validate
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.3
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.4
     secrets: inherit
     with:
-      duckdb_version: v1.5.3
-      ci_tools_version: v1.5.3
+      duckdb_version: v1.5.4
+      ci_tools_version: v1.5.4
       extension_name: finance
       reduced_ci_mode: enabled
-      skip_tests: true
 
   github-release:
     name: Publish GitHub release
@@ -68,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
