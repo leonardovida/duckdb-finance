@@ -1,7 +1,5 @@
 static unique_ptr<TableRef> BootstrapCurveBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 4) {
-		throw BinderException("fin_bootstrap_curve expects table_name, instrument_col, maturity_col, rate_col");
-	}
+	RequireInputCountAtLeast(input, 4, "fin_bootstrap_curve expects table_name, instrument_col, maturity_col, rate_col");
 	auto table = SqlTableName(input.inputs[0]);
 	auto instrument = SqlColumn(input.inputs[1]);
 	auto maturity = SqlColumn(input.inputs[2]);
@@ -15,9 +13,8 @@ static unique_ptr<TableRef> BootstrapCurveBindReplace(ClientContext &context, Ta
 }
 
 static unique_ptr<TableRef> PortfolioOptimizeTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 4) {
-		throw BinderException("fin_portfolio_optimize_table expects table_name, asset_col, date_col, return_col");
-	}
+	RequireInputCountAtLeast(input, 4,
+	                         "fin_portfolio_optimize_table expects table_name, asset_col, date_col, return_col");
 	auto table = SqlTableName(input.inputs[0]);
 	auto asset = SqlColumn(input.inputs[1]);
 	auto query = StringUtil::Format(
@@ -29,9 +26,8 @@ static unique_ptr<TableRef> PortfolioOptimizeTableBindReplace(ClientContext &con
 }
 
 static unique_ptr<TableRef> PortfolioReturnTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() != 4) {
-		throw BinderException("fin_portfolio_return_table expects table_name, asset_col, weight_col, return_col");
-	}
+	RequireInputCountExactly(input, 4,
+	                         "fin_portfolio_return_table expects table_name, asset_col, weight_col, return_col");
 	auto table = SqlTableName(input.inputs[0]);
 	auto asset = SqlColumn(input.inputs[1]);
 	auto weight = SqlColumn(input.inputs[2]);
@@ -48,10 +44,9 @@ static unique_ptr<TableRef> PortfolioReturnTableBindReplace(ClientContext &conte
 }
 
 static unique_ptr<TableRef> PortfolioVarianceTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() != 7) {
-		throw BinderException("fin_portfolio_variance_table expects weights_table, asset_col, weight_col, covariance_table, "
-		                      "asset_i_col, asset_j_col, covariance_col");
-	}
+	RequireInputCountExactly(input, 7,
+	                         "fin_portfolio_variance_table expects weights_table, asset_col, weight_col, "
+	                         "covariance_table, asset_i_col, asset_j_col, covariance_col");
 	auto weights_table = SqlTableName(input.inputs[0]);
 	auto weight_asset = SqlColumn(input.inputs[1]);
 	auto weight = SqlColumn(input.inputs[2]);
@@ -76,9 +71,8 @@ static unique_ptr<TableRef> PortfolioVarianceTableBindReplace(ClientContext &con
 }
 
 static unique_ptr<TableRef> FactorReportBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 5) {
-		throw BinderException("fin_factor_report expects table_name, date_col, asset_col, factor_col, return_col");
-	}
+	RequireInputCountAtLeast(input, 5,
+	                         "fin_factor_report expects table_name, date_col, asset_col, factor_col, return_col");
 	auto table = SqlTableName(input.inputs[0]);
 	auto factor = SqlColumn(input.inputs[3]);
 	auto ret = SqlColumn(input.inputs[4]);
@@ -104,9 +98,7 @@ static unique_ptr<TableRef> FactorReportBindReplace(ClientContext &context, Tabl
 }
 
 static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 2) {
-		throw BinderException("fin_garch_fit expects table_name, return_col");
-	}
+	RequireInputCountAtLeast(input, 2, "fin_garch_fit expects table_name, return_col");
 	auto table = SqlTableName(input.inputs[0]);
 	auto ret = SqlColumn(input.inputs[1]);
 	auto query = StringUtil::Format(
@@ -119,9 +111,7 @@ static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFun
 }
 
 static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.empty() || input.inputs.size() > 3) {
-		throw BinderException("fin_calendar expects calendar, start_date, end_date");
-	}
+	RequireInputCountBetween(input, 1, 3, "fin_calendar expects calendar, start_date, end_date");
 	auto calendar = SqlLiteral(input.inputs[0]);
 	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(input.inputs[1]) : CurrentDateLiteral();
 	auto end_date = input.inputs.size() >= 3 ? SqlLiteral(input.inputs[2]) : start_date;
@@ -135,9 +125,8 @@ static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFun
 }
 
 static unique_ptr<TableRef> RebalanceTradesBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 3) {
-		throw BinderException("fin_rebalance_trades expects current_table, target_table, price_table[, portfolio_value]");
-	}
+	RequireInputCountAtLeast(input, 3,
+	                         "fin_rebalance_trades expects current_table, target_table, price_table[, portfolio_value]");
 	auto current_table = SqlTableName(input.inputs[0]);
 	auto target_table = SqlTableName(input.inputs[1]);
 	auto price_table = SqlTableName(input.inputs[2]);
@@ -160,9 +149,8 @@ static unique_ptr<TableRef> RebalanceTradesBindReplace(ClientContext &context, T
 }
 
 static unique_ptr<TableRef> FamaMacbethBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 5) {
-		throw BinderException("fin_fama_macbeth expects table_name, date_col, asset_col, y_col, x_cols[, lags]");
-	}
+	RequireInputCountAtLeast(input, 5,
+	                         "fin_fama_macbeth expects table_name, date_col, asset_col, y_col, x_cols[, lags]");
 	auto table = SqlTableName(input.inputs[0]);
 	auto date_col = SqlColumn(input.inputs[1]);
 	auto y_col = SqlColumn(input.inputs[3]);

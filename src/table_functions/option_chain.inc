@@ -5,10 +5,9 @@ static string BSMArguments(const string &kind, const string &spot, const string 
 }
 
 static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() != 7 && input.inputs.size() != 8) {
-		throw BinderException("fin_option_chain expects table_name, kind_col, spot_col, strike_col, ttm_col, rate_col, "
-		                      "vol_col[, dividend_yield_col]");
-	}
+	RequireInputCountBetween(input, 7, 8,
+	                         "fin_option_chain expects table_name, kind_col, spot_col, strike_col, ttm_col, rate_col, "
+	                         "vol_col[, dividend_yield_col]");
 	auto table = SqlTableName(input.inputs[0]);
 	auto kind = SqlColumn(input.inputs[1]);
 	auto spot = SqlColumn(input.inputs[2]);
