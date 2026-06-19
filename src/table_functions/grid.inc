@@ -1,4 +1,5 @@
 static string GridSubquery(TableFunctionBindInput &input, const string &value_expr) {
+	RequireInputCountAtLeast(input, 6, "fin_resample_grid expects table_name, ts_col, value_col, start_ts, end_ts, step");
 	auto table = SqlTableName(input.inputs[0]);
 	auto ts_col = SqlColumn(input.inputs[1]);
 	auto value_col = SqlColumn(input.inputs[2]);
@@ -29,9 +30,6 @@ static string GridSubquery(TableFunctionBindInput &input, const string &value_ex
 }
 
 static unique_ptr<TableRef> ResampleGridBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() < 6) {
-		throw BinderException("fin_resample_grid expects table_name, ts_col, value_col, start_ts, end_ts, step");
-	}
 	return ParseSubquery(context, GridSubquery(input, "value"));
 }
 

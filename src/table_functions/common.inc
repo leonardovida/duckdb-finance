@@ -38,6 +38,26 @@ static string CurrentDateLiteral() {
 	return "DATE '" + string(buffer) + "'";
 }
 
+static void RequireInputCountAtLeast(const TableFunctionBindInput &input, idx_t min_count, const string &message) {
+	if (input.inputs.size() < min_count) {
+		throw BinderException(message);
+	}
+}
+
+static void RequireInputCountExactly(const TableFunctionBindInput &input, idx_t expected_count, const string &message) {
+	if (input.inputs.size() != expected_count) {
+		throw BinderException(message);
+	}
+}
+
+static void RequireInputCountBetween(const TableFunctionBindInput &input, idx_t min_count, idx_t max_count,
+                                     const string &message) {
+	auto count = input.inputs.size();
+	if (count < min_count || count > max_count) {
+		throw BinderException(message);
+	}
+}
+
 static unique_ptr<TableRef> ParseSubquery(ClientContext &context, const string &query) {
 	Parser parser(context.GetParserOptions());
 	parser.ParseQuery(query);

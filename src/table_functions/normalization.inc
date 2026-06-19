@@ -1,8 +1,7 @@
 static unique_ptr<TableRef> NormalizeOhlcvBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() != 7 && input.inputs.size() != 8) {
-		throw BinderException("fin_normalize_ohlcv expects table_name, ts_col, open_col, high_col, low_col, close_col, "
-		                      "volume_col[, asset_col]");
-	}
+	RequireInputCountBetween(input, 7, 8,
+	                         "fin_normalize_ohlcv expects table_name, ts_col, open_col, high_col, low_col, close_col, "
+	                         "volume_col[, asset_col]");
 	auto table = SqlTableName(input.inputs[0]);
 	auto ts = SqlColumn(input.inputs[1]);
 	auto open = SqlColumn(input.inputs[2]);
@@ -20,9 +19,7 @@ static unique_ptr<TableRef> NormalizeOhlcvBindReplace(ClientContext &context, Ta
 }
 
 static unique_ptr<TableRef> NormalizeReturnsBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() != 4) {
-		throw BinderException("fin_normalize_returns expects table_name, date_col, asset_col, return_col");
-	}
+	RequireInputCountExactly(input, 4, "fin_normalize_returns expects table_name, date_col, asset_col, return_col");
 	auto table = SqlTableName(input.inputs[0]);
 	auto date = SqlColumn(input.inputs[1]);
 	auto asset = SqlColumn(input.inputs[2]);
@@ -35,10 +32,9 @@ static unique_ptr<TableRef> NormalizeReturnsBindReplace(ClientContext &context, 
 }
 
 static unique_ptr<TableRef> NormalizeOptionChainBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	if (input.inputs.size() != 8 && input.inputs.size() != 9) {
-		throw BinderException("fin_normalize_option_chain expects table_name, kind_col, underlying_price_col, "
-		                      "strike_col, expiry_col, valuation_date_col, rate_col, vol_col[, dividend_yield_col]");
-	}
+	RequireInputCountBetween(input, 8, 9,
+	                         "fin_normalize_option_chain expects table_name, kind_col, underlying_price_col, "
+	                         "strike_col, expiry_col, valuation_date_col, rate_col, vol_col[, dividend_yield_col]");
 	auto table = SqlTableName(input.inputs[0]);
 	auto kind = SqlColumn(input.inputs[1]);
 	auto underlying = SqlColumn(input.inputs[2]);

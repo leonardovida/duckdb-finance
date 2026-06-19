@@ -1,7 +1,6 @@
 static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctionBindInput &input, const string &kind) {
-	if ((kind == "tick" && input.inputs.size() < 3) || (kind != "tick" && input.inputs.size() < 4)) {
-		throw BinderException("Finance bar functions expect table_name, ts_col, price_col[, volume_col, threshold]");
-	}
+	RequireInputCountAtLeast(input, kind == "tick" ? 3 : 4,
+	                         "Finance bar functions expect table_name, ts_col, price_col[, volume_col, threshold]");
 	auto table = SqlTableName(input.inputs[0]);
 	auto ts = SqlColumn(input.inputs[1]);
 	auto price = SqlColumn(input.inputs[2]);
