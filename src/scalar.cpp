@@ -33,6 +33,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <initializer_list>
 #include <limits>
 #include <numeric>
 
