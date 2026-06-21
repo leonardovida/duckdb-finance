@@ -1456,6 +1456,19 @@ static double SumList(const double *x, const list_entry_t &entry) {
 	return sum;
 }
 
+struct FinanceStructField {
+	const char *name;
+	LogicalTypeId type;
+};
+
+static LogicalType FinanceStructType(std::initializer_list<FinanceStructField> fields) {
+	child_list_t<LogicalType> children;
+	for (auto &field : fields) {
+		children.emplace_back(field.name, FinanceLogicalType(field.type));
+	}
+	return LogicalType::STRUCT(std::move(children));
+}
+
 static void AddScalar(ExtensionLoader &loader, const string &name, vector<LogicalType> args, LogicalType ret,
                       scalar_function_t func) {
 	ScalarFunction scalar(FinanceFunctionName(name), std::move(args), std::move(ret), std::move(func));

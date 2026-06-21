@@ -101,42 +101,36 @@ static void BSMRhoFunction(DataChunk &args, ExpressionState &, Vector &result) {
 }
 
 static LogicalType GreeksType() {
-	child_list_t<LogicalType> children;
-	children.emplace_back("delta", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("gamma", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("vega", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("theta", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("rho", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	return LogicalType::STRUCT(std::move(children));
+	return FinanceStructType({{"delta", LogicalTypeId::DOUBLE},
+	                          {"gamma", LogicalTypeId::DOUBLE},
+	                          {"vega", LogicalTypeId::DOUBLE},
+	                          {"theta", LogicalTypeId::DOUBLE},
+	                          {"rho", LogicalTypeId::DOUBLE}});
 }
 
 static LogicalType BSMAllType() {
-	child_list_t<LogicalType> children;
-	children.emplace_back("price", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("delta", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("gamma", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("vega", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("theta", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("rho", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("d1", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("d2", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("intrinsic", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("time_value", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	return LogicalType::STRUCT(std::move(children));
+	return FinanceStructType({{"price", LogicalTypeId::DOUBLE},
+	                          {"delta", LogicalTypeId::DOUBLE},
+	                          {"gamma", LogicalTypeId::DOUBLE},
+	                          {"vega", LogicalTypeId::DOUBLE},
+	                          {"theta", LogicalTypeId::DOUBLE},
+	                          {"rho", LogicalTypeId::DOUBLE},
+	                          {"d1", LogicalTypeId::DOUBLE},
+	                          {"d2", LogicalTypeId::DOUBLE},
+	                          {"intrinsic", LogicalTypeId::DOUBLE},
+	                          {"time_value", LogicalTypeId::DOUBLE}});
 }
 
 static LogicalType OptionSpecType() {
-	child_list_t<LogicalType> children;
-	children.emplace_back("kind", FinanceLogicalType(LogicalTypeId::VARCHAR));
-	children.emplace_back("spot", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("strike", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("ttm", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("rate", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("vol", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("dividend_yield", FinanceLogicalType(LogicalTypeId::DOUBLE));
-	children.emplace_back("exercise", FinanceLogicalType(LogicalTypeId::VARCHAR));
-	children.emplace_back("model", FinanceLogicalType(LogicalTypeId::VARCHAR));
-	return LogicalType::STRUCT(std::move(children));
+	return FinanceStructType({{"kind", LogicalTypeId::VARCHAR},
+	                          {"spot", LogicalTypeId::DOUBLE},
+	                          {"strike", LogicalTypeId::DOUBLE},
+	                          {"ttm", LogicalTypeId::DOUBLE},
+	                          {"rate", LogicalTypeId::DOUBLE},
+	                          {"vol", LogicalTypeId::DOUBLE},
+	                          {"dividend_yield", LogicalTypeId::DOUBLE},
+	                          {"exercise", LogicalTypeId::VARCHAR},
+	                          {"model", LogicalTypeId::VARCHAR}});
 }
 
 struct OptionSpecData {

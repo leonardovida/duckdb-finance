@@ -496,10 +496,7 @@ static void ValidateOhlcFunction(DataChunk &args, ExpressionState &, Vector &res
 }
 
 static LogicalType ValidationType() {
-	child_list_t<LogicalType> children;
-	children.emplace_back("ok", FinanceLogicalType(LogicalTypeId::BOOLEAN));
-	children.emplace_back("reason", FinanceLogicalType(LogicalTypeId::VARCHAR));
-	return LogicalType::STRUCT(std::move(children));
+	return FinanceStructType({{"ok", LogicalTypeId::BOOLEAN}, {"reason", LogicalTypeId::VARCHAR}});
 }
 
 static void ValidateReturnFunction(DataChunk &args, ExpressionState &, Vector &result) {
