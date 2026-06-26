@@ -43,12 +43,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          full=true
+          full=false
           duckdb_target=ci-duckdb
-          changed="protected branch or manual run"
+          changed="DuckDB-backed checks are manual"
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            full=true
+            changed="manual workflow_dispatch run"
+          fi
 
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            full=false
             duckdb_target=ci-duckdb-smoke
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
             changed="$(git diff --name-only "$BASE_SHA" HEAD)"
@@ -120,8 +124,8 @@ jobs:
         env:
           CHANGED_FILES: ${{ steps.scope.outputs.changed }}
         run: |
-          echo "Skipped DuckDB checkout/build on pull request CI."
-          echo "DuckDB-backed checks run on main, merge queue, and workflow_dispatch."
+          echo "Skipped DuckDB checkout/build on default CI."
+          echo "Run workflow_dispatch for DuckDB-backed checks; release builds run in release.yml."
           echo "Changed files:"
           printf "%s\n" "$CHANGED_FILES"
 
