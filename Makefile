@@ -24,7 +24,7 @@ smoke: debug
 	{ $(SQL_TEST_PREAMBLE); cat $(SMOKE_SQL); } | $(DUCKDB) -unsigned
 
 smoke-quiet: debug
-	{ $(SQL_TEST_PREAMBLE); cat $(SMOKE_SQL); } | $(DUCKDB) -unsigned >/dev/null
+	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(SMOKE_SQL)" >/dev/null
 
 gold: debug
 	{ $(SQL_TEST_PREAMBLE); cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned
