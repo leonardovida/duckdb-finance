@@ -11,7 +11,9 @@ nav_order: 11
 DuckDB Finance releases are tag-driven. Development lands on `main`; when `main`
 is ready, create a semantic version tag from that commit.
 
-The next release line is the breaking `0.2.0` cleanup release.
+The current release line is `0.2.x`. Patch releases should keep the public SQL
+surface backward-compatible unless the release notes explicitly call out a
+breaking change.
 
 ## Maintainer Flow
 
@@ -35,14 +37,14 @@ The next release line is the breaking `0.2.0` cleanup release.
 5. Validate the release metadata for the intended tag:
 
    ```sh
-   python3 scripts/check_release_metadata.py --tag v0.2.0
+   python3 scripts/check_release_metadata.py --tag v0.2.1
    ```
 
 6. Tag the current `main` commit:
 
    ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.2.1
+   git push origin v0.2.1
    ```
 
 7. The release workflow validates the tag, builds release artifacts through
@@ -97,10 +99,10 @@ CLI.
 After the GitHub release is created, confirm:
 
 ```sh
-gh release view v0.2.0 --json tagName,targetCommitish,url,isDraft,isPrerelease,assets
+gh release view v0.2.1 --json tagName,targetCommitish,url,isDraft,isPrerelease,assets
 git rev-parse HEAD
-git rev-parse v0.2.0
-git ls-remote --tags origin v0.2.0
+git rev-parse v0.2.1
+git ls-remote --tags origin v0.2.1
 ```
 
 The rendered community manifest asset should include:
