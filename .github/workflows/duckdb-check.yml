@@ -1,0 +1,86 @@
+name: DuckDB Checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      duckdb_ref:
+        description: "DuckDB ref to build against"
+        required: true
+        default: "v1.5.4"
+      target:
+        description: "Make target to run"
+        required: true
+        default: "ci-duckdb"
+        type: choice
+        options:
+          - ci-duckdb
+          - ci-duckdb-smoke
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  duckdb:
+    name: ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out extension
+        uses: actions/checkout@v7
+        with:
+          path: duckdb-finance
+          fetch-depth: 1
+
+      - name: Check out DuckDB
+        uses: actions/checkout@v7
+        with:
+          repository: duckdb/duckdb
+          ref: ${{ inputs.duckdb_ref }}
+          path: duckdb
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ccache \
+            cmake \
+            mold \
+            ninja-build \
+            python3
+
+      - name: Configure compiler cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref }}-
+
+      - name: Reset compiler cache stats
+        run: ccache --zero-stats
+
+      - name: Run DuckDB checks
+        working-directory: duckdb-finance
+        env:
+          DUCKDB_ROOT: ${{ github.workspace }}/duckdb
+          CMAKE_BUILD_PARALLEL_LEVEL: 8
+          DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        run: make "${{ inputs.target }}"
+
+      - name: Show compiler cache stats
+        if: always()
+        run: ccache --show-stats
+
+      - name: Save compiler cache
+        if: always() && !cancelled()
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}

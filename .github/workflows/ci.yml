@@ -20,13 +20,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DUCKDB_REF: v1.5.4
+  ACTIONLINT_VERSION: 1.7.12
 
 jobs:
   test:
-    name: Build and test
+    name: Static checks
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 10
 
     steps:
       - name: Check out extension
@@ -35,112 +35,20 @@ jobs:
           path: duckdb-finance
           fetch-depth: 1
 
-      - name: Determine check scope
-        id: scope
-        working-directory: duckdb-finance
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-
-          full=false
-          duckdb_target=ci-duckdb
-          changed="DuckDB-backed checks are manual"
-
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            full=true
-            changed="manual workflow_dispatch run"
-          fi
-
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            duckdb_target=ci-duckdb-smoke
-            git fetch --no-tags --depth=1 origin "$BASE_SHA"
-            changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-          fi
-
-          {
-            echo "full=$full"
-            echo "duckdb_target=$duckdb_target"
-            echo "changed<<EOF"
-            printf "%s\n" "$changed"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Run static checks
         working-directory: duckdb-finance
         run: make ci-static
 
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o actionlint.tar.gz
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -version
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+
       - name: Lint GitHub Actions workflows
         working-directory: duckdb-finance
-        run: |
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-
-      - name: Check out DuckDB
-        if: steps.scope.outputs.full == 'true'
-        uses: actions/checkout@v7
-        with:
-          repository: duckdb/duckdb
-          ref: ${{ env.DUCKDB_REF }}
-          path: duckdb
-          fetch-depth: 1
-
-      - name: Install build dependencies
-        if: steps.scope.outputs.full == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            ccache \
-            cmake \
-            mold \
-            ninja-build \
-            python3
-
-      - name: Configure compiler cache
-        if: steps.scope.outputs.full == 'true'
-        uses: actions/cache/restore@v5
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-
-
-      - name: Reset compiler cache stats
-        if: steps.scope.outputs.full == 'true'
-        run: ccache --zero-stats
-
-      - name: Run DuckDB checks
-        if: steps.scope.outputs.full == 'true'
-        working-directory: duckdb-finance
-        env:
-          DUCKDB_ROOT: ${{ github.workspace }}/duckdb
-          DUCKDB_TARGET: ${{ steps.scope.outputs.duckdb_target }}
-          CMAKE_BUILD_PARALLEL_LEVEL: 8
-          DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-        run: make "$DUCKDB_TARGET"
-
-      - name: Explain skipped DuckDB checks
-        if: steps.scope.outputs.full != 'true'
-        env:
-          CHANGED_FILES: ${{ steps.scope.outputs.changed }}
-        run: |
-          echo "Skipped DuckDB checkout/build on default CI."
-          echo "Run workflow_dispatch for DuckDB-backed checks; release builds run in release.yml."
-          echo "Changed files:"
-          printf "%s\n" "$CHANGED_FILES"
-
-      - name: Show compiler cache stats
-        if: always() && steps.scope.outputs.full == 'true'
-        run: |
-          if command -v ccache >/dev/null 2>&1; then
-            ccache --show-stats
-          else
-            echo "ccache is unavailable because the build dependency step did not complete."
-          fi
-
-      - name: Save compiler cache
-        if: always() && steps.scope.outputs.full == 'true' && !cancelled()
-        uses: actions/cache/save@v5
-        with:
-          path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: actionlint

@@ -10,17 +10,6 @@ on:
       - ".github/workflows/docs.yml"
       - ".github/workflows/pages.yml"
       - "Makefile"
-  push:
-    branches:
-      - main
-    paths:
-      - "README.md"
-      - "docs/**"
-      - "config/**"
-      - "scripts/check_*.py"
-      - ".github/workflows/docs.yml"
-      - ".github/workflows/pages.yml"
-      - "Makefile"
   workflow_dispatch:
 
 permissions:
@@ -32,14 +21,11 @@ concurrency:
 
 jobs:
   docs:
-    name: Check and build docs
+    name: Build docs site
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
-      - name: Run docs checks
-        run: make ci-static
 
       - name: Build docs site
         uses: actions/jekyll-build-pages@v1
