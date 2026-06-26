@@ -123,9 +123,9 @@ jobs:
           - Built release artifacts for DuckDB ${DUCKDB_VERSION} with DuckDB extension-ci-tools ${EXTENSION_CI_TOOLS_VERSION}. ${run_url}
           - Included a release-ready community extension manifest with repo.ref pinned to ${RELEASE_SHA}. ${commit_url}
 
-          ## Breaking Changes
+          ## Compatibility
 
-          - ${VERSION} is the breaking 0.2.0 cleanup line. The broad compatibility and generated descriptor surfaces are not part of this release. ${commit_url}
+          - No breaking changes are expected unless this release is explicitly marked as a breaking release. ${commit_url}
 
           ## Verification
 
