@@ -52,17 +52,6 @@ jobs:
             duckdb_target=ci-duckdb-smoke
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
             changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-
-            while IFS= read -r path; do
-              [[ -z "$path" ]] && continue
-              case "$path" in
-                README.md|CONTRIBUTING.md|docs/*|scripts/check_*.py)
-                  ;;
-                *)
-                  full=true
-                  ;;
-              esac
-            done <<< "$changed"
           fi
 
           {
@@ -131,7 +120,8 @@ jobs:
         env:
           CHANGED_FILES: ${{ steps.scope.outputs.changed }}
         run: |
-          echo "Skipped DuckDB checkout/build because this pull request only changed static documentation or checker files."
+          echo "Skipped DuckDB checkout/build on pull request CI."
+          echo "DuckDB-backed checks run on main, merge queue, and workflow_dispatch."
           echo "Changed files:"
           printf "%s\n" "$CHANGED_FILES"
 
