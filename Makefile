@@ -12,7 +12,7 @@ PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb ci clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -64,6 +64,8 @@ check-release-metadata:
 check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata test
 
 ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata
+
+ci-duckdb-smoke: smoke-quiet
 
 ci-duckdb: gold-quiet
 
