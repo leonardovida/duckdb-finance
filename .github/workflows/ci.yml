@@ -105,10 +105,10 @@ jobs:
 
       - name: Configure compiler cache
         if: steps.scope.outputs.full == 'true'
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}
+          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-
 
@@ -143,3 +143,10 @@ jobs:
           else
             echo "ccache is unavailable because the build dependency step did not complete."
           fi
+
+      - name: Save compiler cache
+        if: always() && steps.scope.outputs.full == 'true' && !cancelled()
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
