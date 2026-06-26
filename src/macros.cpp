@@ -1,8 +1,10 @@
 #include "finance/finance_extension.hpp"
 
-#include "duckdb/catalog/default/default_functions.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_macro_function.hpp"
+#include "duckdb/parser/parser.hpp"
 #include "duckdb/parser/parsed_data/create_macro_info.hpp"
+#include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/common/unordered_set.hpp"
 
 #include <cstdio>
@@ -21,8 +23,25 @@ static void RegisterMacro(ExtensionLoader &loader, const FinanceMacro &macro) {
 		std::fprintf(stderr, "finance: registering macro %s\n", macro.name);
 		std::fflush(stderr);
 	}
-	DefaultMacro default_macro {DEFAULT_SCHEMA, macro.name, macro.definition};
-	auto info = DefaultFunctionGenerator::CreateInternalMacroInfo(default_macro);
+	Parser parser;
+	parser.ParseQuery("CREATE MACRO __finance_dummy__" + string(macro.definition));
+	if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::CREATE_STATEMENT) {
+		throw InternalException("Finance macro generated an invalid CREATE MACRO statement");
+	}
+	auto statement = unique_ptr_cast<SQLStatement, CreateStatement>(std::move(parser.statements[0]));
+	if (statement->info->type != CatalogType::MACRO_ENTRY) {
+		throw InternalException("Finance macro generated a non-macro CREATE statement");
+	}
+	auto info = unique_ptr_cast<CreateInfo, CreateMacroInfo>(std::move(statement->info));
+	for (auto &macro_function : info->macros) {
+		for (auto &type : macro_function->types) {
+			if (type.IsUnbound()) {
+				type = UnboundType::TryDefaultBind(type);
+			}
+		}
+	}
+	info->schema = DEFAULT_SCHEMA;
+	info->name = macro.name;
 	if (std::getenv("FINANCE_EXTENSION_TRACE_MACRO_TOSTRING")) {
 		std::fprintf(stderr, "finance: stringifying macro %s\n", macro.name);
 		std::fflush(stderr);
