@@ -26,33 +26,25 @@ struct RowsGlobalState : public GlobalTableFunctionState {
 	idx_t offset = 0;
 };
 
-template <class T, class = void>
-struct HasCheckCardinality : std::false_type {
-};
-
-template <class T>
-struct HasCheckCardinality<T, std::void_t<decltype(std::declval<T &>().CheckCardinality(std::declval<idx_t>()))>>
-    : std::true_type {
-};
-
 static void SetOutputCardinality(DataChunk &output, idx_t count) {
 #if FINANCE_HAS_FLAT_VECTOR_SET_SIZE
 	for (auto &vector : output.data) {
 		FlatVector::SetSize(vector, count);
 	}
 #endif
-	if constexpr (HasCheckCardinality<DataChunk>::value) {
-		output.CheckCardinality(count);
-	} else {
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
-		output.SetCardinality(count);
+	output.SetCardinality(count);
 #if defined(__clang__)
 #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
 #endif
-	}
 }
 
 static vector<SchemaRow> SchemaRows(const string &kind) {
