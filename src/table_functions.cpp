@@ -27,8 +27,6 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
-#include <type_traits>
-#include <utility>
 
 namespace duckdb {
 namespace {

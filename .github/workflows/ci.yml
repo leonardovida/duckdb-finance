@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DUCKDB_REF: main
+  DUCKDB_REF: v1.5.4
 
 jobs:
   test:
@@ -43,28 +43,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          full=true
-          changed="protected branch or manual run"
+          full=false
+          duckdb_target=ci-duckdb
+          changed="DuckDB-backed checks are manual"
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            full=true
+            changed="manual workflow_dispatch run"
+          fi
 
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            full=false
+            duckdb_target=ci-duckdb-smoke
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
             changed="$(git diff --name-only "$BASE_SHA" HEAD)"
-
-            while IFS= read -r path; do
-              [[ -z "$path" ]] && continue
-              case "$path" in
-                README.md|CONTRIBUTING.md|docs/*|scripts/check_*.py)
-                  ;;
-                *)
-                  full=true
-                  ;;
-              esac
-            done <<< "$changed"
           fi
 
           {
             echo "full=$full"
+            echo "duckdb_target=$duckdb_target"
             echo "changed<<EOF"
             printf "%s\n" "$changed"
             echo "EOF"
@@ -86,7 +82,6 @@ jobs:
           repository: duckdb/duckdb
           ref: ${{ env.DUCKDB_REF }}
           path: duckdb
-          submodules: recursive
           fetch-depth: 1
 
       - name: Install build dependencies
@@ -103,10 +98,10 @@ jobs:
 
       - name: Configure compiler cache
         if: steps.scope.outputs.full == 'true'
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/src/**', 'duckdb-finance/include/**', 'duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}
+          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-
 
@@ -119,16 +114,18 @@ jobs:
         working-directory: duckdb-finance
         env:
           DUCKDB_ROOT: ${{ github.workspace }}/duckdb
-          CMAKE_BUILD_PARALLEL_LEVEL: 4
+          DUCKDB_TARGET: ${{ steps.scope.outputs.duckdb_target }}
+          CMAKE_BUILD_PARALLEL_LEVEL: 8
           DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-        run: make ci-duckdb
+        run: make "$DUCKDB_TARGET"
 
       - name: Explain skipped DuckDB checks
         if: steps.scope.outputs.full != 'true'
         env:
           CHANGED_FILES: ${{ steps.scope.outputs.changed }}
         run: |
-          echo "Skipped DuckDB checkout/build because this pull request only changed static documentation or checker files."
+          echo "Skipped DuckDB checkout/build on default CI."
+          echo "Run workflow_dispatch for DuckDB-backed checks; release builds run in release.yml."
           echo "Changed files:"
           printf "%s\n" "$CHANGED_FILES"
 
@@ -140,3 +137,10 @@ jobs:
           else
             echo "ccache is unavailable because the build dependency step did not complete."
           fi
+
+      - name: Save compiler cache
+        if: always() && steps.scope.outputs.full == 'true' && !cancelled()
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
