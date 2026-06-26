@@ -108,7 +108,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/src/**', 'duckdb-finance/include/**', 'duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}
+          key: ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}
           restore-keys: |
             ${{ runner.os }}-duckdb-finance-${{ env.DUCKDB_REF }}-
 
@@ -122,7 +122,7 @@ jobs:
         env:
           DUCKDB_ROOT: ${{ github.workspace }}/duckdb
           DUCKDB_TARGET: ${{ steps.scope.outputs.duckdb_target }}
-          CMAKE_BUILD_PARALLEL_LEVEL: 4
+          CMAKE_BUILD_PARALLEL_LEVEL: 8
           DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         run: make "$DUCKDB_TARGET"
 
