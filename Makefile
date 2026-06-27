@@ -10,9 +10,10 @@ GOLD_DATASET_SQL ?= test/sql/gold_dataset.sql
 GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
+COMMUNITY_SMOKE_TEST ?= test/sql/smoke.test
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean community-test-release
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -76,6 +77,21 @@ clean:
 
 ifneq ("$(wildcard $(CURDIR)/extension-ci-tools/makefiles/duckdb_extension.Makefile)","")
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
+
+# Community extension CI currently pins extension-ci-tools v1.5-variegata,
+# whose release test target scans DuckDB's full core test suite by default.
+community-test-release:
+	@if [ "$(SKIP_TESTS)" = "1" ]; then \
+		echo "Skipping tests because SKIP_TESTS=1"; \
+	else \
+		./build/release/test/unittest "$(COMMUNITY_SMOKE_TEST)"; \
+	fi
+
+test_release_internal:
+	@:
+
+test_release:
+	$(MAKE) community-test-release
 
 set_duckdb_version:
 	if [ ! -d duckdb/.git ]; then \
