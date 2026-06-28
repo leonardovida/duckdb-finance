@@ -7,7 +7,7 @@ struct RSIState {
 	idx_t changes;
 };
 
-struct RSIOperation {
+struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
@@ -37,18 +37,6 @@ struct RSIOperation {
 		}
 		AddDiff(state, value - state.last);
 		state.last = value;
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &, idx_t count) {
-		for (idx_t i = 0; i < count; i++) {
-			UpdateValue(state, static_cast<double>(input));
-		}
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &) {
-		UpdateValue(state, static_cast<double>(input));
 	}
 
 	template <class STATE, class OP>

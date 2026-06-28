@@ -43,6 +43,7 @@ static void FinanceToUnifiedFormat(Vector &vector, idx_t count, UnifiedVectorFor
 }
 
 #include "aggregate/constants.inc"
+#include "aggregate/update_helpers.inc"
 #include "aggregate/sortino.inc"
 #include "aggregate/ewma.inc"
 #include "aggregate/rsi.inc"

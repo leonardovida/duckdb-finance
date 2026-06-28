@@ -11,7 +11,7 @@ struct DrawdownState {
 	idx_t max_duration;
 };
 
-struct DrawdownOperationBase {
+struct DrawdownOperationBase : public UnaryDoubleUpdateOperation<DrawdownOperationBase> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
@@ -52,18 +52,6 @@ struct DrawdownOperationBase {
 		} else {
 			state.current_duration = 0;
 		}
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &, idx_t count) {
-		for (idx_t i = 0; i < count; i++) {
-			UpdateValue(state, static_cast<double>(input));
-		}
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &) {
-		UpdateValue(state, static_cast<double>(input));
 	}
 
 	template <class STATE, class OP>
