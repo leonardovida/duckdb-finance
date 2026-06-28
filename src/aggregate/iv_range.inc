@@ -7,7 +7,7 @@ struct IVRangeState {
 };
 
 template <bool PERCENTILE>
-struct IVRangeOperation {
+struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation<PERCENTILE>> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
@@ -28,18 +28,6 @@ struct IVRangeOperation {
 		state.max_iv = std::max(state.max_iv, value);
 		state.last_iv = value;
 		state.count++;
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &, idx_t count) {
-		for (idx_t i = 0; i < count; i++) {
-			UpdateValue(state, static_cast<double>(input));
-		}
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &) {
-		UpdateValue(state, static_cast<double>(input));
 	}
 
 	template <class STATE, class OP>

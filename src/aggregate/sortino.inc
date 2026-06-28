@@ -5,7 +5,7 @@ struct SortinoState {
 	double annualization;
 };
 
-struct SortinoOperation {
+struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.count = 0;
@@ -21,18 +21,6 @@ struct SortinoOperation {
 		if (value < 0.0) {
 			state.downside_sq += value * value;
 		}
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &, idx_t count) {
-		for (idx_t i = 0; i < count; i++) {
-			UpdateValue(state, static_cast<double>(input));
-		}
-	}
-
-	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE &state, const INPUT_TYPE &input, AggregateUnaryInput &) {
-		UpdateValue(state, static_cast<double>(input));
 	}
 
 	template <class STATE, class OP>
