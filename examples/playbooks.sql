@@ -1,6 +1,5 @@
 -- DuckDB Finance playbook examples.
--- Run from a repository checkout after loading the extension. Until the
--- community package is published, use the source-built local extension.
+-- Run from a repository checkout after loading the extension.
 
 CREATE OR REPLACE TEMP TABLE desk_options AS
 SELECT * FROM (VALUES

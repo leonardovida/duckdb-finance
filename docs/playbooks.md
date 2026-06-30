@@ -30,8 +30,7 @@ LOAD finance;
 .read examples/playbooks.sql
 ```
 
-Until the community package is published, build and validate through the local
-Makefile flow:
+When developing from source, build and validate through the local Makefile flow:
 
 ```sh
 make debug DUCKDB_ROOT=/path/to/duckdb

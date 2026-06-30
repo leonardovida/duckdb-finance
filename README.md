@@ -8,10 +8,14 @@ validation checks without sending data to a pricing service or hiding model
 assumptions behind an SDK session.
 
 It is built for quant developers, desk strategists, risk engineers, and finance
-users who want deterministic local analytics close to the data. Until the
-community package is published, build from source as described below; the
-`INSTALL finance FROM community` flow is the intended public distribution path
-after acceptance into DuckDB Community Extensions.
+users who want deterministic local analytics close to the data. `finance` is
+available from DuckDB Community Extensions and can be installed with DuckDB's
+standard community extension flow:
+
+```sql
+INSTALL finance FROM community;
+LOAD finance;
+```
 
 ```sql
 -- After loading finance:
@@ -45,9 +49,8 @@ All public functions live in the `fin_` namespace and use ordinary DuckDB types:
 
 ## 60 Seconds: How To Price And Risk An Option
 
-Prerequisite: DuckDB with the `finance` extension loaded. The community
-extension install path below is the intended user flow after publication; today,
-use the source build in [Installation](docs/installation.md).
+Prerequisite: DuckDB with the `finance` extension loaded. Install it from DuckDB
+Community Extensions or use a source build for local development.
 
 1. Install and load the extension.
 
@@ -104,8 +107,6 @@ The extension is local and deterministic:
 
 ## Install
 
-After `finance` is accepted into DuckDB Community Extensions:
-
 ```sql
 INSTALL finance FROM community;
 LOAD finance;
@@ -116,7 +117,7 @@ Community extensions are built and signed by DuckDB's community extension CI.
 Locked-down environments can disable community extensions with DuckDB's
 `allow_community_extensions` option.
 
-Until the community package is published, build from source:
+For development, build from source:
 
 ```sh
 git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
@@ -138,9 +139,8 @@ LOAD finance;
 .read examples/playbooks.sql
 ```
 
-For current source builds, use `make smoke DUCKDB_ROOT=/path/to/duckdb` or run
-the same SQL file from a DuckDB shell that has loaded the local unsigned
-extension.
+For source builds, use `make smoke DUCKDB_ROOT=/path/to/duckdb` or run the same
+SQL file from a DuckDB shell that has loaded the local unsigned extension.
 
 Useful starting points:
 

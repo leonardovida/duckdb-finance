@@ -16,7 +16,7 @@ the function reference.
 
 | User intent | Start here | Then verify with |
 |---|---|---|
-| Install or load the extension | [Installation]({{ '/installation/' | relative_url }}) | `make smoke DUCKDB_ROOT=/path/to/duckdb` |
+| Install or load the extension | [Installation]({{ '/installation/' | relative_url }}) | `SELECT fin_version();` or `make smoke DUCKDB_ROOT=/path/to/duckdb` for source builds |
 | Learn the first queries | [Getting Started]({{ '/getting-started/' | relative_url }}) | Run the SQL snippets against a loaded extension |
 | Choose a function for a task | [Function Cookbook]({{ '/function-cookbook/' | relative_url }}) | [Function Reference]({{ '/function-reference/' | relative_url }}) |
 | Adapt source data | [Data Source Compatibility]({{ '/data-source-compatibility/' | relative_url }}) | Normalization helper gold tests |

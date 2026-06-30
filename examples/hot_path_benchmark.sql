@@ -1,6 +1,6 @@
 -- Hot-path benchmark for DuckDB Finance.
--- Run from this repository checkout after loading the extension. After
--- community publication, the standard load path is:
+-- Run from this repository checkout after loading the extension. The standard
+-- community extension load path is:
 --   INSTALL finance FROM community;
 --   LOAD finance;
 --   .read examples/hot_path_benchmark.sql

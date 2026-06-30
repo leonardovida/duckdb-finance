@@ -15,10 +15,7 @@ nav_order: 2
 
 This tutorial assumes DuckDB can already load `finance`.
 
-The intended public install path is DuckDB Community Extensions:
-
-After `finance` is published in the DuckDB Community Extensions repository, use
-DuckDB's standard community extension flow:
+Use DuckDB's standard community extension flow:
 
 ```sql
 INSTALL finance FROM community;
@@ -26,8 +23,8 @@ LOAD finance;
 SELECT fin_version();
 ```
 
-Until that package is published, use the source-build path from a repository
-checkout:
+When developing the extension locally, use the source-build path from a
+repository checkout:
 
 ```sh
 git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
@@ -109,8 +106,8 @@ FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
 
 ## What To Read Next
 
-- [Installation]({{ '/installation/' | relative_url }}) for the community
-  extension publication path and local source builds.
+- [Installation]({{ '/installation/' | relative_url }}) for community extension
+  installs and local source builds.
 - [Function Reference]({{ '/function-reference/' | relative_url }}) for every
   registered `fin_*` function.
 - [Quant Developer Guide]({{ '/quant-developer-guide/' | relative_url }}) for

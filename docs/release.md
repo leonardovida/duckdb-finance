@@ -72,19 +72,21 @@ coverage in CI.
 
 ## Community Publication
 
-Until `finance` is accepted into DuckDB Community Extensions, the release assets
-include a submission-ready manifest but users still need the source-build path.
+`finance` is available from DuckDB Community Extensions. Release assets include
+the rendered community manifest so maintainers can update the upstream catalog
+entry for new versions.
 
-After upstream publication:
+For each release:
 
 1. Confirm `extensions/finance/description.yml` exists in
    `duckdb/community-extensions`.
-2. Run the manual smoke workflow with `require_published=true`.
-3. Update installation docs from pending-publication wording to the published
-   community install command.
+2. Submit the rendered community manifest from the GitHub release assets when
+   updating the community catalog entry.
+3. Run the manual community install smoke workflow after the upstream catalog
+   update lands.
 
-The post-publication smoke workflow runs weekly. It skips while the upstream
-catalog entry is absent, then verifies:
+The community install smoke workflow runs weekly and fails if the upstream
+catalog entry or install path stops working. It verifies:
 
 ```sql
 INSTALL finance FROM community;

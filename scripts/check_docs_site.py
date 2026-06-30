@@ -121,7 +121,7 @@ def main() -> int:
         fragment for fragment in forbidden_layout_fragments if fragment in layout
     ]
     if ambiguous_layout_fragments:
-        print("Docs layout should not advertise unpublished install commands site-wide:")
+        print("Docs layout should not advertise install commands site-wide:")
         for fragment in ambiguous_layout_fragments:
             print(f"  {fragment}")
         return 1

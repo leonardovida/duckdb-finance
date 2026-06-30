@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: "23 8 * * 1"
   workflow_dispatch:
-    inputs:
-      require_published:
-        description: "Fail instead of skip when finance is not in duckdb/community-extensions yet."
-        required: false
-        default: "false"
-        type: boolean
 
 permissions:
   contents: read
@@ -31,29 +25,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Check upstream community catalog
-        id: catalog
+      - name: Verify upstream community catalog entry
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUIRE_PUBLISHED: ${{ github.event.inputs.require_published || 'false' }}
         run: |
           set -euo pipefail
 
           if gh api repos/duckdb/community-extensions/contents/extensions/finance/description.yml >/tmp/finance-community-entry.json 2>/tmp/catalog.err; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
             echo "finance exists in duckdb/community-extensions."
           else
-            echo "published=false" >> "$GITHUB_OUTPUT"
             cat /tmp/catalog.err
-            if [[ "$REQUIRE_PUBLISHED" == "true" ]]; then
-              echo "finance is not published in duckdb/community-extensions." >&2
-              exit 1
-            fi
-            echo "Skipping install smoke until the community catalog entry is published."
+            echo "finance is not published in duckdb/community-extensions." >&2
+            exit 1
           fi
 
       - name: Install DuckDB CLI
-        if: steps.catalog.outputs.published == 'true'
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -64,5 +50,4 @@ jobs:
           ./duckdb --version
 
       - name: Run community install smoke
-        if: steps.catalog.outputs.published == 'true'
         run: ./duckdb -batch < examples/community_install_smoke.sql

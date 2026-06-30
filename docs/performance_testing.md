@@ -47,9 +47,9 @@ LOAD finance;
 .read examples/hot_path_benchmark.sql
 ```
 
-Until the community package is published, use the same source-built DuckDB and
-local extension flow as the Makefile targets above. The `.read` path is relative
-to the repository checkout where the DuckDB shell is running.
+When developing from source, use the same source-built DuckDB and local
+extension flow as the Makefile targets above. The `.read` path is relative to
+the repository checkout where the DuckDB shell is running.
 
 ## CI Coverage
 

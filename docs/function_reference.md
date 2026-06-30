@@ -14,10 +14,10 @@ This document is generated from the extension registration surface in `src/` and
 
 ## Usage Conventions
 
-- Load the extension before use. After community publication, use
-  `INSTALL finance FROM community; LOAD finance;`; for current source builds,
-  use the repository Makefile targets to build and load the unsigned local
-  extension during validation.
+- Load the extension before use. Most users can run
+  `INSTALL finance FROM community; LOAD finance;`; for source builds, use the
+  repository Makefile targets to build and load the unsigned local extension
+  during validation.
 - Scalar functions are called in ordinary `SELECT` expressions.
 - Aggregate macros are called over grouped rows, for example `SELECT fin_total_return(r) FROM returns;`.
 - Table functions and bind-replace functions appear in `FROM`, for example `SELECT * FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');`.
