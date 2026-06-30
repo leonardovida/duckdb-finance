@@ -32,18 +32,20 @@ The extension should stay local, deterministic, and explicit about inputs.
 
 ## Workstreams
 
-### Community Publication
+### Community Package Availability
 
-The first priority is upstream publication through DuckDB Community Extensions.
+The extension is published through DuckDB Community Extensions. The remaining
+release work is to keep the upstream catalog entry, install smoke, and docs in
+sync with tagged releases.
 
 Acceptance criteria:
 
 - `finance` has an accepted entry under `duckdb/community-extensions`.
 - The published package installs with `INSTALL finance FROM community;`.
-- `.github/workflows/community-install-smoke.yml` runs the install smoke instead
-  of skipping.
-- Installation docs are updated from pending-publication language to the
-  published community path.
+- `.github/workflows/community-install-smoke.yml` runs the install smoke against
+  the published catalog entry.
+- Installation docs keep the community extension path first and the source build
+  path scoped to development.
 
 ### Agent-Ready Function Selection
 

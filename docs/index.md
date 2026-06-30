@@ -17,9 +17,12 @@ The public API lives in the `fin_` namespace and uses ordinary DuckDB types:
 It is built for local research, CI fixtures, scenario checks, desk sanity
 checks, and SQL-native portfolio analytics.
 
-Until the community package is published, build from source with a DuckDB
-checkout. The community install flow shown in the installation guide is the
-intended public path after upstream acceptance.
+Install it from DuckDB Community Extensions:
+
+```sql
+INSTALL finance FROM community;
+LOAD finance;
+```
 
 ```sql
 -- After loading finance:
@@ -46,7 +49,7 @@ FROM (
   </a>
   <a class="doc-link" href="{{ '/installation/' | relative_url }}">
     <strong>Installation</strong>
-    <span>Build from source today or install from DuckDB Community Extensions after publication.</span>
+    <span>Install from DuckDB Community Extensions or build from source for development.</span>
   </a>
   <a class="doc-link" href="{{ '/function-cookbook/' | relative_url }}">
     <strong>Function Cookbook</strong>
