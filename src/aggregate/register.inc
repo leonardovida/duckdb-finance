@@ -73,7 +73,9 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	loader.RegisterFunction(std::move(ulcer_index_set));
 
 	AggregateFunctionSet outlier_count_set(FinanceFunctionName("fin_outlier_count"));
-	outlier_count_set.AddFunction(UnaryBigintAggregate<OutlierCountState, OutlierCountOperation>("fin_outlier_count"));
+	auto outlier_count = UnaryBigintAggregate<OutlierCountState, OutlierCountOperation>("fin_outlier_count");
+	outlier_count.SetStateDestructorCallback(AggregateFunction::StateDestroy<OutlierCountState, OutlierCountOperation>);
+	outlier_count_set.AddFunction(outlier_count);
 	auto outlier_count_threshold =
 	    BinaryAggregate<OutlierCountState, double, int64_t, OutlierCountWithThresholdOperation>(
 	        "fin_outlier_count", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
