@@ -963,7 +963,7 @@ static T *GetResultData(Vector &result, bool constant) {
 
 static void SetResultNull(Vector &result, idx_t row, idx_t count, bool constant) {
 	if (constant) {
-		ConstantVector::SetNull(result, count_t(count));
+		ConstantVector::SetNull(result, count);
 	} else {
 		FlatVector::SetNull(result, row, true);
 	}
