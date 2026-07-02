@@ -66,6 +66,8 @@ static void TradeSignFunction(DataChunk &args, ExpressionState &, Vector &result
 
 static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
 	auto count = args.size();
+	auto constant = AllInputsConstant(args);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
 	PreparedInputs input(args);
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto &child = ListVector::GetChildMutable(args.data[0]);
@@ -74,12 +76,12 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 	auto &validity = FlatVector::Validity(child);
 	auto values = FlatVector::GetData<double>(child);
 	vector<vector<double>> output_lists(count);
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	SetResultVectorType(result, constant);
 	auto output_double =
-	    result.GetType().id() == LogicalTypeId::DOUBLE ? FlatVector::GetDataMutable<double>(result) : nullptr;
-	for (idx_t row = 0; row < count; row++) {
+	    result.GetType().id() == LogicalTypeId::DOUBLE ? GetResultData<double>(result, constant) : nullptr;
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 			continue;
 		}
 		try {
@@ -116,16 +118,18 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 				output_lists[row] = std::move(out);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 		}
 	}
 	if (result.GetType().id() == LogicalTypeId::LIST) {
-		WriteDoubleLists(result, output_lists, count);
+		WriteDoubleLists(result, output_lists, count, constant);
 	}
 }
 
 static void BinaryListFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
 	auto count = args.size();
+	auto constant = AllInputsConstant(args);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
 	PreparedInputs input(args);
 	auto left_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto right_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
@@ -140,11 +144,12 @@ static void BinaryListFunction(DataChunk &args, ExpressionState &, Vector &resul
 	auto left_values = FlatVector::GetData<double>(left_child);
 	auto right_values = FlatVector::GetData<double>(right_child);
 	vector<vector<double>> output_lists(count);
+	SetResultVectorType(result, constant);
 	auto output_double =
-	    result.GetType().id() == LogicalTypeId::DOUBLE ? FlatVector::GetDataMutable<double>(result) : nullptr;
-	for (idx_t row = 0; row < count; row++) {
+	    result.GetType().id() == LogicalTypeId::DOUBLE ? GetResultData<double>(result, constant) : nullptr;
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row) || input.IsNull(1, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 			continue;
 		}
 		try {
@@ -175,20 +180,23 @@ static void BinaryListFunction(DataChunk &args, ExpressionState &, Vector &resul
 				output_lists[row] = std::move(out);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 		}
 	}
 	if (result.GetType().id() == LogicalTypeId::LIST) {
-		WriteDoubleLists(result, output_lists, count);
+		WriteDoubleLists(result, output_lists, count, constant);
 	}
 }
 
 static void EqualWeightsFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	auto constant = AllInputsConstant(args);
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	vector<vector<double>> output_lists(args.size());
-	for (idx_t row = 0; row < args.size(); row++) {
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -199,15 +207,16 @@ static void EqualWeightsFunction(DataChunk &args, ExpressionState &, Vector &res
 			}
 			output_lists[row] = EqualWeights(NumericCast<idx_t>(n));
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
-	WriteDoubleLists(result, output_lists, args.size());
+	WriteDoubleLists(result, output_lists, args.size(), constant);
 }
 
 static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
 	auto weight_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto &weight_child = ListVector::GetChildMutable(args.data[0]);
@@ -223,9 +232,10 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 		FinanceFlatten(return_child, return_size);
 		auto &return_validity = FlatVector::Validity(return_child);
 		auto returns = FlatVector::GetData<double>(return_child);
-		for (idx_t row = 0; row < args.size(); row++) {
+		auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+		for (idx_t row = 0; row < row_count; row++) {
 			if (input.HasNull(row)) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 				continue;
 			}
 			try {
@@ -237,7 +247,7 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 				ValidateListEntryNoNull(return_validity, return_entry, "Portfolio return lists do not accept NULL elements");
 				output[row] = DotList(weights, weight_entry, returns, return_entry);
 			} catch (const std::exception &) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		}
 		return;
@@ -254,9 +264,10 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 	FinanceFlatten(matrix_values_vec, matrix_value_count);
 	auto &matrix_value_validity = FlatVector::Validity(matrix_values_vec);
 	auto matrix_values = FlatVector::GetData<double>(matrix_values_vec);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -276,17 +287,18 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 				throw InvalidInputException("Unknown portfolio scalar function");
 			}
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void PortfolioSharpeFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
 	auto weight_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto mu_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
@@ -311,9 +323,10 @@ static void PortfolioSharpeFunction(DataChunk &args, ExpressionState &, Vector &
 	FinanceFlatten(matrix_values_vec, matrix_value_count);
 	auto &matrix_value_validity = FlatVector::Validity(matrix_values_vec);
 	auto matrix_values = FlatVector::GetData<double>(matrix_values_vec);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -332,24 +345,26 @@ static void PortfolioSharpeFunction(DataChunk &args, ExpressionState &, Vector &
 			auto risk_free = args.ColumnCount() >= 4 ? input.GetDouble(3, row) : 0.0;
 			output[row] = (expected - risk_free) / vol;
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void MatrixShapeFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
 	auto rows_out = FlatVector::GetDataMutable<int64_t>(FINANCE_STRUCT_CHILD(children[0]));
 	auto cols_out = FlatVector::GetDataMutable<int64_t>(FINANCE_STRUCT_CHILD(children[1]));
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -358,7 +373,7 @@ static void MatrixShapeFunction(DataChunk &args, ExpressionState &, Vector &resu
 			rows_out[row] = matrix.size();
 			cols_out[row] = matrix.empty() ? 0 : matrix[0].size();
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
@@ -366,11 +381,14 @@ static void MatrixShapeFunction(DataChunk &args, ExpressionState &, Vector &resu
 static void MatrixFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
 	PreparedInputs input(args);
 	auto count = args.size();
+	auto constant = AllInputsConstant(args);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
+	SetResultVectorType(result, constant);
 	vector<vector<double>> output_rows(count);
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
-	for (idx_t row = 0; row < count; row++) {
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 			continue;
 		}
 		try {
@@ -395,20 +413,23 @@ static void MatrixFunction(DataChunk &args, ExpressionState &, Vector &result, c
 				}
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 		}
 	}
-	WriteDoubleLists(result, output_rows, count);
+	WriteDoubleLists(result, output_rows, count, constant);
 }
 
 static void MatrixNestedFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
 	PreparedInputs input(args);
 	auto count = args.size();
+	auto constant = AllInputsConstant(args);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
+	SetResultVectorType(result, constant);
 	vector<vector<vector<double>>> output_matrices(count);
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
-	for (idx_t row = 0; row < count; row++) {
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 			continue;
 		}
 		try {
@@ -422,21 +443,24 @@ static void MatrixNestedFunction(DataChunk &args, ExpressionState &, Vector &res
 				output_matrices[row] = NearestPSD(matrix);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 		}
 	}
-	WriteDoubleMatrices(result, output_matrices, count);
+	WriteDoubleMatrices(result, output_matrices, count, constant);
 }
 
 static void MatrixMulFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	PreparedInputs input(args);
 	auto count = args.size();
+	auto constant = AllInputsConstant(args);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
+	SetResultVectorType(result, constant);
 	vector<vector<vector<double>>> output_matrices(count);
 	auto left_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto right_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
-	for (idx_t row = 0; row < count; row++) {
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row) || input.IsNull(1, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 			continue;
 		}
 		try {
@@ -446,10 +470,10 @@ static void MatrixMulFunction(DataChunk &args, ExpressionState &, Vector &result
 			auto right = ReadDoubleMatrix(args.data[1], right_entries[right_idx]);
 			output_matrices[row] = MatrixMul(left, right);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, count, constant);
 		}
 	}
-	WriteDoubleMatrices(result, output_matrices, count);
+	WriteDoubleMatrices(result, output_matrices, count, constant);
 }
 
 static void MatrixIsPsdFunction(DataChunk &args, ExpressionState &, Vector &result) {
@@ -463,13 +487,15 @@ static void MatrixIsPsdFunction(DataChunk &args, ExpressionState &, Vector &resu
 }
 
 static void ValidateOhlcFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
 	auto &reason_vector = FINANCE_STRUCT_CHILD(children[1]);
 	auto ok = FlatVector::GetDataMutable<bool>(FINANCE_STRUCT_CHILD(children[0]));
 	auto reason = FlatVector::GetDataMutable<string_t>(reason_vector);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row, 4)) {
 			ok[row] = false;
 			reason[row] = StringVector::AddString(reason_vector, "null input");
@@ -579,12 +605,14 @@ static void BusinessDayFunction(DataChunk &args, ExpressionState &, Vector &resu
 }
 
 static void NextPrevBusinessDayFunction(DataChunk &args, ExpressionState &, Vector &result, int direction) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
-	auto out = FlatVector::GetDataMutable<date_t>(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto out = GetResultData<date_t>(result, constant);
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		int n = args.ColumnCount() >= 3 ? input.GetInt32(2, row) : 1;
@@ -603,12 +631,14 @@ static void NextPrevBusinessDayFunction(DataChunk &args, ExpressionState &, Vect
 }
 
 static void BusinessDaysBetweenFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
-	auto out = FlatVector::GetDataMutable<int64_t>(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto out = GetResultData<int64_t>(result, constant);
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row) || input.IsNull(1, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		auto start = input.GetDate(0, row);
@@ -625,12 +655,14 @@ static void BusinessDaysBetweenFunction(DataChunk &args, ExpressionState &, Vect
 }
 
 static void SessionDateFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
-	auto out = FlatVector::GetDataMutable<date_t>(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto out = GetResultData<date_t>(result, constant);
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		out[row] = Timestamp::GetDate(input.GetTimestamp(0, row));
@@ -638,14 +670,16 @@ static void SessionDateFunction(DataChunk &args, ExpressionState &, Vector &resu
 }
 
 static void RegularSessionFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
-	auto out = FlatVector::GetDataMutable<bool>(result);
+	auto out = GetResultData<bool>(result, constant);
 	auto open_time = Time::FromTime(9, 30, 0);
 	auto close_time = Time::FromTime(16, 0, 0);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.IsNull(0, row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		auto ts = input.GetTimestamp(0, row);

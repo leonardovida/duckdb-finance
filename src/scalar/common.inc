@@ -1082,18 +1082,19 @@ static vector<vector<double>> ReadDoubleMatrix(Vector &matrix_vec, const list_en
 	return matrix;
 }
 
-static void WriteDoubleLists(Vector &result, const vector<vector<double>> &lists, idx_t count) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+static void WriteDoubleLists(Vector &result, const vector<vector<double>> &lists, idx_t count, bool constant = false) {
+	SetResultVectorType(result, constant);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
 	idx_t total = 0;
-	for (auto &list : lists) {
-		total += list.size();
+	for (idx_t row = 0; row < row_count; row++) {
+		total += lists[row].size();
 	}
 	ListVector::Reserve(result, total);
 	auto &child = ListVector::GetChildMutable(result);
 	auto child_data = FlatVector::GetDataMutable<double>(child);
-	auto result_entries = FlatVector::GetDataMutable<list_entry_t>(result);
+	auto result_entries = GetResultData<list_entry_t>(result, constant);
 	idx_t offset = 0;
-	for (idx_t row = 0; row < count; row++) {
+	for (idx_t row = 0; row < row_count; row++) {
 		auto &list = lists[row];
 		result_entries[row] = list_entry_t(offset, list.size());
 		for (idx_t i = 0; i < list.size(); i++) {
@@ -1104,11 +1105,14 @@ static void WriteDoubleLists(Vector &result, const vector<vector<double>> &lists
 	ListVector::SetListSize(result, total);
 }
 
-static void WriteDoubleMatrices(Vector &result, const vector<vector<vector<double>>> &matrices, idx_t count) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+static void WriteDoubleMatrices(Vector &result, const vector<vector<vector<double>>> &matrices, idx_t count,
+                                bool constant = false) {
+	SetResultVectorType(result, constant);
+	auto row_count = constant && count > 0 ? idx_t(1) : count;
 	idx_t total_rows = 0;
 	idx_t total_values = 0;
-	for (auto &matrix : matrices) {
+	for (idx_t outer = 0; outer < row_count; outer++) {
+		auto &matrix = matrices[outer];
 		total_rows += matrix.size();
 		for (auto &row : matrix) {
 			total_values += row.size();
@@ -1118,13 +1122,13 @@ static void WriteDoubleMatrices(Vector &result, const vector<vector<vector<doubl
 	auto &row_vector = ListVector::GetChildMutable(result);
 	ListVector::Reserve(row_vector, total_values);
 	auto &value_vector = ListVector::GetChildMutable(row_vector);
-	auto result_entries = FlatVector::GetDataMutable<list_entry_t>(result);
+	auto result_entries = GetResultData<list_entry_t>(result, constant);
 	auto row_entries = FlatVector::GetDataMutable<list_entry_t>(row_vector);
 	auto values = FlatVector::GetDataMutable<double>(value_vector);
 
 	idx_t row_offset = 0;
 	idx_t value_offset = 0;
-	for (idx_t outer = 0; outer < count; outer++) {
+	for (idx_t outer = 0; outer < row_count; outer++) {
 		auto &matrix = matrices[outer];
 		result_entries[outer] = list_entry_t(row_offset, matrix.size());
 		for (auto &matrix_row : matrix) {
