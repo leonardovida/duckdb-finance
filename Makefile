@@ -9,6 +9,7 @@ SMOKE_SQL ?= test/sql/smoke_queries.sql
 GOLD_DATASET_SQL ?= test/sql/gold_dataset.sql
 GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
+GOLD_TRACE_SQL ?= /tmp/duckdb-finance-gold.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
@@ -30,7 +31,8 @@ gold: debug
 	{ $(SQL_TEST_PREAMBLE); cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned
 
 gold-quiet: debug
-	{ $(SQL_TEST_PREAMBLE); cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned >/dev/null
+	{ cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } > "$(GOLD_TRACE_SQL)"
+	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(GOLD_TRACE_SQL)" >/dev/null
 
 perf: debug
 	{ $(SQL_TEST_PREAMBLE); printf "PRAGMA enable_profiling='json';\nPRAGMA profiling_output='$(PERF_OUTPUT)';\n"; cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned

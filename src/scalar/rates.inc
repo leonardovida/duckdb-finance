@@ -122,8 +122,9 @@ static void AccruedInterestFunction(DataChunk &args, ExpressionState &, Vector &
 }
 
 static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
 	idx_t cf_col = name == "npv" ? 1 : 0;
 	auto cashflow_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[cf_col]);
@@ -143,9 +144,10 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 		date_validity = &FlatVector::Validity(date_child);
 		date_values = FlatVector::GetData<date_t>(date_child);
 	}
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -196,17 +198,18 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 				    [&](double rate) { return CashflowXNPV(rate, cashflow_values, cashflow_entry, date_values, date_entry); });
 			}
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void NPVWithTimesFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
 	auto cashflow_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto time_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
@@ -220,9 +223,10 @@ static void NPVWithTimesFunction(DataChunk &args, ExpressionState &, Vector &res
 	auto &time_validity = FlatVector::Validity(time_child);
 	auto cashflow_values = FlatVector::GetData<double>(cashflow_child);
 	auto time_values = FlatVector::GetData<double>(time_child);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -256,17 +260,18 @@ static void NPVWithTimesFunction(DataChunk &args, ExpressionState &, Vector &res
 			}
 			output[row] = result_value;
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
 	auto x_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto y_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
@@ -280,9 +285,10 @@ static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result
 	auto &y_validity = FlatVector::Validity(y_child);
 	auto x_values = FlatVector::GetData<double>(x_child);
 	auto y_values = FlatVector::GetData<double>(y_child);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -294,17 +300,18 @@ static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result
 			double interpolated = LinearInterpolateList(x_values, x_entries[x_idx], y_values, y_entries[y_idx], target);
 			output[row] = name == "discount" ? std::exp(-interpolated * target) : interpolated;
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void SwapRateFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
 	auto maturity_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
 	auto discount_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
@@ -318,9 +325,10 @@ static void SwapRateFunction(DataChunk &args, ExpressionState &, Vector &result)
 	auto &discount_validity = FlatVector::Validity(discount_child);
 	auto maturities = FlatVector::GetData<double>(maturity_child);
 	auto discounts = FlatVector::GetData<double>(discount_child);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -343,10 +351,10 @@ static void SwapRateFunction(DataChunk &args, ExpressionState &, Vector &result)
 			}
 			output[row] = (1.0 - discounts[discount_entry.offset + discount_entry.length - 1]) / annuity;
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }

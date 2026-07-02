@@ -75,9 +75,10 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	AggregateFunctionSet outlier_count_set(FinanceFunctionName("fin_outlier_count"));
 	auto outlier_count =
 	    NamedAggregateFunction("fin_outlier_count",
-	                           AggregateFunction::UnaryAggregateDestructor<OutlierCountState, double, int64_t, OutlierCountOperation,
-	                                                                       AggregateDestructorType::LEGACY>(
+	                           AggregateFunction::UnaryAggregate<OutlierCountState, double, int64_t, OutlierCountOperation,
+	                                                              AggregateDestructorType::LEGACY>(
 	                               FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)));
+	outlier_count.SetStateDestructorCallback(AggregateFunction::StateDestroy<OutlierCountState, OutlierCountOperation>);
 	outlier_count_set.AddFunction(outlier_count);
 	auto outlier_count_threshold =
 	    BinaryAggregate<OutlierCountState, double, int64_t, OutlierCountWithThresholdOperation>(

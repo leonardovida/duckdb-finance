@@ -238,19 +238,21 @@ static bool ReadOptionSpecRow(OptionSpecData &data, idx_t row, OptionSpecRow &ou
 
 template <class FUNC>
 static void ExecuteOptionSpecDouble(DataChunk &args, Vector &result, FUNC func) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	auto spec_data = PrepareOptionSpecData(args);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		OptionSpecRow spec;
 		if (!ReadOptionSpecRow(spec_data, row, spec)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
 			output[row] = func(spec);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
@@ -280,12 +282,14 @@ static void BSMVegaSpecFunction(DataChunk &args, ExpressionState &, Vector &resu
 }
 
 static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto out = GetGreeksOutput(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -299,37 +303,41 @@ static void BSMGreeksFunction(DataChunk &args, ExpressionState &, Vector &result
 			auto k = MakeBSMKernel(spot, strike, ttm, rate, vol, q);
 			WriteBSMGreeks(out, row, call, k);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void BSMGreeksSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	auto spec_data = PrepareOptionSpecData(args);
 	auto out = GetGreeksOutput(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		OptionSpecRow spec;
 		if (!ReadOptionSpecRow(spec_data, row, spec)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
 			auto k = MakeBSMKernel(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
 			WriteBSMGreeks(out, row, spec.call, k);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto out = GetBSMAllOutput(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
@@ -343,26 +351,28 @@ static void BSMAllFunction(DataChunk &args, ExpressionState &, Vector &result) {
 			auto k = MakeBSMKernel(spot, strike, ttm, rate, vol, q);
 			WriteBSMAll(out, row, call, k);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 static void BSMAllSpecFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	auto spec_data = PrepareOptionSpecData(args);
 	auto out = GetBSMAllOutput(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		OptionSpecRow spec;
 		if (!ReadOptionSpecRow(spec_data, row, spec)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
 			auto k = MakeBSMKernel(spec.spot, spec.strike, spec.ttm, spec.rate, spec.vol, spec.dividend_yield);
 			WriteBSMAll(out, row, spec.call, k);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
@@ -495,10 +505,12 @@ static double ImpliedVolBisection(const std::function<double(double)> &price_fn,
 }
 
 static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto out = GetGreeksOutput(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
 			double forward = input.GetDouble(1, row);
@@ -518,7 +530,7 @@ static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &re
 			out.rho[row] = -ttm * price;
 			(void)d2;
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
@@ -539,10 +551,12 @@ static void Black76ImpliedVolFunction(DataChunk &args, ExpressionState &, Vector
 }
 
 static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto out = GetGreeksOutput(result);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
 			double forward = input.GetDouble(1, row);
@@ -560,7 +574,7 @@ static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &
 			out.theta[row] = -0.5 * df * normal_vol * NormPDF(d) / std::sqrt(ttm) + rate * price;
 			out.rho[row] = -ttm * price;
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
