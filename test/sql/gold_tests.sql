@@ -67,6 +67,14 @@ SELECT
 FROM gold_returns;
 
 SELECT
+  assert_near('constant scalar with aggregate', constant_simple_return, 0.05, 1e-12),
+  assert_near('aggregate with constant scalar', total_return, 0.02961247795, 1e-12)
+FROM (
+  SELECT fin_simple_return(105.0, 100.0) AS constant_simple_return, fin_total_return(r) AS total_return
+  FROM gold_returns
+);
+
+SELECT
   assert_near('cum return', fin_cum_return(r), 0.02961247795, 1e-12),
   assert_near('nav', fin_nav(r, 100.0), 102.961247795, 1e-9),
   assert_near('log nav', fin_log_nav(r, 100.0), 102.961247795, 1e-9),

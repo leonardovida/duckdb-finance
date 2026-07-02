@@ -18,34 +18,21 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	                              {FinanceLogicalType(LogicalTypeId::INTEGER), FinanceLogicalType(LogicalTypeId::BOOLEAN)}, EfficientFrontierFunction,
 	                              EfficientFrontierBind, RowsInit);
 
-	RegisterBindReplace(loader, "fin_option_chain",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    OptionChainBindReplace);
-	RegisterBindReplace(loader, "fin_option_chain",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    OptionChainBindReplace);
-	RegisterBindReplace(loader, "fin_normalize_ohlcv",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    NormalizeOhlcvBindReplace);
-	RegisterBindReplace(loader, "fin_normalize_ohlcv",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    NormalizeOhlcvBindReplace);
+	RegisterBindReplacePrefixes(loader, "fin_option_chain",
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
+	                             FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, OptionChainBindReplace);
+	RegisterBindReplacePrefixes(loader, "fin_normalize_ohlcv",
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
+	                             FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, NormalizeOhlcvBindReplace);
 	RegisterBindReplace(loader, "fin_normalize_returns",
 	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                    NormalizeReturnsBindReplace);
-	RegisterBindReplace(loader, "fin_normalize_option_chain",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    NormalizeOptionChainBindReplace);
-	RegisterBindReplace(loader, "fin_normalize_option_chain",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    NormalizeOptionChainBindReplace);
+	RegisterBindReplacePrefixes(loader, "fin_normalize_option_chain",
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
+	                             FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, NormalizeOptionChainBindReplace);
 
 	RegisterBindReplacePrefixes(loader, "fin_bootstrap_curve",
 	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
@@ -76,16 +63,12 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	RegisterBindReplacePrefixes(loader, "fin_garch_fit", {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                            {FinanceLogicalType(LogicalTypeId::INTEGER), FinanceLogicalType(LogicalTypeId::INTEGER), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                            GarchFitBindReplace);
-	RegisterBindReplace(loader, "fin_calendar", {FinanceLogicalType(LogicalTypeId::VARCHAR)}, CalendarBindReplace);
-	RegisterBindReplace(loader, "fin_calendar", {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DATE)}, CalendarBindReplace);
-	RegisterBindReplace(loader, "fin_calendar", {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE)},
-	                    CalendarBindReplace);
-	RegisterBindReplace(loader, "fin_rebalance_trades",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    RebalanceTradesBindReplace);
-	RegisterBindReplace(loader, "fin_rebalance_trades",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	                    RebalanceTradesBindReplace);
+	RegisterBindReplacePrefixes(loader, "fin_calendar", {FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                            {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE)},
+	                            CalendarBindReplace);
+	RegisterBindReplacePrefixes(loader, "fin_rebalance_trades",
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                            {FinanceLogicalType(LogicalTypeId::DOUBLE)}, RebalanceTradesBindReplace);
 
 	RegisterGridFunction(loader, "fin_resample_grid", ResampleGridBindReplace);
 	RegisterGridFunction(loader, "fin_last_to_grid", ResampleGridBindReplace);
@@ -111,11 +94,7 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
 	                     FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	                    DollarBarsBindReplace);
-	RegisterBindReplace(loader, "fin_imbalance_bars",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    ImbalanceBarsBindReplace);
-	RegisterBindReplace(loader, "fin_imbalance_bars",
-	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
-	                     FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                    ImbalanceBarsBindReplace);
+	RegisterBindReplacePrefixes(loader, "fin_imbalance_bars",
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, ImbalanceBarsBindReplace);
 }
