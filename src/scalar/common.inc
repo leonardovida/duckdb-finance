@@ -943,59 +943,91 @@ struct PreparedInputs {
 	}
 };
 
+static bool AllInputsConstant(DataChunk &args) {
+	for (idx_t col = 0; col < args.ColumnCount(); col++) {
+		if (args.data[col].GetVectorType() != VectorType::CONSTANT_VECTOR) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static void SetResultVectorType(Vector &result, bool constant) {
+	result.SetVectorType(constant ? VectorType::CONSTANT_VECTOR : VectorType::FLAT_VECTOR);
+}
+
+template <class T>
+static T *GetResultData(Vector &result, bool constant) {
+	return constant ? ConstantVector::GetData<T>(result) : FlatVector::GetDataMutable<T>(result);
+}
+
+static void SetResultNull(Vector &result, idx_t row, idx_t count, bool constant) {
+	if (constant) {
+		ConstantVector::SetNull(result, count_t(count));
+	} else {
+		FlatVector::SetNull(result, row, true);
+	}
+}
+
 template <class FUNC>
 static void ExecuteDouble(DataChunk &args, Vector &result, FUNC func) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<double>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
 	PreparedInputs inputs(args);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (inputs.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
 			output[row] = func(inputs, row);
 			if (!std::isfinite(output[row])) {
-				FlatVector::SetNull(result, row, true);
+				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 template <class FUNC>
 static void ExecuteBool(DataChunk &args, Vector &result, FUNC func) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<bool>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<bool>(result, constant);
 	PreparedInputs inputs(args);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (inputs.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
 			output[row] = func(inputs, row);
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
 template <class FUNC>
 static void ExecuteString(DataChunk &args, Vector &result, FUNC func) {
-	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto output = FlatVector::GetDataMutable<string_t>(result);
+	auto constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<string_t>(result, constant);
 	PreparedInputs inputs(args);
-	for (idx_t row = 0; row < args.size(); row++) {
+	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
+	for (idx_t row = 0; row < row_count; row++) {
 		if (inputs.HasNull(row)) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
 		try {
 			output[row] = StringVector::AddString(result, func(inputs, row));
 		} catch (const std::exception &) {
-			FlatVector::SetNull(result, row, true);
+			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
