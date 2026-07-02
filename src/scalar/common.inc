@@ -1509,12 +1509,14 @@ static void AddScalar(ExtensionLoader &loader, const string &name, vector<Logica
                       scalar_function_t func) {
 	ScalarFunction scalar(FinanceFunctionName(name), std::move(args), std::move(ret), std::move(func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+	scalar.SetVolatile();
 	loader.RegisterFunction(std::move(scalar));
 }
 
 static void AddOverload(ScalarFunctionSet &set, vector<LogicalType> args, LogicalType ret, scalar_function_t func) {
 	ScalarFunction scalar(std::move(args), std::move(ret), std::move(func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+	scalar.SetVolatile();
 	set.AddFunction(std::move(scalar));
 }
 
