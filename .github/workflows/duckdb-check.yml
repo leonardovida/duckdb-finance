@@ -70,7 +70,7 @@ jobs:
         working-directory: duckdb-finance
         env:
           DUCKDB_ROOT: ${{ github.workspace }}/duckdb
-          CMAKE_BUILD_PARALLEL_LEVEL: 8
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
           DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         run: make "${{ inputs.target }}"
 
