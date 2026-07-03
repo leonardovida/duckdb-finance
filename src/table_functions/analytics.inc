@@ -4,11 +4,13 @@ static unique_ptr<TableRef> BootstrapCurveBindReplace(ClientContext &context, Ta
 	auto instrument = SqlColumn(input.inputs[1]);
 	auto maturity = SqlColumn(input.inputs[2]);
 	auto rate = SqlColumn(input.inputs[3]);
+	auto compounding = input.inputs.size() >= 5 ? "coalesce(" + SqlLiteral(input.inputs[4]) + "::VARCHAR, 'continuous')"
+	                                            : "'continuous'";
 	auto query = StringUtil::Format(
 	    "SELECT %s AS instrument, %s::DOUBLE AS maturity, %s::DOUBLE AS zero_rate, "
-	    "fin_discount_factor(%s::DOUBLE, %s::DOUBLE) AS discount_factor "
+	    "fin_discount_factor(%s::DOUBLE, %s::DOUBLE, %s) AS discount_factor "
 	    "FROM %s ORDER BY maturity",
-	    instrument, maturity, rate, rate, maturity, table);
+	    instrument, maturity, rate, rate, maturity, compounding, table);
 	return ParseSubquery(context, query);
 }
 

@@ -381,10 +381,10 @@ This document is generated from the extension registration surface in `src/` and
 
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
-| `fin_bootstrap_curve` | `fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Build a simple bootstrapped curve table from instrument maturities and rates. | Table result. |
+| `fin_bootstrap_curve` | `fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Build a simple bootstrapped curve table from instrument maturities and rates using the requested compounding convention. | Table result. |
 | `fin_calendar` | `fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06')` | Return business-calendar dates for a calendar name and date range. | Table result. |
 | `fin_changes_to_grid` | `fin_changes_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute changes to grid for SQL finance workflows. | Table result. |
-| `fin_curve_bootstrap` | `fin_curve_bootstrap('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Alias for curve bootstrapping. | Table result. |
+| `fin_curve_bootstrap` | `fin_curve_bootstrap('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Alias for curve bootstrapping with the requested compounding convention. | Table result. |
 | `fin_delta_to_grid` | `fin_delta_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute delta to grid for SQL finance workflows. | Table result. |
 | `fin_dollar_bars` | `fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 100000.0)` | Compute dollar bars for SQL finance workflows. | Table result. |
 | `fin_efficient_frontier` | `fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])` | Compute efficient frontier for SQL finance workflows. | Table result. |

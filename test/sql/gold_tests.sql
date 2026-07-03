@@ -728,6 +728,10 @@ WHERE kind = 'call';
 SELECT assert_eq('bootstrap curve rows', count(*), 3::BIGINT)
 FROM fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous');
 
+SELECT assert_near('bootstrap curve periodic compounding', discount_factor, fin_discount_factor(0.040, 0.5, 'periodic'), 1e-12)
+FROM fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'periodic')
+WHERE instrument = 'bill';
+
 SELECT assert_eq('curve bootstrap rows', count(*), 3::BIGINT)
 FROM fin_curve_bootstrap('gold_curve', 'inst', 'maturity', 'rate', 'continuous');
 
