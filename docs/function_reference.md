@@ -86,8 +86,8 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_information_ratio` | `fin_information_ratio(r, benchmark_r, annualization := 252)` | Compute information ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_is_decimal_return` | `fin_is_decimal_return(x)` | Predicate helper for finance input validation. | Aggregate or scalar SQL macro result. |
 | `fin_is_outlier_zscore` | `fin_is_outlier_zscore(3.1, 0.0, 1.0, 3.0)` | Predicate helper for finance input validation. | BOOLEAN. |
-| `fin_iv_percentile` | `fin_iv_percentile(factor)` | Compute iv percentile for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_iv_rank` | `fin_iv_rank(factor)` | Compute iv rank for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_iv_percentile` | `fin_iv_percentile(implied_volatility ORDER BY quote_ts)` | Compute where the latest implied volatility sits within the observed min/max range. | Order-sensitive aggregate; use aggregate `ORDER BY` to define the latest observation. |
+| `fin_iv_rank` | `fin_iv_rank(implied_volatility ORDER BY quote_ts)` | Compute where the latest implied volatility sits within the observed min/max range. | Order-sensitive aggregate; use aggregate `ORDER BY` to define the latest observation. |
 | `fin_jensen_alpha` | `fin_jensen_alpha(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Compute jensen alpha for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_kahan_sum` | `fin_kahan_sum(x)` | Compute kahan sum for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_ks_test` | `fin_ks_test(x, y)` | Compute ks test for SQL finance workflows. | NULL placeholder. |

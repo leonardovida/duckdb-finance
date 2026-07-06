@@ -110,9 +110,9 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	loader.RegisterFunction(std::move(quantile_spread_set));
 
 	auto iv_rank = UnaryDoubleAggregate<IVRangeState, IVRangeOperation<false>>("fin_iv_rank");
-	iv_rank.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	iv_rank.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
 	loader.RegisterFunction(iv_rank);
 	auto iv_percentile = UnaryDoubleAggregate<IVRangeState, IVRangeOperation<true>>("fin_iv_percentile");
-	iv_percentile.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	iv_percentile.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
 	loader.RegisterFunction(iv_percentile);
 }
