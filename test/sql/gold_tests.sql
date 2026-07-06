@@ -271,6 +271,14 @@ SELECT
   assert_eq('data quality n', (fin_data_quality_report(r)).n, 5::BIGINT)
 FROM gold_returns;
 
+WITH iv_path(seq, iv) AS (VALUES (1, 0.10), (2, 0.20), (3, 0.15))
+SELECT
+  assert_near('iv rank respects ascending aggregate order', fin_iv_rank(iv ORDER BY iv), 1.0, 1e-12),
+  assert_near('iv rank respects descending aggregate order', fin_iv_rank(iv ORDER BY iv DESC), 0.0, 1e-12),
+  assert_near('iv percentile respects ascending aggregate order', fin_iv_percentile(iv ORDER BY iv), 1.0, 1e-12),
+  assert_near('iv percentile respects descending aggregate order', fin_iv_percentile(iv ORDER BY iv DESC), 0.0, 1e-12)
+FROM iv_path;
+
 -- Fixed income, cash-flow, and curve helpers.
 SELECT
   assert_near('yearfrac act365', fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', 'ACT/365F'), 1.0, 1e-12),
