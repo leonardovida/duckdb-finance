@@ -386,7 +386,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_changes_to_grid` | `fin_changes_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute changes to grid for SQL finance workflows. | Table result. |
 | `fin_curve_bootstrap` | `fin_curve_bootstrap('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Alias for curve bootstrapping with the requested compounding convention. | Table result. |
 | `fin_delta_to_grid` | `fin_delta_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute delta to grid for SQL finance workflows. | Table result. |
-| `fin_dollar_bars` | `fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 100000.0)` | Compute dollar bars for SQL finance workflows. | Table result. |
+| `fin_dollar_bars` | `fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 100000.0)` | Compute dollar bars for SQL finance workflows. | Table result; threshold must be positive and finite. |
 | `fin_efficient_frontier` | `fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])` | Compute efficient frontier for SQL finance workflows. | Table result. |
 | `fin_factor_report` | `fin_factor_report('gold_returns', 'd', 'asset', 'factor', 'forward_return', 2)` | Compute factor report for SQL finance workflows. | Table result. |
 | `fin_fama_macbeth` | `fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1)` | Compute fama macbeth for SQL finance workflows. | Table result. |
@@ -408,9 +408,9 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_resample_grid` | `fin_resample_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute', 'last', INTERVAL '10 minutes' )` | Resample values onto a regular timestamp grid using the last observation at or before each grid timestamp. | Table result; optional staleness returns `NULL` when the carried value is older than the interval. |
 | `fin_resets_to_grid` | `fin_resets_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute resets to grid for SQL finance workflows. | Table result. |
 | `fin_schema_template` | `fin_schema_template('ohlcv')` | Return the expected columns for a named finance schema template. | Table result. |
-| `fin_tick_bars` | `fin_tick_bars('gold_prices', 'ts', 'close')` | Compute tick bars for SQL finance workflows. | Table result. |
+| `fin_tick_bars` | `fin_tick_bars('gold_prices', 'ts', 'close')` | Compute tick bars for SQL finance workflows. | Table result; optional threshold must be positive and finite. |
 | `fin_validate_schema` | `fin_validate_schema('gold_prices', 'ohlcv')` | Return schema-template rows for validating a table against a template. | Table result. |
-| `fin_volume_bars` | `fin_volume_bars('gold_prices', 'ts', 'close', 'volume', 1000.0)` | Compute volume bars for SQL finance workflows. | Table result. |
+| `fin_volume_bars` | `fin_volume_bars('gold_prices', 'ts', 'close', 'volume', 1000.0)` | Compute volume bars for SQL finance workflows. | Table result; threshold must be positive and finite. |
 
 ### General Helpers
 
