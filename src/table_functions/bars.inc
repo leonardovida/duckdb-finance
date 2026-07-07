@@ -1,3 +1,18 @@
+static void ValidatePositiveBarThreshold(const Value &value, const string &function_name) {
+	if (value.IsNull()) {
+		throw BinderException("%s threshold cannot be NULL", function_name);
+	}
+	Value threshold_value;
+	string error;
+	if (!value.DefaultTryCastAs(LogicalType::DOUBLE, threshold_value, &error)) {
+		throw BinderException("%s threshold must be numeric: %s", function_name, error);
+	}
+	auto threshold = threshold_value.GetValue<double>();
+	if (!(threshold > 0.0) || !std::isfinite(threshold)) {
+		throw BinderException("%s threshold must be positive and finite", function_name);
+	}
+}
+
 static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctionBindInput &input, const string &kind) {
 	RequireInputCountAtLeast(input, kind == "tick" ? 3 : 4,
 	                         "Finance bar functions expect table_name, ts_col, price_col[, volume_col, threshold]");
@@ -7,12 +22,18 @@ static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctio
 	string volume = "1.0";
 	string threshold = "100";
 	if (kind == "tick") {
-		threshold = input.inputs.size() >= 4 ? SqlLiteral(input.inputs[3]) : "100";
+		if (input.inputs.size() >= 4) {
+			ValidatePositiveBarThreshold(input.inputs[3], "fin_tick_bars");
+			threshold = SqlLiteral(input.inputs[3]);
+		}
 	} else if (kind == "imbalance") {
 		volume = SqlColumn(input.inputs[3]);
 	} else {
 		volume = input.inputs.size() >= 4 ? SqlColumn(input.inputs[3]) : "1.0";
-		threshold = input.inputs.size() >= 5 ? SqlLiteral(input.inputs[4]) : "100";
+		if (input.inputs.size() >= 5) {
+			ValidatePositiveBarThreshold(input.inputs[4], kind == "volume" ? "fin_volume_bars" : "fin_dollar_bars");
+			threshold = SqlLiteral(input.inputs[4]);
+		}
 	}
 	auto threshold_expr = "nullif((" + threshold + ")::DOUBLE, 0.0)";
 	string bucket_expr = "floor(((row_number() OVER (ORDER BY ts) - 1)::DOUBLE) / " + threshold_expr + ")";
