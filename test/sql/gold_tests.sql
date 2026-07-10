@@ -14,6 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.7');
 
 -- Numerical helpers and scalar edge cases.
 SELECT

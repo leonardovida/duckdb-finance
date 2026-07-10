@@ -1,9 +1,10 @@
 static void FinanceVersionFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	result.SetVectorType(VectorType::CONSTANT_VECTOR);
 #ifdef EXT_VERSION_FINANCE
-	auto version = EXT_VERSION_FINANCE;
+	string version = "finance ";
+	version += EXT_VERSION_FINANCE;
 #else
-	auto version = "finance-dev";
+	string version = "finance-dev";
 #endif
 	ConstantVector::GetData<string_t>(result)[0] = StringVector::AddString(result, version);
 }
