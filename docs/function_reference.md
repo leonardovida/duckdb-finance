@@ -452,7 +452,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_resets` | `fin_resets(x)` | Compute resets for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_rogers_satchell_vol` | `fin_rogers_satchell_vol(open, high, low, close, annualization := 252)` | Compute rogers satchell vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_var` | `fin_var(r, confidence := 0.95, method := 'historical', loss_positive := true)` | Compute var for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_version` | `fin_version()` | Return the loaded finance extension version string. | VARCHAR. |
+| `fin_version` | `fin_version()` | Return the loaded finance extension version string. | VARCHAR in `finance <version>` form for releases. |
 | `fin_vol_of_vol` | `fin_vol_of_vol(vol, annualization := 252)` | Compute vol of vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_yang_zhang_vol` | `fin_yang_zhang_vol(open, high, low, close, annualization := 252)` | Compute yang zhang vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 

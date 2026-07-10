@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DESCRIPTION = ROOT / "community-extension" / "description.yml"
+EXTENSION_CONFIG = ROOT / "extension_config.cmake"
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
@@ -37,15 +38,20 @@ def main() -> int:
     args = parser.parse_args()
 
     text = read(DESCRIPTION)
+    extension_config = read(EXTENSION_CONFIG)
     errors: list[str] = []
 
     version = field(text, "version")
+    extension_version_match = re.search(r"(?m)^\s*EXTENSION_VERSION\s+(\S+)\s*$", extension_config)
+    extension_version = extension_version_match.group(1) if extension_version_match else None
     repo = field(text, "github")
     ref = field(text, "ref")
     license_name = field(text, "license")
 
     if not version or not SEMVER.fullmatch(version):
         errors.append("extension.version must be a plain MAJOR.MINOR.PATCH value")
+    if extension_version != version:
+        errors.append("extension_config.cmake EXTENSION_VERSION must match extension.version")
     if repo != "leonardovida/duckdb-finance":
         errors.append("repo.github must be leonardovida/duckdb-finance")
     if not ref or (ref != "main" and not SHA.fullmatch(ref)):
