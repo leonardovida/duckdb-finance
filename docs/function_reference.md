@@ -173,7 +173,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_swap_rate` | `fin_swap_rate([1.0, 2.0], [0.95, 0.90])` | Compute swap rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_validate_curve_spec` | `fin_validate_curve_spec(spec)` | Validate input shape or finance-specific invariants and return a boolean or validation struct. | STRUCT. |
 | `fin_xirr` | `fin_xirr([-100.0, 110.0], [DATE '2026-01-01', DATE '2027-01-01'])` | Compute xirr for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_yearfrac` | `fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', 'ACT/365F')` | Compute yearfrac for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_yearfrac` | `fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', 'ACT/365F')` | Compute yearfrac for SQL finance workflows. | DOUBLE; reversed `ACT/ACT` dates return the negative forward fraction. |
 
 ### Options And Volatility Models
 

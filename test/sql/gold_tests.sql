@@ -282,6 +282,9 @@ FROM iv_path;
 -- Fixed income, cash-flow, and curve helpers.
 SELECT
   assert_near('yearfrac act365', fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', 'ACT/365F'), 1.0, 1e-12),
+  assert_near('yearfrac actact reverse dates',
+    fin_yearfrac(DATE '2027-07-01', DATE '2026-01-01', 'ACT/ACT'),
+    -fin_yearfrac(DATE '2026-01-01', DATE '2027-07-01', 'ACT/ACT'), 1e-12),
   assert_near('discount continuous', fin_discount_factor(0.05, 1.0, 'continuous'), 0.951229424500714, 1e-12),
   assert_near('discount periodic', fin_discount_factor(0.05, 1.0, 'periodic'), 0.9523809523809523, 1e-12),
   assert_near('rate from discount', fin_rate_from_discount(0.951229424500714, 1.0, 'continuous'), 0.05, 1e-12),
