@@ -391,6 +391,9 @@ static double YearFrac(date_t start, date_t end, const string &convention) {
 		return double(days) / 360.0;
 	}
 	if (day_count == "ACT/ACT") {
+		if (end.days < start.days) {
+			return -YearFrac(end, start, day_count);
+		}
 		int32_t sy, sm, sd;
 		int32_t ey, em, ed;
 		Date::Convert(start, sy, sm, sd);
