@@ -1,5 +1,6 @@
 struct DrawdownState {
 	bool isset;
+	vector<double> *values;
 	double nav;
 	double peak;
 	double current_drawdown;
@@ -15,6 +16,7 @@ struct DrawdownOperationBase : public UnaryDoubleUpdateOperation<DrawdownOperati
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
+		state.values = new vector<double>();
 		state.nav = 1.0;
 		state.peak = 1.0;
 		state.current_drawdown = 0.0;
@@ -39,6 +41,7 @@ struct DrawdownOperationBase : public UnaryDoubleUpdateOperation<DrawdownOperati
 			state.nav = initial_nav;
 			state.peak = initial_nav;
 		}
+		state.values->push_back(value);
 		state.nav *= 1.0 + value;
 		state.peak = std::max(state.peak, state.nav);
 		state.current_drawdown = state.peak == 0.0 ? 0.0 : state.nav / state.peak - 1.0;
@@ -60,18 +63,22 @@ struct DrawdownOperationBase : public UnaryDoubleUpdateOperation<DrawdownOperati
 			return;
 		}
 		if (!target.isset) {
-			target = source;
+			for (auto value : *source.values) {
+				UpdateValue(target, value);
+			}
 			return;
 		}
-		target.min_drawdown = std::min(target.min_drawdown, source.min_drawdown);
-		target.sum_drawdown += source.sum_drawdown;
-		target.sum_drawdown_sq += source.sum_drawdown_sq;
-		target.count += source.count;
-		target.max_duration = std::max(target.max_duration, source.max_duration);
-		target.current_duration = source.current_duration;
-		target.nav = source.nav;
-		target.peak = std::max(target.peak, source.peak);
-		target.current_drawdown = source.current_drawdown;
+		// Drawdowns in the right-hand state depend on the peak reached by the
+		// left-hand state, so isolated summaries cannot be merged exactly.
+		for (auto value : *source.values) {
+			UpdateValue(target, value);
+		}
+	}
+
+	template <class STATE>
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.values;
+		state.values = nullptr;
 	}
 
 	static bool IgnoreNull() {

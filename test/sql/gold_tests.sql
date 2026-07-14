@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.7');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.8');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -206,7 +206,8 @@ SELECT
 FROM gold_prices;
 
 SELECT
-  assert_near('rsi', fin_rsi(close), 63.63636363636363, 1e-12),
+  assert_near('rsi', fin_rsi(close ORDER BY ts), 63.63636363636363, 1e-12),
+  assert_near('rsi honors period', fin_rsi(close, 2 ORDER BY ts), 63.15789473684211, 1e-12),
   assert_near('macd placeholder', (fin_macd(close)).macd, 0.0, 1e-12),
   assert_near('ppo placeholder', fin_ppo(close), 0.0, 1e-12),
   assert_near('apo placeholder', fin_apo(close), 0.0, 1e-12),
@@ -722,6 +723,49 @@ SELECT
   assert_eq('business days between', fin_business_days_between(DATE '2026-05-04', DATE '2026-05-08', 'weekday'), 4),
   assert_eq('session date', fin_session_date(TIMESTAMP '2026-05-06 10:00:00', 'NYSE'), DATE '2026-05-06'),
   assert_true('regular session', fin_is_regular_session(TIMESTAMP '2026-05-06 10:00:00', 'NYSE'));
+
+-- Window aggregation must combine states exactly, not treat each segment as a
+-- fresh history.
+WITH RECURSIVE series AS (
+  SELECT i, ((i % 17) - 8)::DOUBLE / 100.0 AS x
+  FROM range(1, 701) t(i)
+), expected(i, variance) AS (
+  SELECT i, x * x FROM series WHERE i = 1
+  UNION ALL
+  SELECT s.i, 0.94 * e.variance + 0.06 * s.x * s.x
+  FROM expected e JOIN series s ON s.i = e.i + 1
+), actual AS (
+  SELECT i, fin_ewma_variance(x) OVER (
+    ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+  ) / 252.0 AS variance
+  FROM series
+)
+SELECT assert_eq('ewma window combine', count(*) FILTER (
+  WHERE abs(actual.variance - expected.variance) > 1e-12
+), 0::BIGINT)
+FROM actual JOIN expected USING (i);
+
+WITH series AS (
+  SELECT i, ((i % 17) - 8)::DOUBLE / 100.0 AS x
+  FROM range(1, 701) t(i)
+), nav AS (
+  SELECT i, x, product(1.0 + x) OVER (ORDER BY i) AS nav
+  FROM series
+), expected AS (
+  SELECT i, nav / greatest(1.0, max(nav) OVER (
+    ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+  )) - 1.0 AS drawdown
+  FROM nav
+), actual AS (
+  SELECT i, fin_drawdown(x) OVER (
+    ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+  ) AS drawdown
+  FROM series
+)
+SELECT assert_eq('drawdown window combine', count(*) FILTER (
+  WHERE abs(actual.drawdown - expected.drawdown) > 1e-12
+), 0::BIGINT)
+FROM actual JOIN expected USING (i);
 
 -- Table functions and bind-replace SQL.
 SELECT assert_eq('schema template rows', count(*), 7::BIGINT)
