@@ -56,7 +56,7 @@ jobs:
             python3
 
       - name: Configure compiler cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/ccache
           key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Save compiler cache
         if: always() && !cancelled()
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.cache/ccache
           key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}

@@ -1,42 +1,24 @@
 struct RSIState {
 	bool isset;
-	double first;
-	double last;
-	double gain_sum;
-	double loss_sum;
-	idx_t changes;
+	vector<double> *values;
+	int32_t period;
 };
 
 struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
-		state.first = 0.0;
-		state.last = 0.0;
-		state.gain_sum = 0.0;
-		state.loss_sum = 0.0;
-		state.changes = 0;
-	}
-
-	static void AddDiff(RSIState &state, double diff) {
-		if (diff > 0.0) {
-			state.gain_sum += diff;
-		} else {
-			state.loss_sum -= diff;
-		}
-		state.changes++;
+		state.values = new vector<double>();
+		state.period = 14;
 	}
 
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
-		if (!state.isset) {
-			state.isset = true;
-			state.first = value;
-			state.last = value;
-			return;
+		if (!std::isfinite(value)) {
+			throw InvalidInputException("RSI prices must be finite");
 		}
-		AddDiff(state, value - state.last);
-		state.last = value;
+		state.isset = true;
+		state.values->push_back(value);
 	}
 
 	template <class STATE, class OP>
@@ -44,31 +26,48 @@ struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 		if (!source.isset) {
 			return;
 		}
-		if (!target.isset) {
-			target = source;
-			return;
+		if (target.isset && target.period != source.period) {
+			throw InvalidInputException("RSI period must be constant within a group");
 		}
-		AddDiff(target, source.first - target.last);
-		target.gain_sum += source.gain_sum;
-		target.loss_sum += source.loss_sum;
-		target.changes += source.changes;
-		target.last = source.last;
+		target.period = source.period;
+		target.isset = true;
+		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
 	}
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (!state.isset || state.changes == 0) {
+		if (!state.isset || state.values->size() < 2) {
 			finalize_data.ReturnNull();
 			return;
 		}
-		if (state.loss_sum == 0.0) {
+		auto changes = state.values->size() - 1;
+		auto initial_count = std::min<idx_t>(NumericCast<idx_t>(state.period), changes);
+		double avg_gain = 0.0;
+		double avg_loss = 0.0;
+		for (idx_t i = 1; i <= initial_count; i++) {
+			auto diff = (*state.values)[i] - (*state.values)[i - 1];
+			avg_gain += std::max(diff, 0.0);
+			avg_loss += std::max(-diff, 0.0);
+		}
+		avg_gain /= static_cast<double>(initial_count);
+		avg_loss /= static_cast<double>(initial_count);
+		for (idx_t i = initial_count + 1; i <= changes; i++) {
+			auto diff = (*state.values)[i] - (*state.values)[i - 1];
+			avg_gain = (avg_gain * (state.period - 1) + std::max(diff, 0.0)) / state.period;
+			avg_loss = (avg_loss * (state.period - 1) + std::max(-diff, 0.0)) / state.period;
+		}
+		if (avg_loss == 0.0) {
 			target = 100.0;
 			return;
 		}
-		auto avg_gain = state.gain_sum / static_cast<double>(state.changes);
-		auto avg_loss = state.loss_sum / static_cast<double>(state.changes);
 		auto rs = avg_gain / avg_loss;
 		target = 100.0 - 100.0 / (1.0 + rs);
+	}
+
+	template <class STATE>
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.values;
+		state.values = nullptr;
 	}
 
 	static bool IgnoreNull() {
@@ -82,6 +81,10 @@ struct RSIWithPeriodOperation : public RSIOperation {
 		if (period <= 0) {
 			throw InvalidInputException("RSI period must be positive");
 		}
+		if (state.isset && state.period != period) {
+			throw InvalidInputException("RSI period must be constant within a group");
+		}
+		state.period = period;
 		RSIOperation::UpdateValue(state, value);
 	}
 

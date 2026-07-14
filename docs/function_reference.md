@@ -70,11 +70,11 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_data_quality_report` | `fin_data_quality_report(x)` | Compute data quality report for SQL finance workflows. | STRUCT. |
 | `fin_down_capture` | `fin_down_capture(r, benchmark_r)` | Compute down capture for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_downside_deviation` | `fin_downside_deviation(r, mar := 0.0, annualization := 252)` | Compute downside deviation for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_drawdown` | `fin_drawdown(r, initial_nav := 1.0)` | Compute drawdown for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_drawdown` | `fin_drawdown(r, initial_nav := 1.0)` | Compute current drawdown from the ordered return series. | Order-sensitive aggregate; window states preserve the preceding peak. |
 | `fin_drawdown_at_risk` | `fin_drawdown_at_risk(r, confidence := 0.95)` | Compute drawdown at risk for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_drawdown_duration` | `fin_drawdown_duration(r, initial_nav := 1.0)` | Compute drawdown duration for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_drawdown_duration` | `fin_drawdown_duration(r, initial_nav := 1.0)` | Compute the longest drawdown duration from the ordered return series. | Order-sensitive aggregate. |
 | `fin_entropy` | `fin_entropy(x)` | Compute entropy for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_ewma_variance` | `fin_ewma_variance(r, lambda := 0.94, annualization := 252)` | Compute ewma variance for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_ewma_variance` | `fin_ewma_variance(r, lambda := 0.94, annualization := 252)` | Compute annualized exponentially weighted variance from ordered returns. | Order-sensitive aggregate; `lambda` and `annualization` must be constant within a group. |
 | `fin_excess_return` | `fin_excess_return(r, rf, annualization := 252, rf_convention := 'annual')` | Compute excess return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_expectancy` | `fin_expectancy(r)` | Compute expectancy for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_from_log_return` | `fin_from_log_return(lr)` | Compute from log return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -275,7 +275,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_rocr` | `fin_rocr(close, period := 10)` | Compute rocr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_rocr100` | `fin_rocr100(close, period := 10)` | Compute rocr100 for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_roll_spread` | `fin_roll_spread(price)` | Compute roll spread for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_rsi` | `fin_rsi(close, period := 14)` | Compute rsi for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_rsi` | `fin_rsi(close, period := 14)` | Compute Wilder-smoothed relative strength from the ordered price series. | Order-sensitive aggregate; `period` must be positive and constant within a group. |
 | `fin_sar` | `fin_sar(high, low, acceleration := 0.02, maximum := 0.2)` | Compute sar for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_sarext` | `fin_sarext(high, low, options)` | Compute sarext for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_sma` | `fin_sma(x, period := 20)` | Compute sma for SQL finance workflows. | Aggregate or scalar SQL macro result. |

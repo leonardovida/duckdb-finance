@@ -4,6 +4,17 @@ static AggregateFunction NamedAggregateFunction(const string &name, AggregateFun
 }
 
 template <class STATE, class OP>
+static AggregateFunction WithStateDestructor(AggregateFunction function) {
+	function.SetStateDestructorCallback(AggregateFunction::StateDestroy<STATE, OP>);
+	return function;
+}
+
+static AggregateFunction OrderDependent(AggregateFunction function) {
+	function.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
+	return function;
+}
+
+template <class STATE, class OP>
 static AggregateFunction UnaryDoubleAggregate(const string &name) {
 	auto result = AggregateFunction::UnaryAggregate<STATE, double, double, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
 	return NamedAggregateFunction(name, std::move(result));

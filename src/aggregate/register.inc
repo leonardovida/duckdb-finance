@@ -15,61 +15,69 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	loader.RegisterFunction(std::move(sortino_set));
 
 	AggregateFunctionSet ewma_variance_set(FinanceFunctionName("fin_ewma_variance"));
-	ewma_variance_set.AddFunction(UnaryDoubleAggregate<EWMAState, EWMAOperation<false>>("fin_ewma_variance"));
-	ewma_variance_set.AddFunction(
+	ewma_variance_set.AddFunction(OrderDependent(
+	    UnaryDoubleAggregate<EWMAState, EWMAOperation<false>>("fin_ewma_variance")));
+	ewma_variance_set.AddFunction(OrderDependent(
 	    BinaryDoubleAggregate<EWMAState, double, EWMAWithLambdaOperation<false>>("fin_ewma_variance",
-	                                                                            FinanceLogicalType(LogicalTypeId::DOUBLE)));
-	ewma_variance_set.AddFunction(
+	                                                                            FinanceLogicalType(LogicalTypeId::DOUBLE))));
+	ewma_variance_set.AddFunction(OrderDependent(
 	    TernaryDoubleAggregate<EWMAState, double, double, double, EWMAWithLambdaAnnualizationOperation<false>>(
-	        "fin_ewma_variance", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)));
+	        "fin_ewma_variance", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE))));
 	loader.RegisterFunction(std::move(ewma_variance_set));
 
 	AggregateFunctionSet ewma_vol_set(FinanceFunctionName("fin_ewma_vol"));
-	ewma_vol_set.AddFunction(UnaryDoubleAggregate<EWMAState, EWMAOperation<true>>("fin_ewma_vol"));
-	ewma_vol_set.AddFunction(
-	    BinaryDoubleAggregate<EWMAState, double, EWMAWithLambdaOperation<true>>("fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE)));
-	ewma_vol_set.AddFunction(
+	ewma_vol_set.AddFunction(OrderDependent(
+	    UnaryDoubleAggregate<EWMAState, EWMAOperation<true>>("fin_ewma_vol")));
+	ewma_vol_set.AddFunction(OrderDependent(
+	    BinaryDoubleAggregate<EWMAState, double, EWMAWithLambdaOperation<true>>("fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE))));
+	ewma_vol_set.AddFunction(OrderDependent(
 	    TernaryDoubleAggregate<EWMAState, double, double, double, EWMAWithLambdaAnnualizationOperation<true>>(
-	        "fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)));
+	        "fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE))));
 	loader.RegisterFunction(std::move(ewma_vol_set));
 
 	AggregateFunctionSet rsi_set(FinanceFunctionName("fin_rsi"));
-	rsi_set.AddFunction(UnaryDoubleAggregate<RSIState, RSIOperation>("fin_rsi"));
-	rsi_set.AddFunction(BinaryDoubleAggregate<RSIState, int32_t, RSIWithPeriodOperation>("fin_rsi",
-	                                                                                    FinanceLogicalType(LogicalTypeId::INTEGER)));
+	rsi_set.AddFunction(OrderDependent(WithStateDestructor<RSIState, RSIOperation>(
+	    UnaryDoubleAggregate<RSIState, RSIOperation>("fin_rsi"))));
+	rsi_set.AddFunction(OrderDependent(WithStateDestructor<RSIState, RSIWithPeriodOperation>(
+	    BinaryDoubleAggregate<RSIState, int32_t, RSIWithPeriodOperation>("fin_rsi",
+	                                                                    FinanceLogicalType(LogicalTypeId::INTEGER)))));
 	loader.RegisterFunction(std::move(rsi_set));
 
 	AggregateFunctionSet current_drawdown_set(FinanceFunctionName("fin_drawdown"));
-	current_drawdown_set.AddFunction(UnaryDoubleAggregate<DrawdownState, CurrentDrawdownOperation>("fin_drawdown"));
-	current_drawdown_set.AddFunction(
+	current_drawdown_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, CurrentDrawdownOperation>(
+	    UnaryDoubleAggregate<DrawdownState, CurrentDrawdownOperation>("fin_drawdown"))));
+	current_drawdown_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, DrawdownWithInitialNavOperation<CurrentDrawdownOperation>>(
 	    BinaryAggregate<DrawdownState, double, double, DrawdownWithInitialNavOperation<CurrentDrawdownOperation>>(
-	        "fin_drawdown", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)));
+	        "fin_drawdown", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)))));
 	loader.RegisterFunction(std::move(current_drawdown_set));
 
 	AggregateFunctionSet max_drawdown_set(FinanceFunctionName("fin_max_drawdown"));
-	max_drawdown_set.AddFunction(UnaryDoubleAggregate<DrawdownState, MaxDrawdownOperation>("fin_max_drawdown"));
-	max_drawdown_set.AddFunction(
+	max_drawdown_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, MaxDrawdownOperation>(
+	    UnaryDoubleAggregate<DrawdownState, MaxDrawdownOperation>("fin_max_drawdown"))));
+	max_drawdown_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, DrawdownWithInitialNavOperation<MaxDrawdownOperation>>(
 	    BinaryAggregate<DrawdownState, double, double, DrawdownWithInitialNavOperation<MaxDrawdownOperation>>(
-	        "fin_max_drawdown", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)));
+	        "fin_max_drawdown", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)))));
 	loader.RegisterFunction(std::move(max_drawdown_set));
 
 	AggregateFunctionSet avg_drawdown_set(FinanceFunctionName("fin_avg_drawdown"));
-	avg_drawdown_set.AddFunction(UnaryDoubleAggregate<DrawdownState, AvgDrawdownOperation>("fin_avg_drawdown"));
-	avg_drawdown_set.AddFunction(
+	avg_drawdown_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, AvgDrawdownOperation>(
+	    UnaryDoubleAggregate<DrawdownState, AvgDrawdownOperation>("fin_avg_drawdown"))));
+	avg_drawdown_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, DrawdownWithInitialNavOperation<AvgDrawdownOperation>>(
 	    BinaryAggregate<DrawdownState, double, double, DrawdownWithInitialNavOperation<AvgDrawdownOperation>>(
-	        "fin_avg_drawdown", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)));
+	        "fin_avg_drawdown", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)))));
 	loader.RegisterFunction(std::move(avg_drawdown_set));
 
 	AggregateFunctionSet drawdown_duration_set(FinanceFunctionName("fin_drawdown_duration"));
-	drawdown_duration_set.AddFunction(
-	    UnaryBigintAggregate<DrawdownState, DrawdownDurationOperation>("fin_drawdown_duration"));
-	drawdown_duration_set.AddFunction(
+	drawdown_duration_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, DrawdownDurationOperation>(
+	    UnaryBigintAggregate<DrawdownState, DrawdownDurationOperation>("fin_drawdown_duration"))));
+	drawdown_duration_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, DrawdownWithInitialNavOperation<DrawdownDurationOperation>>(
 	    BinaryAggregate<DrawdownState, double, int64_t, DrawdownWithInitialNavOperation<DrawdownDurationOperation>>(
-	        "fin_drawdown_duration", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)));
+	        "fin_drawdown_duration", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)))));
 	loader.RegisterFunction(std::move(drawdown_duration_set));
 
 	AggregateFunctionSet ulcer_index_set(FinanceFunctionName("fin_ulcer_index"));
-	ulcer_index_set.AddFunction(UnaryDoubleAggregate<DrawdownState, UlcerIndexOperation>("fin_ulcer_index"));
+	ulcer_index_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, UlcerIndexOperation>(
+	    UnaryDoubleAggregate<DrawdownState, UlcerIndexOperation>("fin_ulcer_index"))));
 	loader.RegisterFunction(std::move(ulcer_index_set));
 
 	AggregateFunctionSet outlier_count_set(FinanceFunctionName("fin_outlier_count"));
