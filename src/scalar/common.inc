@@ -439,10 +439,16 @@ static double DiscountFactor(double rate, double ttm, const string &compounding,
 		return std::exp(-rate * ttm);
 	}
 	if (normalized == "simple") {
+		if (!(1.0 + rate * ttm > 0.0)) {
+			throw InvalidInputException("Simple compounding requires 1 + rate * ttm > 0");
+		}
 		return 1.0 / (1.0 + rate * ttm);
 	}
 	if (frequency <= 0) {
 		throw InvalidInputException("Periodic compounding requires frequency > 0");
+	}
+	if (!(1.0 + rate / frequency > 0.0)) {
+		throw InvalidInputException("Periodic compounding requires 1 + rate / frequency > 0");
 	}
 	return std::pow(1.0 + rate / frequency, -frequency * ttm);
 }
@@ -483,10 +489,14 @@ static double FutureValue(double pv, double rate, double ttm, const string &comp
 }
 
 static double BondPrice(double coupon_rate, double ytm, double maturity_years, int frequency, double face) {
-	if (!(maturity_years > 0.0) || frequency <= 0 || !(face > 0.0)) {
+	if (!IsFinite(coupon_rate) || !IsFinite(ytm) || !IsFinite(maturity_years) || !IsFinite(face) ||
+	    !(maturity_years > 0.0) || frequency <= 0 || !(face > 0.0) || !(1.0 + ytm / frequency > 0.0)) {
 		throw InvalidInputException("Invalid bond input");
 	}
 	int periods = int(std::round(maturity_years * frequency));
+	if (periods <= 0) {
+		throw InvalidInputException("Bond maturity must include at least one coupon period");
+	}
 	double coupon = face * coupon_rate / frequency;
 	double period_df = 1.0 / (1.0 + ytm / frequency);
 	double discount = period_df;
@@ -594,7 +604,8 @@ struct BSMKernel {
 };
 
 static BSMKernel MakeBSMKernel(double spot, double strike, double ttm, double rate, double vol, double dividend_yield) {
-	if (!(spot > 0.0) || !(strike > 0.0) || !(ttm > 0.0) || !(vol > 0.0)) {
+	if (!IsFinite(spot) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) || !IsFinite(vol) ||
+	    !IsFinite(dividend_yield) || !(spot > 0.0) || !(strike > 0.0) || !(ttm > 0.0) || !(vol > 0.0)) {
 		throw InvalidInputException("BSM requires spot > 0, strike > 0, ttm > 0, and vol > 0");
 	}
 	BSMKernel k;
@@ -660,6 +671,10 @@ static double BSMD2(double spot, double strike, double ttm, double rate, double 
 
 static double BSMPrice(bool call, double spot, double strike, double ttm, double rate, double vol,
                        double dividend_yield) {
+	if (!IsFinite(spot) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) || !IsFinite(vol) ||
+	    !IsFinite(dividend_yield) || !(spot > 0.0) || !(strike > 0.0) || ttm < 0.0 || vol < 0.0) {
+		throw InvalidInputException("BSM requires spot > 0, strike > 0, ttm >= 0, and vol >= 0");
+	}
 	if (ttm == 0.0 || vol == 0.0) {
 		double forward_intrinsic = call ? spot * std::exp(-dividend_yield * ttm) - strike * std::exp(-rate * ttm)
 		                                : strike * std::exp(-rate * ttm) - spot * std::exp(-dividend_yield * ttm);
@@ -693,17 +708,26 @@ static double BSMRho(bool call, double spot, double strike, double ttm, double r
 
 static double BSMImpliedVol(bool call, double price, double spot, double strike, double ttm, double rate,
                             double dividend_yield, double tolerance, int max_iter) {
-	if (!(price >= 0.0) || !(spot > 0.0) || !(strike > 0.0) || !(ttm > 0.0)) {
+	if (!IsFinite(price) || !IsFinite(spot) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) ||
+	    !IsFinite(dividend_yield) || !IsFinite(tolerance) || !(price >= 0.0) || !(spot > 0.0) ||
+	    !(strike > 0.0) || !(ttm > 0.0) || !(tolerance > 0.0) || max_iter <= 0) {
 		throw InvalidInputException("Invalid implied-vol input");
 	}
 	double intrinsic = BSMPrice(call, spot, strike, ttm, rate, 1e-12, dividend_yield);
 	if (price < intrinsic - 1e-10) {
 		throw InvalidInputException("Option price is below no-arbitrage intrinsic value");
 	}
+	double upper_bound = call ? spot * std::exp(-dividend_yield * ttm) : strike * std::exp(-rate * ttm);
+	if (!(price < upper_bound)) {
+		throw InvalidInputException("Option price must be below the no-arbitrage upper bound");
+	}
 	double lo = 1e-8;
 	double hi = 5.0;
 	while (BSMPrice(call, spot, strike, ttm, rate, hi, dividend_yield) < price && hi < 100.0) {
 		hi *= 2.0;
+	}
+	if (BSMPrice(call, spot, strike, ttm, rate, hi, dividend_yield) < price) {
+		throw InvalidInputException("Could not bracket implied volatility");
 	}
 	double guess = 0.5 * (lo + hi);
 	for (int i = 0; i < max_iter; i++) {
@@ -731,7 +755,8 @@ static double BSMImpliedVol(bool call, double price, double spot, double strike,
 }
 
 static double Black76Price(bool call, double forward, double strike, double ttm, double rate, double vol) {
-	if (!(forward > 0.0) || !(strike > 0.0) || !(ttm >= 0.0) || !(vol >= 0.0)) {
+	if (!IsFinite(forward) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) || !IsFinite(vol) ||
+	    !(forward > 0.0) || !(strike > 0.0) || !(ttm >= 0.0) || !(vol >= 0.0)) {
 		throw InvalidInputException("Invalid Black-76 input");
 	}
 	if (ttm == 0.0 || vol == 0.0) {
@@ -746,7 +771,8 @@ static double Black76Price(bool call, double forward, double strike, double ttm,
 }
 
 static double BachelierPrice(bool call, double forward, double strike, double ttm, double rate, double normal_vol) {
-	if (!(ttm >= 0.0) || !(normal_vol >= 0.0)) {
+	if (!IsFinite(forward) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) || !IsFinite(normal_vol) ||
+	    !(ttm >= 0.0) || !(normal_vol >= 0.0)) {
 		throw InvalidInputException("Invalid Bachelier input");
 	}
 	double df = std::exp(-rate * ttm);
@@ -762,14 +788,25 @@ static double BachelierPrice(bool call, double forward, double strike, double tt
 
 static double BinomialPrice(bool call, double spot, double strike, double ttm, double rate, double vol,
                             double dividend_yield, int steps, const string &exercise, const string &tree) {
-	if (steps <= 0 || !(spot > 0.0) || !(strike > 0.0) || !(ttm >= 0.0) || !(vol >= 0.0)) {
+	constexpr int MAX_BINOMIAL_STEPS = 4096;
+	if (steps <= 0 || steps > MAX_BINOMIAL_STEPS || !IsFinite(spot) || !IsFinite(strike) || !IsFinite(ttm) ||
+	    !IsFinite(rate) || !IsFinite(vol) || !IsFinite(dividend_yield) || !(spot > 0.0) || !(strike > 0.0) ||
+	    !(ttm >= 0.0) || !(vol >= 0.0)) {
 		throw InvalidInputException("Invalid binomial option input");
 	}
 	if (ttm == 0.0 || vol == 0.0) {
 		return OptionPayoff(call, spot, strike);
 	}
-	const bool american = ParseExerciseStyle(exercise) == "american";
+	auto normalized_exercise = ParseExerciseStyle(exercise);
+	if (normalized_exercise == "bermudan") {
+		throw InvalidInputException("Binomial pricing does not support Bermudan exercise schedules");
+	}
+	const bool american = normalized_exercise == "american";
 	auto normalized_tree = Normalize(tree);
+	if (normalized_tree != "crr" && normalized_tree != "cox-ross-rubinstein" && normalized_tree != "jr" &&
+	    normalized_tree != "jarrow-rudd") {
+		throw InvalidInputException("Unknown binomial tree '%s'", tree);
+	}
 	double dt = ttm / steps;
 	double u;
 	double d;
@@ -1204,8 +1241,18 @@ static vector<vector<double>> MatrixMul(const vector<vector<double>> &left, cons
 }
 
 static vector<vector<double>> MatrixCholesky(const vector<vector<double>> &matrix, double tolerance = 1e-12) {
-	if (matrix.empty() || matrix.size() != matrix[0].size()) {
+	if (matrix.empty() || matrix.size() != matrix[0].size() || !IsFinite(tolerance) || tolerance < 0.0) {
 		throw InvalidInputException("Cholesky requires a non-empty square matrix");
+	}
+	for (idx_t r = 0; r < matrix.size(); r++) {
+		for (idx_t c = 0; c < matrix.size(); c++) {
+			if (!IsFinite(matrix[r][c])) {
+				throw InvalidInputException("Cholesky requires finite matrix values");
+			}
+			if (c > r && std::fabs(matrix[r][c] - matrix[c][r]) > tolerance) {
+				throw InvalidInputException("Cholesky requires a symmetric matrix");
+			}
+		}
 	}
 	vector<vector<double>> result(matrix.size(), vector<double>(matrix.size(), 0.0));
 	for (idx_t i = 0; i < matrix.size(); i++) {
@@ -1228,7 +1275,7 @@ static vector<vector<double>> MatrixCholesky(const vector<vector<double>> &matri
 }
 
 static bool MatrixIsPSD(const vector<vector<double>> &matrix, double tolerance) {
-	if (matrix.empty() || matrix.size() != matrix[0].size()) {
+	if (matrix.empty() || matrix.size() != matrix[0].size() || !IsFinite(tolerance) || tolerance < 0.0) {
 		return false;
 	}
 	for (idx_t r = 0; r < matrix.size(); r++) {
@@ -1251,6 +1298,13 @@ static vector<vector<double>> NearestPSD(const vector<vector<double>> &matrix) {
 		throw InvalidInputException("Nearest PSD requires a non-empty square matrix");
 	}
 	auto result = matrix;
+	for (auto &row : result) {
+		for (auto value : row) {
+			if (!IsFinite(value)) {
+				throw InvalidInputException("Nearest PSD requires finite matrix values");
+			}
+		}
+	}
 	for (idx_t r = 0; r < result.size(); r++) {
 		for (idx_t c = r + 1; c < result.size(); c++) {
 			double value = 0.5 * (result[r][c] + result[c][r]);
@@ -1265,6 +1319,9 @@ static vector<vector<double>> NearestPSD(const vector<vector<double>> &matrix) {
 			result[i][i] += bump;
 		}
 		bump *= 10.0;
+	}
+	if (!MatrixIsPSD(result, 1e-10)) {
+		throw InvalidInputException("Could not construct a positive semidefinite matrix");
 	}
 	return result;
 }
@@ -1352,9 +1409,22 @@ static double PortfolioVarianceList(const double *weights, const list_entry_t &w
 	return total;
 }
 
+static double PortfolioVolatility(double variance) {
+	if (!IsFinite(variance) || variance < -1e-12) {
+		throw InvalidInputException("Portfolio variance must be non-negative and finite");
+	}
+	return std::sqrt(std::max(0.0, variance));
+}
+
 static vector<double> NormalizeSum(const vector<double> &x) {
-	double sum = std::accumulate(x.begin(), x.end(), 0.0);
-	if (sum == 0.0) {
+	double sum = 0.0;
+	for (auto value : x) {
+		if (!IsFinite(value)) {
+			throw InvalidInputException("Cannot normalize non-finite values");
+		}
+		sum += value;
+	}
+	if (!IsFinite(sum) || sum == 0.0) {
 		throw InvalidInputException("Cannot normalize a zero-sum vector");
 	}
 	vector<double> result = x;

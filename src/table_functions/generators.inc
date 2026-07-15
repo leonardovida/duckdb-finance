@@ -192,7 +192,11 @@ static double ReadDoubleValue(const Value &value) {
 	if (value.IsNull()) {
 		throw BinderException("Finance list inputs must not contain NULL values");
 	}
-	return value.GetValue<double>();
+	auto result = value.GetValue<double>();
+	if (!std::isfinite(result)) {
+		throw BinderException("Finance list inputs must contain finite values");
+	}
+	return result;
 }
 
 static vector<double> ReadDoubleListValue(const Value &value) {
@@ -259,7 +263,11 @@ static unique_ptr<FunctionData> EfficientFrontierBind(ClientContext &, TableFunc
 	}
 	auto weights = EqualWeights(mu.size());
 	auto base_return = DotValues(weights, mu);
-	auto base_vol = std::sqrt(std::max(0.0, PortfolioVarianceValue(weights, cov)));
+	auto base_variance = PortfolioVarianceValue(weights, cov);
+	if (!std::isfinite(base_variance) || base_variance < -1e-12) {
+		throw BinderException("Portfolio variance must be non-negative and finite");
+	}
+	auto base_vol = std::sqrt(std::max(0.0, base_variance));
 	auto minmax = std::minmax_element(mu.begin(), mu.end());
 	vector<FrontierRow> rows;
 	rows.reserve(NumericCast<idx_t>(points));
