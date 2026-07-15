@@ -280,9 +280,10 @@ static void PortfolioScalarFunction(DataChunk &args, ExpressionState &, Vector &
 			double var = PortfolioVarianceList(weights, weight_entry, matrix_rows, matrix_values,
 			                                   matrix_entry, matrix_value_validity);
 			if (name == "variance") {
+				(void)PortfolioVolatility(var);
 				output[row] = var;
 			} else if (name == "vol") {
-				output[row] = std::sqrt(std::max(0.0, var));
+				output[row] = PortfolioVolatility(var);
 			} else {
 				throw InvalidInputException("Unknown portfolio scalar function");
 			}
@@ -340,8 +341,8 @@ static void PortfolioSharpeFunction(DataChunk &args, ExpressionState &, Vector &
 			ValidateListEntryNoNull(mu_validity, mu_entry, "Portfolio inputs do not accept NULL list elements");
 			ValidateListEntryNoNull(matrix_row_validity, matrix_entry, "Portfolio inputs do not accept NULL list elements");
 			auto expected = DotList(weights, weight_entry, mu, mu_entry);
-			auto vol = std::sqrt(std::max(0.0, PortfolioVarianceList(weights, weight_entry, matrix_rows, matrix_values,
-			                                                          matrix_entry, matrix_value_validity)));
+			auto vol = PortfolioVolatility(PortfolioVarianceList(weights, weight_entry, matrix_rows, matrix_values,
+			                                                       matrix_entry, matrix_value_validity));
 			auto risk_free = args.ColumnCount() >= 4 ? input.GetDouble(3, row) : 0.0;
 			output[row] = (expected - risk_free) / vol;
 			if (!std::isfinite(output[row])) {
@@ -593,7 +594,9 @@ static void NormalizeCurrencyFunction(DataChunk &args, ExpressionState &, Vector
 		auto currency = input.GetString(0, row);
 		StringUtil::Trim(currency);
 		currency = StringUtil::Upper(currency);
-		if (currency.size() != 3) {
+		if (currency.size() != 3 || !std::all_of(currency.begin(), currency.end(), [](char c) {
+		    return c >= 'A' && c <= 'Z';
+		})) {
 			throw InvalidInputException("Currency must be a three-letter code");
 		}
 		return currency;

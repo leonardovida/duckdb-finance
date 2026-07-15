@@ -92,6 +92,9 @@ static void RoundToTickFunction(DataChunk &args, ExpressionState &, Vector &resu
 		if (mode == "down" || mode == "floor") {
 			return std::floor(scaled) * tick;
 		}
+		if (mode != "nearest" && mode != "round") {
+			throw InvalidInputException("Unknown tick rounding mode '%s'", mode);
+		}
 		return std::round(scaled) * tick;
 	});
 }

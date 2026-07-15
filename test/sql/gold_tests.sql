@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.8');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.9');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -31,6 +31,11 @@ SELECT
   assert_near('from bps', fin_from_bps(125.0), 0.0125, 1e-12),
   assert_near('clip upper', fin_clip(12.0, 0.0, 10.0), 10.0, 1e-12),
   assert_near('round to tick', fin_round_to_tick(100.037, 0.05), 100.05, 1e-12);
+
+SELECT
+  assert_eq('round to tick rejects unknown mode', fin_round_to_tick(100.037, 0.05, 'typo'), NULL),
+  assert_eq('discount rejects invalid simple base', fin_discount_factor(-1.0, 1.0, 'simple'), NULL),
+  assert_eq('discount rejects invalid periodic base', fin_discount_factor(-2.0, 1.0, 'periodic', 2), NULL);
 
 -- Return transforms.
 SELECT
@@ -351,6 +356,16 @@ SELECT
   assert_near('asset or nothing price', fin_asset_or_nothing_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 63.68306511756191, 1e-10),
   assert_not_null('asian geometric price', fin_asian_geometric_price('call', 100.0, 100.0, 1.0, 0.05, 0.2)),
   assert_near('barrier out knocked out', fin_barrier_price('call', 'up-out', 100.0, 100.0, 100.0, 1.0, 0.05, 0.2), 0.0, 1e-12),
+  assert_near('barrier Haug down-out call with rebate', fin_barrier_price('call', 'down-out', 100.0, 90.0, 95.0, 3.0, 0.5, 0.08, 0.25, 0.04), 9.0246, 1e-4),
+  assert_near('barrier Haug up-in put with rebate', fin_barrier_price('put', 'up-in', 100.0, 100.0, 105.0, 3.0, 0.5, 0.08, 0.25, 0.04), 3.3721, 1e-4),
+  assert_near('barrier in-out parity',
+    fin_barrier_price('call', 'down-in', 100.0, 100.0, 90.0, 1.0, 0.05, 0.2) +
+    fin_barrier_price('call', 'down-out', 100.0, 100.0, 90.0, 1.0, 0.05, 0.2),
+    fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 1e-10),
+  assert_eq('bsm iv rejects impossible price', fin_bsm_implied_vol('call', 200.0, 100.0, 100.0, 1.0, 0.05), NULL),
+  assert_eq('black76 iv rejects impossible price', fin_black76_implied_vol('call', 200.0, 100.0, 100.0, 1.0, 0.05), NULL),
+  assert_eq('black76 greeks reject zero expiry', fin_black76_greeks('call', 100.0, 100.0, 0.0, 0.05, 0.2), NULL),
+  assert_eq('bachelier greeks reject zero volatility', fin_bachelier_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.0), NULL),
   assert_not_null('sabr vol', fin_sabr_vol(100.0, 100.0, 1.0, 0.2, 0.5, -0.2, 0.4)),
   assert_not_null('svi total variance', fin_svi_total_variance(0.0, 0.02, 0.1, -0.3, 0.0, 0.2)),
   assert_not_null('svi vol', fin_svi_vol(0.0, 1.0, 0.02, 0.1, -0.3, 0.0, 0.2)),
@@ -390,12 +405,15 @@ SELECT
   assert_eq('matrix vecmul', fin_matrix_vecmul([[1.0, 2.0], [3.0, 4.0]], [1.0, 1.0]), [3.0, 7.0]),
   assert_eq('matrix mul', fin_matrix_mul([[1.0, 2.0]], [[3.0], [4.0]]), [[11.0]]),
   assert_eq('matrix cholesky', fin_matrix_cholesky([[4.0, 2.0], [2.0, 3.0]]), [[2.0, 0.0], [1.0, 1.4142135623730951]]),
+  assert_eq('matrix cholesky rejects nonsymmetric input', fin_matrix_cholesky([[1.0, 99.0], [0.0, 1.0]]), NULL),
   assert_true('matrix psd', fin_matrix_is_psd([[1.0, 0.2], [0.2, 1.0]])),
   assert_true('nearest psd', fin_matrix_is_psd(fin_nearest_psd([[1.0, 2.0], [2.0, 1.0]]))),
   assert_near('portfolio return', fin_portfolio_return([0.5, 0.5], [0.1, 0.2]), 0.15, 1e-12),
   assert_near('portfolio expected return', fin_portfolio_expected_return([0.5, 0.5], [0.1, 0.2]), 0.15, 1e-12),
   assert_near('portfolio variance', fin_portfolio_variance([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]]), 0.0375, 1e-12),
+  assert_eq('portfolio variance rejects negative result', fin_portfolio_variance([1.0], [[-1.0]]), NULL),
   assert_near('portfolio vol', fin_portfolio_vol([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]]), 0.19364916731037085, 1e-12),
+  assert_eq('portfolio vol rejects negative variance', fin_portfolio_vol([1.0], [[-1.0]]), NULL),
   assert_near('portfolio sharpe', fin_portfolio_sharpe([0.5, 0.5], [0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 0.02), 0.671317, 1e-6);
 
 SELECT
@@ -723,6 +741,12 @@ SELECT
   assert_eq('business days between', fin_business_days_between(DATE '2026-05-04', DATE '2026-05-08', 'weekday'), 4),
   assert_eq('session date', fin_session_date(TIMESTAMP '2026-05-06 10:00:00', 'NYSE'), DATE '2026-05-06'),
   assert_true('regular session', fin_is_regular_session(TIMESTAMP '2026-05-06 10:00:00', 'NYSE'));
+
+SELECT
+  assert_eq('currency rejects non-letters', fin_normalize_currency('12!'), NULL),
+  assert_eq('binomial rejects unsupported exercise', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'bermudan', 'crr'), NULL),
+  assert_eq('binomial rejects unknown tree', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'typo'), NULL),
+  assert_eq('binomial caps excessive work', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 4097), NULL);
 
 -- Window aggregation must combine states exactly, not treat each segment as a
 -- fresh history.

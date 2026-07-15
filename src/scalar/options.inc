@@ -251,6 +251,9 @@ static void ExecuteOptionSpecDouble(DataChunk &args, Vector &result, FUNC func) 
 		}
 		try {
 			output[row] = func(spec);
+			if (!std::isfinite(output[row])) {
+				SetResultNull(result, row, args.size(), constant);
+			}
 		} catch (const std::exception &) {
 			SetResultNull(result, row, args.size(), constant);
 		}
@@ -484,10 +487,23 @@ static void BSMPriceDatesFunction(DataChunk &args, ExpressionState &, Vector &re
 
 static double ImpliedVolBisection(const std::function<double(double)> &price_fn, double target, double tolerance,
                                   int max_iter) {
+	if (!IsFinite(target) || !IsFinite(tolerance) || target < 0.0 || !(tolerance > 0.0) || max_iter <= 0) {
+		throw InvalidInputException("Invalid implied-vol input");
+	}
 	double lo = 1e-10;
 	double hi = 5.0;
+	double low_price = price_fn(lo);
+	if (target < low_price - tolerance) {
+		throw InvalidInputException("Option price is below no-arbitrage intrinsic value");
+	}
+	if (std::fabs(target - low_price) <= tolerance) {
+		return 0.0;
+	}
 	while (price_fn(hi) < target && hi < 100.0) {
 		hi *= 2.0;
+	}
+	if (price_fn(hi) < target) {
+		throw InvalidInputException("Could not bracket implied volatility");
 	}
 	for (int i = 0; i < max_iter; i++) {
 		double mid = 0.5 * (lo + hi);
@@ -518,6 +534,9 @@ static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &re
 			double ttm = input.GetDouble(3, row);
 			double rate = input.GetDouble(4, row);
 			double vol = input.GetDouble(5, row);
+			if (!(ttm > 0.0) || !(vol > 0.0)) {
+				throw InvalidInputException("Black-76 Greeks require ttm > 0 and vol > 0");
+			}
 			double df = std::exp(-rate * ttm);
 			double st = vol * std::sqrt(ttm);
 			double d1 = (std::log(forward / strike) + 0.5 * vol * vol * ttm) / st;
@@ -564,6 +583,10 @@ static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &
 			double ttm = input.GetDouble(3, row);
 			double rate = input.GetDouble(4, row);
 			double normal_vol = input.GetDouble(5, row);
+			if (!(ttm > 0.0) || !(normal_vol > 0.0) || !IsFinite(forward) || !IsFinite(strike) ||
+			    !IsFinite(rate)) {
+				throw InvalidInputException("Bachelier Greeks require finite inputs, ttm > 0, and vol > 0");
+			}
 			double df = std::exp(-rate * ttm);
 			double stddev = normal_vol * std::sqrt(ttm);
 			double d = (forward - strike) / stddev;
@@ -594,28 +617,144 @@ static void BachelierImpliedVolFunction(DataChunk &args, ExpressionState &, Vect
 	});
 }
 
+static double BarrierSafeProduct(double power, double probability) {
+	return probability == 0.0 ? 0.0 : power * probability;
+}
+
+static double BarrierPrice(bool call, const string &kind, double spot, double strike, double barrier, double rebate,
+                           double ttm, double rate, double vol, double dividend_yield) {
+	if (!IsFinite(spot) || !IsFinite(strike) || !IsFinite(barrier) || !IsFinite(rebate) || !IsFinite(ttm) ||
+	    !IsFinite(rate) || !IsFinite(vol) || !IsFinite(dividend_yield) || !(spot > 0.0) || !(strike > 0.0) ||
+	    !(barrier > 0.0) || rebate < 0.0 || ttm < 0.0 || vol < 0.0) {
+		throw InvalidInputException("Invalid barrier option input");
+	}
+	auto barrier_kind = Normalize(kind);
+	barrier_kind = StringUtil::Replace(barrier_kind, "_", "-");
+	if (barrier_kind == "di") {
+		barrier_kind = "down-in";
+	} else if (barrier_kind == "do") {
+		barrier_kind = "down-out";
+	} else if (barrier_kind == "ui") {
+		barrier_kind = "up-in";
+	} else if (barrier_kind == "uo") {
+		barrier_kind = "up-out";
+	}
+	const bool down = barrier_kind == "down-in" || barrier_kind == "down-out";
+	const bool up = barrier_kind == "up-in" || barrier_kind == "up-out";
+	const bool knock_in = barrier_kind == "down-in" || barrier_kind == "up-in";
+	const bool knock_out = barrier_kind == "down-out" || barrier_kind == "up-out";
+	if ((!down && !up) || (!knock_in && !knock_out)) {
+		throw InvalidInputException("Unknown barrier kind '%s'", kind);
+	}
+	const bool touched = (down && spot <= barrier) || (up && spot >= barrier);
+	const double vanilla = BSMPrice(call, spot, strike, ttm, rate, vol, dividend_yield);
+	if (touched) {
+		return knock_in ? vanilla : rebate;
+	}
+	if (ttm == 0.0) {
+		return knock_in ? rebate : vanilla;
+	}
+	if (vol == 0.0) {
+		throw InvalidInputException("Barrier pricing requires positive volatility before expiry");
+	}
+
+	// Reiner-Rubinstein continuously monitored European single-barrier terms.
+	const double phi = call ? 1.0 : -1.0;
+	const double sigma_sqrt_t = vol * std::sqrt(ttm);
+	const double mu = (rate - dividend_yield) / (vol * vol) - 0.5;
+	const double mu_sigma = (1.0 + mu) * sigma_sqrt_t;
+	const double df_r = std::exp(-rate * ttm);
+	const double df_q = std::exp(-dividend_yield * ttm);
+	const double hs = barrier / spot;
+	const double power_mu = std::pow(hs, 2.0 * mu);
+	const double power_mu_plus = power_mu * hs * hs;
+
+	auto a = [&](double option_phi) {
+		double x1 = std::log(spot / strike) / sigma_sqrt_t + mu_sigma;
+		return option_phi * (spot * df_q * NormCDF(option_phi * x1) -
+		                     strike * df_r * NormCDF(option_phi * (x1 - sigma_sqrt_t)));
+	};
+	auto b = [&](double option_phi) {
+		double x2 = std::log(spot / barrier) / sigma_sqrt_t + mu_sigma;
+		return option_phi * (spot * df_q * NormCDF(option_phi * x2) -
+		                     strike * df_r * NormCDF(option_phi * (x2 - sigma_sqrt_t)));
+	};
+	auto c = [&](double direction_eta, double option_phi) {
+		double y1 = std::log(barrier * hs / strike) / sigma_sqrt_t + mu_sigma;
+		double n1 = NormCDF(direction_eta * y1);
+		double n2 = NormCDF(direction_eta * (y1 - sigma_sqrt_t));
+		return option_phi *
+		       (spot * df_q * BarrierSafeProduct(power_mu_plus, n1) -
+		        strike * df_r * BarrierSafeProduct(power_mu, n2));
+	};
+	auto d = [&](double direction_eta, double option_phi) {
+		double y2 = std::log(barrier / spot) / sigma_sqrt_t + mu_sigma;
+		double n1 = NormCDF(direction_eta * y2);
+		double n2 = NormCDF(direction_eta * (y2 - sigma_sqrt_t));
+		return option_phi *
+		       (spot * df_q * BarrierSafeProduct(power_mu_plus, n1) -
+		        strike * df_r * BarrierSafeProduct(power_mu, n2));
+	};
+	auto e = [&](double direction_eta) {
+		if (rebate == 0.0) {
+			return 0.0;
+		}
+		double x2 = std::log(spot / barrier) / sigma_sqrt_t + mu_sigma;
+		double y2 = std::log(barrier / spot) / sigma_sqrt_t + mu_sigma;
+		double n1 = NormCDF(direction_eta * (x2 - sigma_sqrt_t));
+		double n2 = NormCDF(direction_eta * (y2 - sigma_sqrt_t));
+		return rebate * df_r * (n1 - BarrierSafeProduct(power_mu, n2));
+	};
+	auto f = [&](double direction_eta) {
+		if (rebate == 0.0) {
+			return 0.0;
+		}
+		double lambda_sq = mu * mu + 2.0 * rate / (vol * vol);
+		if (lambda_sq < 0.0) {
+			throw InvalidInputException("Barrier rebate formula is undefined for these rate inputs");
+		}
+		double lambda = std::sqrt(lambda_sq);
+		double z = std::log(barrier / spot) / sigma_sqrt_t + lambda * sigma_sqrt_t;
+		double n1 = NormCDF(direction_eta * z);
+		double n2 = NormCDF(direction_eta * (z - 2.0 * lambda * sigma_sqrt_t));
+		return rebate *
+		       (BarrierSafeProduct(std::pow(hs, mu + lambda), n1) +
+		        BarrierSafeProduct(std::pow(hs, mu - lambda), n2));
+	};
+
+	double price;
+	if (call && barrier_kind == "down-in") {
+		price = strike >= barrier ? c(1.0, phi) + e(1.0) : a(phi) - b(phi) + d(1.0, phi) + e(1.0);
+	} else if (call && barrier_kind == "up-in") {
+		price = strike >= barrier ? a(phi) + e(-1.0) : b(phi) - c(-1.0, phi) + d(-1.0, phi) + e(-1.0);
+	} else if (call && barrier_kind == "down-out") {
+		price = strike >= barrier ? a(phi) - c(1.0, phi) + f(1.0) : b(phi) - d(1.0, phi) + f(1.0);
+	} else if (call) {
+		price = strike >= barrier ? f(-1.0) : a(phi) - b(phi) + c(-1.0, phi) - d(-1.0, phi) + f(-1.0);
+	} else if (barrier_kind == "down-in") {
+		price = strike >= barrier ? b(phi) - c(1.0, phi) + d(1.0, phi) + e(1.0) : a(phi) + e(1.0);
+	} else if (barrier_kind == "up-in") {
+		price = strike >= barrier ? a(phi) - b(phi) + d(-1.0, phi) + e(-1.0) : c(-1.0, phi) + e(-1.0);
+	} else if (barrier_kind == "down-out") {
+		price = strike >= barrier ? a(phi) - b(phi) + c(1.0, phi) - d(1.0, phi) + f(1.0) : f(1.0);
+	} else {
+		price = strike >= barrier ? b(phi) - d(-1.0, phi) + f(-1.0) : a(phi) - c(-1.0, phi) + f(-1.0);
+	}
+	if (!IsFinite(price) || price < -1e-10) {
+		throw InvalidInputException("Barrier price is not finite and non-negative");
+	}
+	return std::max(0.0, price);
+}
+
 static void BarrierPriceFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		bool call = IsCallKind(input.GetString(0, row));
-		auto barrier_kind = Normalize(input.GetString(1, row));
-		double spot = input.GetDouble(2, row);
-		double strike = input.GetDouble(3, row);
-		double barrier = input.GetDouble(4, row);
 		idx_t offset = args.ColumnCount() >= 9 ? 1 : 0;
-		double ttm = input.GetDouble(5 + offset, row);
-		double rate = input.GetDouble(6 + offset, row);
-		double vol = input.GetDouble(7 + offset, row);
+		double rebate = offset ? input.GetDouble(5, row) : 0.0;
 		double q = args.ColumnCount() >= 10 ? input.GetDouble(9, row) : 0.0;
-		bool knocked_out = (barrier_kind.find("down") != string::npos && spot <= barrier) ||
-		                    (barrier_kind.find("up") != string::npos && spot >= barrier);
-		double vanilla = BSMPrice(call, spot, strike, ttm, rate, vol, q);
-		if (barrier_kind.find("out") != string::npos) {
-			return knocked_out ? 0.0 : vanilla;
-		}
-		if (barrier_kind.find("in") != string::npos) {
-			return knocked_out ? vanilla : 0.0;
-		}
-		throw InvalidInputException("Unknown barrier kind '%s'", barrier_kind);
+		return BarrierPrice(IsCallKind(input.GetString(0, row)), input.GetString(1, row), input.GetDouble(2, row),
+		                    input.GetDouble(3, row), input.GetDouble(4, row), rebate,
+		                    input.GetDouble(5 + offset, row), input.GetDouble(6 + offset, row),
+		                    input.GetDouble(7 + offset, row), q);
 	});
 }
 

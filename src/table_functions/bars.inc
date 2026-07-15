@@ -28,6 +28,13 @@ static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctio
 		}
 	} else if (kind == "imbalance") {
 		volume = SqlColumn(input.inputs[3]);
+		if (input.inputs.size() >= 5) {
+			auto method = input.inputs[4].IsNull() ? string() : input.inputs[4].GetValue<string>();
+			StringUtil::Trim(method);
+			if (StringUtil::Lower(method) != "signed") {
+				throw BinderException("fin_imbalance_bars currently supports only method 'signed'");
+			}
+		}
 	} else {
 		volume = input.inputs.size() >= 4 ? SqlColumn(input.inputs[3]) : "1.0";
 		if (input.inputs.size() >= 5) {
