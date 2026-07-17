@@ -187,8 +187,13 @@ static unique_ptr<CreateMacroInfo> BuildMacroInfo(const FinanceMacro &macro) {
 
 	auto info = make_uniq<CreateMacroInfo>(CatalogType::MACRO_ENTRY);
 	info->macros.push_back(std::move(function));
-	info->schema = FinanceIdentifierName(DEFAULT_SCHEMA);
-	info->name = FinanceIdentifierName(macro.name);
+#if FINANCE_HAS_DUCKDB_IDENTIFIER
+	info->SetSchema(FinanceIdentifierName(DEFAULT_SCHEMA));
+	info->SetFunctionName(FinanceIdentifierName(macro.name));
+#else
+	info->schema = DEFAULT_SCHEMA;
+	info->name = macro.name;
+#endif
 	info->temporary = true;
 	info->internal = true;
 	return info;

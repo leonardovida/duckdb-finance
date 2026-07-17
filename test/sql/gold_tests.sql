@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.9');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.10');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -165,6 +165,36 @@ SELECT
   assert_eq('cramers v placeholder', fin_cramers_v(asset, asset), NULL),
   assert_eq('theils u placeholder', fin_theils_u(asset, asset), NULL)
 FROM gold_returns;
+
+-- Weighted, robust, and tail statistics must honor every public parameter.
+SELECT
+  assert_near('weighted population variance', fin_weighted_var(x, w, 0), 2.0 / 3.0, 1e-12),
+  assert_near('weighted sample variance', fin_weighted_var(x, w, 1), 1.0, 1e-12)
+FROM (VALUES (1.0, 1.0), (2.0, 1.0), (3.0, 1.0)) AS weighted_values(x, w);
+
+SELECT
+  assert_near('weighted variance large offset', fin_weighted_var(x, w, 0), 2.0 / 3.0, 1e-12),
+  assert_near('weighted stddev large offset', fin_weighted_stddev(x, w, 0), sqrt(2.0 / 3.0), 1e-12)
+FROM (VALUES (1000000000001.0, 1.0), (1000000000002.0, 1.0), (1000000000003.0, 1.0)) AS weighted_offset(x, w);
+
+SELECT assert_near('weighted null pairs', fin_weighted_mean(x, w), 2.0, 1e-12)
+FROM (VALUES (1.0, 1.0), (NULL, 100.0), (3.0, 1.0)) AS weighted_nulls(x, w);
+
+SELECT
+  assert_near('weighted median honors weights', fin_weighted_quantile(x, w, 0.5), 1.0, 1e-12),
+  assert_near('weighted inverted cdf', fin_weighted_quantile(x, w, 0.995, 'inverted_cdf'), 100.0, 1e-12)
+FROM (VALUES (1.0, 100.0), (100.0, 1.0)) AS weighted_tail(x, w);
+
+SELECT
+  assert_near('winsorized mean honors bounds', fin_winsorized_mean(x, 0.0, 0.5), 0.0, 1e-12),
+  assert_near('trimmed mean honors bounds', fin_trimmed_mean(x, 0.0, 0.5), 0.0, 1e-12)
+FROM (VALUES (0.0), (0.0), (100.0)) AS robust_values(x);
+
+SELECT
+  assert_near('historical cvar tail mean', fin_cvar(r, 0.5), 7.5, 1e-12),
+  assert_near('historical expected shortfall', fin_expected_shortfall(r, 0.5), 7.5, 1e-12),
+  assert_near('historical cvar return sign', fin_cvar(r, 0.5, 'historical', false), -7.5, 1e-12)
+FROM (VALUES (-10.0), (-5.0), (0.0), (5.0)) AS tail_returns(r);
 
 SELECT
   assert_near('delta aggregate', fin_delta(close), 3.0, 1e-12),

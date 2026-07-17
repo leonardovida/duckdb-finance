@@ -50,6 +50,8 @@ static void FinanceToUnifiedFormat(Vector &vector, idx_t count, UnifiedVectorFor
 #include "aggregate/drawdown.inc"
 #include "aggregate/outliers.inc"
 #include "aggregate/quantile_spread.inc"
+#include "aggregate/weighted_quantile.inc"
+#include "aggregate/robust_statistics.inc"
 #include "aggregate/iv_range.inc"
 #include "aggregate/helpers.inc"
 
