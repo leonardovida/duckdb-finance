@@ -180,3 +180,51 @@ static AggregateFunction TernaryDoubleVarcharDoubleBigintAggregate(const string 
 	                         AggregateFunction::StateDestroy<STATE, OP>);
 	return NamedAggregateFunction(name, std::move(result));
 }
+
+template <class STATE, class OP>
+static void WeightedQuantileScatterUpdate(Vector inputs[], AggregateInputData &, idx_t input_count, Vector &states,
+                                          idx_t count) {
+	D_ASSERT(input_count == 4);
+	UnifiedVectorFormat value_data;
+	UnifiedVectorFormat weight_data;
+	UnifiedVectorFormat quantile_data;
+	UnifiedVectorFormat method_data;
+	UnifiedVectorFormat state_data;
+	FinanceToUnifiedFormat(inputs[0], count, value_data);
+	FinanceToUnifiedFormat(inputs[1], count, weight_data);
+	FinanceToUnifiedFormat(inputs[2], count, quantile_data);
+	FinanceToUnifiedFormat(inputs[3], count, method_data);
+	FinanceToUnifiedFormat(states, count, state_data);
+
+	auto values = UnifiedVectorFormat::GetData<double>(value_data);
+	auto weights = UnifiedVectorFormat::GetData<double>(weight_data);
+	auto quantiles = UnifiedVectorFormat::GetData<double>(quantile_data);
+	auto methods = UnifiedVectorFormat::GetData<string_t>(method_data);
+	auto states_ptr = UnifiedVectorFormat::GetData<STATE *>(state_data);
+	for (idx_t i = 0; i < count; i++) {
+		auto value_idx = value_data.sel->get_index(i);
+		auto weight_idx = weight_data.sel->get_index(i);
+		auto quantile_idx = quantile_data.sel->get_index(i);
+		auto method_idx = method_data.sel->get_index(i);
+		if (!value_data.validity.RowIsValid(value_idx) || !weight_data.validity.RowIsValid(weight_idx) ||
+		    !quantile_data.validity.RowIsValid(quantile_idx) || !method_data.validity.RowIsValid(method_idx)) {
+			continue;
+		}
+		auto state_idx = state_data.sel->get_index(i);
+		OP::UpdateValue(*states_ptr[state_idx], values[value_idx], weights[weight_idx], quantiles[quantile_idx],
+		                methods[method_idx].GetString());
+	}
+}
+
+template <class STATE, class OP>
+static AggregateFunction WeightedQuantileAggregate(const string &name) {
+	AggregateFunction result(
+	    {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	     FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	    FinanceLogicalType(LogicalTypeId::DOUBLE), AggregateFunction::StateSize<STATE>,
+	    AggregateFunction::StateInitialize<STATE, OP, AggregateDestructorType::LEGACY>,
+	    WeightedQuantileScatterUpdate<STATE, OP>, AggregateFunction::StateCombine<STATE, OP>,
+	    AggregateFunction::StateFinalize<STATE, double, OP>, FunctionNullHandling::DEFAULT_NULL_HANDLING, nullptr,
+	    nullptr, AggregateFunction::StateDestroy<STATE, OP>);
+	return NamedAggregateFunction(name, std::move(result));
+}

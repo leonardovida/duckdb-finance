@@ -117,6 +117,51 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	quantile_spread_set.AddFunction(quantile_spread_buckets);
 	loader.RegisterFunction(std::move(quantile_spread_set));
 
+	auto weighted_quantile =
+	    WeightedQuantileAggregate<WeightedQuantileState, WeightedQuantileOperation>("finance_weighted_quantile_internal");
+	weighted_quantile.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	loader.RegisterFunction(weighted_quantile);
+
+	auto winsorized_mean =
+	    TernaryDoubleAggregate<RobustStatisticsState, double, double, double, RobustMeanOperation<true>>(
+	        "finance_winsorized_mean_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
+	        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
+	winsorized_mean.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	winsorized_mean.SetStateDestructorCallback(
+	    AggregateFunction::StateDestroy<RobustStatisticsState, RobustMeanOperation<true>>);
+	loader.RegisterFunction(winsorized_mean);
+
+	auto trimmed_mean = TernaryDoubleAggregate<RobustStatisticsState, double, double, double, RobustMeanOperation<false>>(
+	    "finance_trimmed_mean_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
+	    FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
+	trimmed_mean.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	trimmed_mean.SetStateDestructorCallback(
+	    AggregateFunction::StateDestroy<RobustStatisticsState, RobustMeanOperation<false>>);
+	loader.RegisterFunction(trimmed_mean);
+
+	auto historical_cvar =
+	    TernaryDoubleAggregate<RobustStatisticsState, double, double, double, HistoricalCvarOperation>(
+	        "finance_cvar_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
+	        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
+	historical_cvar.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	historical_cvar.SetStateDestructorCallback(
+	    AggregateFunction::StateDestroy<RobustStatisticsState, HistoricalCvarOperation>);
+	loader.RegisterFunction(historical_cvar);
+
+	auto weighted_mean =
+	    TernaryDoubleAggregate<WeightedMomentsState, double, double, double, WeightedMomentsOperation<true>>(
+	        "finance_weighted_mean_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
+	        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
+	weighted_mean.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	loader.RegisterFunction(weighted_mean);
+
+	auto weighted_variance =
+	    TernaryDoubleAggregate<WeightedMomentsState, double, double, double, WeightedMomentsOperation<false>>(
+	        "finance_weighted_var_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
+	        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
+	weighted_variance.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	loader.RegisterFunction(weighted_variance);
+
 	auto iv_rank = UnaryDoubleAggregate<IVRangeState, IVRangeOperation<false>>("fin_iv_rank");
 	iv_rank.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
 	loader.RegisterFunction(iv_rank);

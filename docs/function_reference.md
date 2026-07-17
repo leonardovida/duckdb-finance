@@ -66,7 +66,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_conditional_drawdown_at_risk` | `fin_conditional_drawdown_at_risk(r, confidence := 0.95)` | Compute conditional drawdown at risk for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_cramers_v` | `fin_cramers_v(x, y, bias_corrected := true)` | Compute cramers v for SQL finance workflows. | NULL placeholder. |
 | `fin_cum_return` | `fin_cum_return(r, method := 'simple')` | Compute cum return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_cvar` | `fin_cvar(r, confidence := 0.95, method := 'historical', loss_positive := true)` | Compute cvar for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_cvar` | `fin_cvar(r, confidence := 0.95, method := 'historical', loss_positive := true)` | Compute the mean of returns in the historical VaR tail. | Positive loss by default; set `loss_positive := false` for the signed tail return. |
 | `fin_data_quality_report` | `fin_data_quality_report(x)` | Compute data quality report for SQL finance workflows. | STRUCT. |
 | `fin_down_capture` | `fin_down_capture(r, benchmark_r)` | Compute down capture for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_downside_deviation` | `fin_downside_deviation(r, mar := 0.0, annualization := 252)` | Compute downside deviation for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -130,7 +130,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_total_return` | `fin_total_return(r, method := 'simple')` | Compute total return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_tracking_error` | `fin_tracking_error(r, benchmark_r, annualization := 252)` | Compute tracking error for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_treynor_ratio` | `fin_treynor_ratio(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Compute treynor ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_trimmed_mean` | `fin_trimmed_mean(x, lower_q := 0.05, upper_q := 0.95)` | Compute trimmed mean for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_trimmed_mean` | `fin_trimmed_mean(x, lower_q := 0.05, upper_q := 0.95)` | Average observations between the inclusive lower and upper quantiles. | Quantile bounds must satisfy `0 <= lower_q <= upper_q <= 1`. |
 | `fin_ttest_1samp` | `fin_ttest_1samp(x, mu)` | Compute ttest 1samp for SQL finance workflows. | STRUCT. |
 | `fin_ttest_2samp` | `fin_ttest_2samp(x, y, equal_var := true)` | Compute ttest 2samp for SQL finance workflows. | STRUCT. |
 | `fin_ulcer_index` | `fin_ulcer_index(r)` | Compute ulcer index for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -138,13 +138,13 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_upside_deviation` | `fin_upside_deviation(r, threshold := 0.0, annualization := 252)` | Compute upside deviation for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_validate_return` | `fin_validate_return(0.05)` | Validate input shape or finance-specific invariants and return a boolean or validation struct. | BOOLEAN. |
 | `fin_volatility` | `fin_volatility(r, annualization := 252, ddof := 1)` | Compute volatility for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_weighted_mean` | `fin_weighted_mean(x, w)` | Compute weighted mean for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_weighted_quantile` | `fin_weighted_quantile(x, w, q, method := 'linear')` | Compute weighted quantile for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_weighted_stddev` | `fin_weighted_stddev(x, w, ddof := 0)` | Compute weighted stddev for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_weighted_var` | `fin_weighted_var(x, w, ddof := 0)` | Compute weighted var for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_weighted_mean` | `fin_weighted_mean(x, w)` | Compute the mean over value/weight pairs. | Null pairs are skipped; weights must be finite and non-negative. |
+| `fin_weighted_quantile` | `fin_weighted_quantile(x, w, q, method := 'linear')` | Compute a quantile from the weighted empirical distribution. | Supports `linear`, `lower`, `higher`, `nearest`, `midpoint`, and `inverted_cdf`; zero weights are ignored. |
+| `fin_weighted_stddev` | `fin_weighted_stddev(x, w, ddof := 0)` | Compute weighted standard deviation with a weight-sum degrees-of-freedom correction. | Null pairs are skipped; weights must be finite and non-negative. |
+| `fin_weighted_var` | `fin_weighted_var(x, w, ddof := 0)` | Compute weighted variance with denominator `sum(w) - ddof`. | Returns `NULL` when the denominator is not positive. |
 | `fin_welch_ttest` | `fin_welch_ttest(x, y)` | Compute welch ttest for SQL finance workflows. | STRUCT. |
 | `fin_win_rate` | `fin_win_rate(r)` | Compute win rate for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_winsorized_mean` | `fin_winsorized_mean(x, lower_q := 0.05, upper_q := 0.95)` | Compute winsorized mean for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_winsorized_mean` | `fin_winsorized_mean(x, lower_q := 0.05, upper_q := 0.95)` | Clamp observations to the lower and upper quantiles, then average them. | Quantile bounds must satisfy `0 <= lower_q <= upper_q <= 1`. |
 | `fin_zscore_last` | `fin_zscore_last(x)` | Compute zscore last for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_ztest_mean` | `fin_ztest_mean(x, mu, sigma := NULL)` | Compute ztest mean for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 
@@ -432,7 +432,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_exp_decay_count` | `fin_exp_decay_count(ts, halflife)` | Compute exp decay count for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_exp_decay_max` | `fin_exp_decay_max(x, ts, halflife)` | Compute exp decay max for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_exp_decay_sum` | `fin_exp_decay_sum(x, ts, halflife)` | Compute exp decay sum for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_expected_shortfall` | `fin_expected_shortfall(r, confidence := 0.95, method := 'historical')` | Compute expected shortfall for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_expected_shortfall` | `fin_expected_shortfall(r, confidence := 0.95, method := 'historical')` | Compute the positive mean loss beyond historical VaR. | Alias of historical `fin_cvar(..., loss_positive := true)`. |
 | `fin_first_non_null` | `fin_first_non_null(x)` | Compute first non null for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_garman_klass_vol` | `fin_garman_klass_vol(open, high, low, close, annualization := 252)` | Compute garman klass vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_half_life_mean_reversion` | `fin_half_life_mean_reversion(x)` | Compute half life mean reversion for SQL finance workflows. | NULL placeholder. |
