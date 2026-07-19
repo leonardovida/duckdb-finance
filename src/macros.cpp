@@ -56,34 +56,35 @@ static string UnquoteIdentifier(const string &value) {
 	return trimmed;
 }
 
+struct SqlQuoteState {
+	char quote = '\0';
+
+	bool Consume(const string &sql, idx_t &position) {
+		auto current = sql[position];
+		if (quote != '\0') {
+			if (current == quote) {
+				if (position + 1 < sql.size() && sql[position + 1] == quote) {
+					position++;
+				} else {
+					quote = '\0';
+				}
+			}
+			return true;
+		}
+		if (current == '\'' || current == '"') {
+			quote = current;
+			return true;
+		}
+		return false;
+	}
+};
+
 static idx_t FindParameterListEnd(const string &definition) {
 	idx_t depth = 0;
-	bool in_string = false;
-	bool in_identifier = false;
+	SqlQuoteState quote_state;
 	for (idx_t i = 0; i < definition.size(); i++) {
 		auto current = definition[i];
-		if (in_string) {
-			if (current == '\'' && i + 1 < definition.size() && definition[i + 1] == '\'') {
-				i++;
-			} else if (current == '\'') {
-				in_string = false;
-			}
-			continue;
-		}
-		if (in_identifier) {
-			if (current == '"' && i + 1 < definition.size() && definition[i + 1] == '"') {
-				i++;
-			} else if (current == '"') {
-				in_identifier = false;
-			}
-			continue;
-		}
-		if (current == '\'') {
-			in_string = true;
-			continue;
-		}
-		if (current == '"') {
-			in_identifier = true;
+		if (quote_state.Consume(definition, i)) {
 			continue;
 		}
 		if (current == '(') {
@@ -104,33 +105,11 @@ static idx_t FindParameterListEnd(const string &definition) {
 static vector<string> SplitTopLevel(const string &input, char delimiter) {
 	vector<string> result;
 	idx_t depth = 0;
-	bool in_string = false;
-	bool in_identifier = false;
+	SqlQuoteState quote_state;
 	idx_t start = 0;
 	for (idx_t i = 0; i < input.size(); i++) {
 		auto current = input[i];
-		if (in_string) {
-			if (current == '\'' && i + 1 < input.size() && input[i + 1] == '\'') {
-				i++;
-			} else if (current == '\'') {
-				in_string = false;
-			}
-			continue;
-		}
-		if (in_identifier) {
-			if (current == '"' && i + 1 < input.size() && input[i + 1] == '"') {
-				i++;
-			} else if (current == '"') {
-				in_identifier = false;
-			}
-			continue;
-		}
-		if (current == '\'') {
-			in_string = true;
-			continue;
-		}
-		if (current == '"') {
-			in_identifier = true;
+		if (quote_state.Consume(input, i)) {
 			continue;
 		}
 		if (current == '(' || current == '[' || current == '{') {
