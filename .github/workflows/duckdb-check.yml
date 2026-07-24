@@ -71,6 +71,7 @@ jobs:
         env:
           DUCKDB_ROOT: ${{ github.workspace }}/duckdb
           CMAKE_BUILD_PARALLEL_LEVEL: 2
+          DISABLE_PARQUET: 1
           DUCKDB_EXTRA_CMAKE_VARIABLES: -DBUILD_EXTENSIONS= -DBUILD_UNITTESTS=0 -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         run: make "${{ inputs.target }}"
 
