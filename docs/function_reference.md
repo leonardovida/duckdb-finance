@@ -353,7 +353,7 @@ This document is generated from the extension registration surface in `src/` and
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
 | `fin_bar_spec` | `fin_bar_spec(kind, threshold, price_col := 'price', volume_col := 'volume')` | Compute bar spec for SQL finance workflows. | STRUCT. |
-| `fin_business_days_between` | `fin_business_days_between(DATE '2026-05-04', DATE '2026-05-08', 'weekday')` | Compute business days between for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_business_days_between` | `fin_business_days_between(DATE '2026-05-04', DATE '2026-05-08', 'weekday')` | Count weekdays in the half-open date range. | BIGINT; reversed ranges return the negated forward count. |
 | `fin_calendar_spec` | `fin_calendar_spec(calendar := 'weekday', timezone := NULL, regular_open := NULL, regular_close := NULL)` | Compute calendar spec for SQL finance workflows. | STRUCT. |
 | `fin_is_business_day` | `fin_is_business_day(DATE '2026-05-06', 'weekday')` | Predicate helper for finance input validation. | BOOLEAN. |
 | `fin_is_finite` | `fin_is_finite(1.0)` | Predicate helper for finance input validation. | BOOLEAN. |
