@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.10');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.11');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -769,6 +769,10 @@ SELECT
   assert_eq('next business day', fin_next_business_day(DATE '2026-05-08', 'weekday', 1), DATE '2026-05-11'),
   assert_eq('previous business day', fin_prev_business_day(DATE '2026-05-11', 'weekday', 1), DATE '2026-05-08'),
   assert_eq('business days between', fin_business_days_between(DATE '2026-05-04', DATE '2026-05-08', 'weekday'), 4),
+  assert_eq('business days weekend to monday', fin_business_days_between(DATE '2026-05-09', DATE '2026-05-11', 'weekday'), 0),
+  assert_eq('business days reverse weekend boundary', fin_business_days_between(DATE '2026-05-11', DATE '2026-05-09', 'weekday'), 0),
+  assert_eq('business days reverse sign', fin_business_days_between(DATE '2026-05-09', DATE '2026-05-12', 'weekday'), -fin_business_days_between(DATE '2026-05-12', DATE '2026-05-09', 'weekday')),
+  assert_eq('business days large range', fin_business_days_between(DATE '0001-01-01', DATE '9999-12-31', 'weekday'), 2608614),
   assert_eq('session date', fin_session_date(TIMESTAMP '2026-05-06 10:00:00', 'NYSE'), DATE '2026-05-06'),
   assert_true('regular session', fin_is_regular_session(TIMESTAMP '2026-05-06 10:00:00', 'NYSE'));
 

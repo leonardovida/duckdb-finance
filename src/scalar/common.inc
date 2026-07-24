@@ -894,6 +894,21 @@ static bool IsBusinessDay(date_t date) {
 	return iso_day >= 1 && iso_day <= 5;
 }
 
+static int64_t BusinessDaysForward(date_t start, date_t end) {
+	auto days = int64_t(end.days) - int64_t(start.days);
+	auto full_weeks = days / 7;
+	auto remaining_days = days % 7;
+	int64_t business_days = full_weeks * 5;
+	auto start_day = Date::ExtractISODayOfTheWeek(start);
+	for (int64_t offset = 0; offset < remaining_days; offset++) {
+		auto iso_day = (start_day - 1 + offset) % 7 + 1;
+		if (iso_day <= 5) {
+			business_days++;
+		}
+	}
+	return business_days;
+}
+
 struct PreparedInputs {
 	explicit PreparedInputs(DataChunk &args) : formats(args.ColumnCount()) {
 		for (idx_t col = 0; col < args.ColumnCount(); col++) {

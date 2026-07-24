@@ -6,7 +6,7 @@ on:
       duckdb_ref:
         description: "DuckDB ref to build against"
         required: true
-        default: "v1.5.4"
+        default: "v1.5.5"
       target:
         description: "Make target to run"
         required: true

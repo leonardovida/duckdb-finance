@@ -646,14 +646,7 @@ static void BusinessDaysBetweenFunction(DataChunk &args, ExpressionState &, Vect
 		}
 		auto start = input.GetDate(0, row);
 		auto end = input.GetDate(1, row);
-		int direction = end.days >= start.days ? 1 : -1;
-		int64_t count = 0;
-		for (auto d = start; d.days != end.days; d = d + direction) {
-			if (IsBusinessDay(d)) {
-				count += direction;
-			}
-		}
-		out[row] = count;
+		out[row] = end.days >= start.days ? BusinessDaysForward(start, end) : -BusinessDaysForward(end, start);
 	}
 }
 

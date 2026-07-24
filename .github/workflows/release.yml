@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DUCKDB_VERSION: v1.5.4
-  EXTENSION_CI_TOOLS_VERSION: v1.5.4
+  DUCKDB_VERSION: v1.5.5
+  EXTENSION_CI_TOOLS_VERSION: v1.5.5
   EXTENSION_NAME: finance
 
 jobs:
@@ -51,11 +51,11 @@ jobs:
   build-extension:
     name: Build release artifacts
     needs: validate
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.4
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.5
     secrets: inherit
     with:
-      duckdb_version: v1.5.4
-      ci_tools_version: v1.5.4
+      duckdb_version: v1.5.5
+      ci_tools_version: v1.5.5
       extension_name: finance
       reduced_ci_mode: enabled
       # Keep one Windows artifact and drop the redundant MinGW leg, which is
