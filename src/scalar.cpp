@@ -6,20 +6,11 @@
 #include "duckdb/common/types/time.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/value.hpp"
-#if __has_include("duckdb/common/identifier.hpp")
-#define FINANCE_HAS_DUCKDB_IDENTIFIER 1
-#include "duckdb/common/identifier.hpp"
-#else
-#define FINANCE_HAS_DUCKDB_IDENTIFIER 0
-#endif
-#if __has_include("duckdb/common/vector/flat_vector.hpp")
-#define FINANCE_OLD_DUCKDB_VECTOR_API 0
-#include "duckdb/common/vector/flat_vector.hpp"
+#if !FINANCE_OLD_DUCKDB_VECTOR_API
 #include "duckdb/common/vector/list_vector.hpp"
 #include "duckdb/common/vector/string_vector.hpp"
 #include "duckdb/common/vector/struct_vector.hpp"
 #else
-#define FINANCE_OLD_DUCKDB_VECTOR_API 1
 #define CanHaveNull() AllValid() == false
 #define GetChildMutable GetEntry
 #define GetDataMutable GetData
@@ -40,29 +31,11 @@
 namespace duckdb {
 namespace {
 
-#if FINANCE_HAS_DUCKDB_IDENTIFIER
-static Identifier FinanceFunctionName(const string &name) {
-	return Identifier(name);
-}
-#else
-static string FinanceFunctionName(const string &name) {
-	return name;
-}
-#endif
-
 #if FINANCE_OLD_DUCKDB_VECTOR_API
 #define FINANCE_STRUCT_CHILD(child) (*(child))
 #else
 #define FINANCE_STRUCT_CHILD(child) (child)
 #endif
-
-static void FinanceToUnifiedFormat(Vector &vector, idx_t count, UnifiedVectorFormat &format) {
-#if FINANCE_OLD_DUCKDB_VECTOR_API
-	vector.ToUnifiedFormat(count, format);
-#else
-	vector.ToUnifiedFormat(format);
-#endif
-}
 
 static void FinanceFlatten(Vector &vector, idx_t count) {
 #if FINANCE_OLD_DUCKDB_VECTOR_API
