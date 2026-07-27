@@ -1,12 +1,6 @@
 #include "finance/finance_extension.hpp"
 
 #include "duckdb/common/exception.hpp"
-#if __has_include("duckdb/common/identifier.hpp")
-#define FINANCE_HAS_DUCKDB_IDENTIFIER 1
-#include "duckdb/common/identifier.hpp"
-#else
-#define FINANCE_HAS_DUCKDB_IDENTIFIER 0
-#endif
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/types/value_map.hpp"
@@ -30,16 +24,6 @@
 
 namespace duckdb {
 namespace {
-
-#if FINANCE_HAS_DUCKDB_IDENTIFIER
-static Identifier FinanceFunctionName(const string &name) {
-	return Identifier(name);
-}
-#else
-static string FinanceFunctionName(const string &name) {
-	return name;
-}
-#endif
 
 #include "table_functions/common.inc"
 #include "table_functions/option_chain.inc"

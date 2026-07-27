@@ -1,12 +1,6 @@
 #include "finance/finance_extension.hpp"
 
 #include "duckdb/common/exception.hpp"
-#if __has_include("duckdb/common/identifier.hpp")
-#define FINANCE_HAS_DUCKDB_IDENTIFIER 1
-#include "duckdb/common/identifier.hpp"
-#else
-#define FINANCE_HAS_DUCKDB_IDENTIFIER 0
-#endif
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar_macro_function.hpp"
 #include "duckdb/parser/parser.hpp"
@@ -25,16 +19,6 @@ struct FinanceMacro {
 	const char *name;
 	const char *definition;
 };
-
-#if FINANCE_HAS_DUCKDB_IDENTIFIER
-static Identifier FinanceIdentifierName(const string &name) {
-	return Identifier(name);
-}
-#else
-static string FinanceIdentifierName(const string &name) {
-	return name;
-}
-#endif
 
 static string TrimCopy(const string &value) {
 	idx_t start = 0;
@@ -151,7 +135,7 @@ static unique_ptr<CreateMacroInfo> BuildMacroInfo(const FinanceMacro &macro) {
 		}
 		auto default_pos = parameter.find(":=");
 		if (default_pos == string::npos) {
-			function->parameters.push_back(make_uniq<ColumnRefExpression>(FinanceIdentifierName(UnquoteIdentifier(parameter))));
+			function->parameters.push_back(make_uniq<ColumnRefExpression>(FinanceFunctionName(UnquoteIdentifier(parameter))));
 			continue;
 		}
 		auto name = UnquoteIdentifier(parameter.substr(0, default_pos));
@@ -160,15 +144,15 @@ static unique_ptr<CreateMacroInfo> BuildMacroInfo(const FinanceMacro &macro) {
 		if (default_expression.size() != 1) {
 			throw InternalException("Expected a single default expression for finance macro %s", macro.name);
 		}
-		function->parameters.push_back(make_uniq<ColumnRefExpression>(FinanceIdentifierName(name)));
-		function->default_parameters.insert(FinanceIdentifierName(name), std::move(default_expression[0]));
+		function->parameters.push_back(make_uniq<ColumnRefExpression>(FinanceFunctionName(name)));
+		function->default_parameters.insert(FinanceFunctionName(name), std::move(default_expression[0]));
 	}
 
 	auto info = make_uniq<CreateMacroInfo>(CatalogType::MACRO_ENTRY);
 	info->macros.push_back(std::move(function));
 #if FINANCE_HAS_DUCKDB_IDENTIFIER
-	info->SetSchema(FinanceIdentifierName(DEFAULT_SCHEMA));
-	info->SetFunctionName(FinanceIdentifierName(macro.name));
+	info->SetSchema(FinanceFunctionName(DEFAULT_SCHEMA));
+	info->SetFunctionName(FinanceFunctionName(macro.name));
 #else
 	info->schema = DEFAULT_SCHEMA;
 	info->name = macro.name;
