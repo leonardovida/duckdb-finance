@@ -35,6 +35,14 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	        "fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE))));
 	loader.RegisterFunction(std::move(ewma_vol_set));
 
+	AggregateFunctionSet bipower_variation_set(FinanceFunctionName("fin_bipower_variation"));
+	bipower_variation_set.AddFunction(OrderDependent(
+	    UnaryDoubleAggregate<BipowerVariationState, BipowerVariationOperation>("fin_bipower_variation")));
+	bipower_variation_set.AddFunction(OrderDependent(
+	    BinaryDoubleAggregate<BipowerVariationState, double, BipowerVariationWithAnnualizationOperation>(
+	        "fin_bipower_variation", FinanceLogicalType(LogicalTypeId::DOUBLE))));
+	loader.RegisterFunction(std::move(bipower_variation_set));
+
 	AggregateFunctionSet rsi_set(FinanceFunctionName("fin_rsi"));
 	rsi_set.AddFunction(OrderDependent(WithStateDestructor<RSIState, RSIOperation>(
 	    UnaryDoubleAggregate<RSIState, RSIOperation>("fin_rsi"))));

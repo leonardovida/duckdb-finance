@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.11');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.12');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -121,7 +121,7 @@ FROM gold_returns;
 SELECT
   assert_near('realized variance', fin_realized_variance(r, 252), 0.08316, 1e-12),
   assert_near('realized vol', fin_realized_vol(r, 252), 0.28837475617674996, 1e-12),
-  assert_near('bipower variation', fin_bipower_variation(r, 252), 0.10133521263419237, 1e-12),
+  assert_near('bipower variation', fin_bipower_variation(r, 252 ORDER BY seq), 0.13112222337920398, 1e-12),
   assert_near('realized quarticity', fin_realized_quarticity(r, 252), 0.0004331249999999999, 1e-12),
   assert_not_null('vol of vol', fin_vol_of_vol(abs(r), 252)),
   assert_near('realized beta', fin_realized_beta(r, benchmark_r), 1.6964285714285716, 1e-12),
@@ -129,6 +129,21 @@ SELECT
   assert_not_null('realized cov', fin_realized_cov(r, benchmark_r)),
   assert_not_null('garch forecast', fin_garch11_forecast(r, 0.000001, 0.05, 0.90))
 FROM gold_returns;
+
+WITH alternating_zero_returns(seq, r) AS (
+  VALUES (1, 0.01), (2, 0.0), (3, -0.02), (4, 0.0)
+)
+SELECT
+  assert_near('bipower variation uses adjacent returns',
+    fin_bipower_variation(r ORDER BY seq), 0.0, 1e-12)
+FROM alternating_zero_returns;
+
+SELECT assert_eq(
+  'bipower variation needs adjacent returns',
+  fin_bipower_variation(r),
+  NULL
+)
+FROM (VALUES (0.01)) AS single_return(r);
 
 SELECT
   assert_not_null('parkinson vol', fin_parkinson_vol(high, low, 252.0)),

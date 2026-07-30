@@ -418,7 +418,7 @@ This document is generated from the extension registration surface in `src/` and
 |---|---|---|---|
 | `fin_adf` | `fin_adf(x, max_lag := 1, regression := 'c')` | Compute adf for SQL finance workflows. | NULL placeholder. |
 | `fin_autocorr` | `fin_autocorr(x, lag := 1)` | Compute autocorr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_bipower_variation` | `fin_bipower_variation(log_r, annualization := 252)` | Compute bipower variation for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_bipower_variation` | `fin_bipower_variation(log_r ORDER BY observation_key)` | Estimate annualized bipower variation from adjacent absolute log-return products. | Order-dependent aggregate; defaults to 252 periods and returns `NULL` with fewer than two non-`NULL` returns. |
 | `fin_cagr` | `fin_cagr(r, annualization := 252)` | Compute cagr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_changes` | `fin_changes(x)` | Compute changes for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_crosscorr` | `fin_crosscorr(x, y, lag := 0)` | Compute crosscorr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
