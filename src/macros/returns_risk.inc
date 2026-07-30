@@ -75,7 +75,6 @@
 
     {"fin_realized_variance", "(log_r, annualization := 252) AS fsum(log_r::DOUBLE * log_r::DOUBLE) * annualization::DOUBLE / count(log_r)"},
     {"fin_realized_vol", "(log_r, annualization := 252) AS sqrt(fin_realized_variance(log_r, annualization))"},
-    {"fin_bipower_variation", "(log_r, annualization := 252) AS (3.141592653589793 / 2.0) * avg(abs(log_r::DOUBLE)) * avg(abs(log_r::DOUBLE)) * annualization::DOUBLE"},
     {"fin_realized_quarticity", "(log_r, annualization := 252) AS count(log_r) * fsum(pow(log_r::DOUBLE, 4)) * annualization::DOUBLE / 3.0"},
     {"fin_ewma_variance", "(r, lambda := 0.94, annualization := 252) AS avg(r::DOUBLE * r::DOUBLE) * annualization::DOUBLE"},
     {"fin_ewma_vol", "(r, lambda := 0.94, annualization := 252) AS sqrt(fin_ewma_variance(r, lambda, annualization))"},

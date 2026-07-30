@@ -16,6 +16,7 @@ namespace {
 #include "aggregate/update_helpers.inc"
 #include "aggregate/sortino.inc"
 #include "aggregate/ewma.inc"
+#include "aggregate/bipower_variation.inc"
 #include "aggregate/rsi.inc"
 #include "aggregate/drawdown.inc"
 #include "aggregate/outliers.inc"
