@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.12');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.13');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -71,6 +71,17 @@ SELECT
   assert_near('tracking error', fin_tracking_error(r, benchmark_r), 0.13535287215275485, 1e-12),
   assert_near('quantile spread', fin_quantile_spread(factor, forward_return, 2), 0.009, 1e-12)
 FROM gold_returns;
+
+WITH quantile_spread_inputs(seq, factor, forward_return) AS (
+  SELECT i, i::DOUBLE, i::DOUBLE
+  FROM generate_series(1, 10) AS t(i)
+)
+SELECT
+  assert_near('quantile spread fixed buckets ascending',
+    fin_quantile_spread(factor, forward_return, 5 ORDER BY seq), 8.0, 1e-12),
+  assert_near('quantile spread fixed buckets descending',
+    fin_quantile_spread(factor, forward_return, 5 ORDER BY seq DESC), 8.0, 1e-12)
+FROM quantile_spread_inputs;
 
 SELECT
   assert_near('constant scalar with aggregate', constant_simple_return, 0.05, 1e-12),
