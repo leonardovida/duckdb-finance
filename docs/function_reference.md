@@ -446,7 +446,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_parametric_var` | `fin_parametric_var(mean, vol, confidence := 0.95, horizon := 1.0, distribution := 'normal')` | Compute parametric var for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_parkinson_vol` | `fin_parkinson_vol(high, low, annualization := 252)` | Compute parkinson vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_pct_change` | `fin_pct_change(x)` | Compute pct change for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_quantile_spread` | `fin_quantile_spread(factor, forward_return, buckets := 5)` | Compute quantile spread for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_quantile_spread` | `fin_quantile_spread(factor, forward_return, buckets := 5)` | Compute the mean forward-return spread between the top and bottom factor buckets. | `buckets` must be greater than one and constant within each group. |
 | `fin_rank_ic` | `fin_rank_ic(factor, forward_return)` | Compute rank ic for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_rate` | `fin_rate(x, ts, unit := 'second')` | Compute rate for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_resets` | `fin_resets(x)` | Compute resets for SQL finance workflows. | Aggregate or scalar SQL macro result. |

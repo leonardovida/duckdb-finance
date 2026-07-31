@@ -1,6 +1,7 @@
 struct QuantileSpreadState {
 	vector<std::pair<double, double>> *values;
 	int32_t buckets;
+	bool buckets_set;
 };
 
 struct QuantileSpreadOperation {
@@ -8,6 +9,7 @@ struct QuantileSpreadOperation {
 	static void Initialize(STATE &state) {
 		state.values = new vector<std::pair<double, double>>();
 		state.buckets = 5;
+		state.buckets_set = false;
 	}
 
 	template <class STATE>
@@ -19,7 +21,11 @@ struct QuantileSpreadOperation {
 		if (bucket_count <= 1) {
 			throw InvalidInputException("Quantile spread buckets must be greater than 1");
 		}
+		if (state.buckets_set && state.buckets != bucket_count) {
+			throw InvalidInputException("Quantile spread buckets must be constant within a group");
+		}
 		state.buckets = bucket_count;
+		state.buckets_set = true;
 		state.values->push_back({factor, forward_return});
 	}
 
@@ -31,10 +37,14 @@ struct QuantileSpreadOperation {
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		if (!source.values || source.values->empty()) {
+		if (!source.buckets_set) {
 			return;
 		}
+		if (target.buckets_set && target.buckets != source.buckets) {
+			throw InvalidInputException("Quantile spread buckets must be constant within a group");
+		}
 		target.buckets = source.buckets;
+		target.buckets_set = true;
 		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
 	}
 

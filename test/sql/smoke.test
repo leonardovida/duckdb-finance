@@ -7,3 +7,11 @@ query I
 SELECT starts_with(fin_version(), 'finance')
 ----
 true
+
+statement error
+SELECT fin_quantile_spread(factor, forward_return, buckets)
+FROM (
+    VALUES
+        (1.0, 1.0, 2),
+        (2.0, 2.0, 5)
+) AS t(factor, forward_return, buckets)
