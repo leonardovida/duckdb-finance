@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.13');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.14');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -72,6 +72,15 @@ SELECT
   assert_near('quantile spread', fin_quantile_spread(factor, forward_return, 2), 0.009, 1e-12)
 FROM gold_returns;
 
+WITH parameterized_returns(seq, r) AS (
+  VALUES (1, 0.10), (2, -0.05), (3, 0.02)
+)
+SELECT
+  assert_near('sortino constant annualization ascending order',
+    fin_sortino(r, 0.0, 365.0 ORDER BY seq),
+    fin_sortino(r, 0.0, 365.0 ORDER BY seq DESC), 1e-12)
+FROM parameterized_returns;
+
 WITH quantile_spread_inputs(seq, factor, forward_return) AS (
   SELECT i, i::DOUBLE, i::DOUBLE
   FROM generate_series(1, 10) AS t(i)
@@ -128,6 +137,16 @@ SELECT
   assert_not_null('parametric var', fin_parametric_var(0.0, 0.2, 0.95)),
   assert_not_null('parametric cvar', fin_parametric_cvar(0.0, 0.2, 0.95))
 FROM gold_returns;
+
+WITH outlier_inputs(seq, x) AS (
+  VALUES (1, 0.0), (2, 0.0), (3, 0.0), (4, 10.0)
+)
+SELECT
+  assert_eq('outlier constant threshold ascending order',
+    fin_outlier_count(x, 'zscore', 1.0 ORDER BY seq), 1::BIGINT),
+  assert_eq('outlier constant threshold descending order',
+    fin_outlier_count(x, 'zscore', 1.0 ORDER BY seq DESC), 1::BIGINT)
+FROM outlier_inputs;
 
 SELECT
   assert_near('realized variance', fin_realized_variance(r, 252), 0.08316, 1e-12),

@@ -99,7 +99,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_missing_count` | `fin_missing_count(x)` | Compute missing count for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_mutual_information` | `fin_mutual_information(x, y, bins := 10)` | Compute mutual information for SQL finance workflows. | NULL placeholder. |
 | `fin_omega_ratio` | `fin_omega_ratio(r, required_return := 0.0, annualization := 252)` | Compute omega ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_outlier_count` | `fin_outlier_count(x, method := 'zscore', threshold := 3.0)` | Compute outlier count for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_outlier_count` | `fin_outlier_count(x, method := 'zscore', threshold := 3.0)` | Compute outlier count for SQL finance workflows. | Aggregate result; method and threshold must be constant within each group. |
 | `fin_parametric_cvar` | `fin_parametric_cvar(mean, vol, confidence := 0.95, horizon := 1.0, distribution := 'normal')` | Compute parametric cvar for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_parse_return_method` | `fin_parse_return_method('log')` | Normalize and validate a finance convention string. | VARCHAR. |
 | `fin_payoff_ratio` | `fin_payoff_ratio(r)` | Compute payoff ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -117,7 +117,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_semivariance` | `fin_semivariance(r, threshold := 0.0)` | Compute semivariance for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_sharpe` | `fin_sharpe(r, risk_free := 0.0, annualization := 252)` | Compute sharpe for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_simple_return` | `fin_simple_return(price, prev_price)` | Compute simple return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_sortino` | `fin_sortino(r, mar := 0.0, annualization := 252)` | Compute sortino for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_sortino` | `fin_sortino(r, mar := 0.0, annualization := 252)` | Compute sortino for SQL finance workflows. | Aggregate result; annualization must be constant within each group. |
 | `fin_stability` | `fin_stability(r)` | Compute stability for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_stable_corr` | `fin_stable_corr(y, x)` | Compute stable corr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_stable_cov` | `fin_stable_cov(y, x)` | Compute stable cov for SQL finance workflows. | Aggregate or scalar SQL macro result. |

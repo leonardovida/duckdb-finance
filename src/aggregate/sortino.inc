@@ -30,6 +30,8 @@ struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 		}
 		if (target.count == 0) {
 			target.annualization = source.annualization;
+		} else if (target.annualization != source.annualization) {
+			throw InvalidInputException("Sortino annualization must be constant within a group");
 		}
 		target.count += source.count;
 		target.sum_excess += source.sum_excess;
@@ -77,6 +79,9 @@ struct SortinoWithMARAnnualizationOperation : public SortinoOperation {
 	static void UpdateValue(STATE &state, double value, double mar, double annualization) {
 		if (annualization <= 0.0 || !std::isfinite(annualization)) {
 			throw InvalidInputException("Sortino annualization must be positive and finite");
+		}
+		if (state.count > 0 && state.annualization != annualization) {
+			throw InvalidInputException("Sortino annualization must be constant within a group");
 		}
 		state.annualization = annualization;
 		SortinoOperation::UpdateValue(state, value - mar / annualization);

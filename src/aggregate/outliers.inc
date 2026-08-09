@@ -22,6 +22,9 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 		if (!source.values || source.values->empty()) {
 			return;
 		}
+		if (target.values && !target.values->empty() && target.threshold != source.threshold) {
+			throw InvalidInputException("Outlier threshold must be constant within a group");
+		}
 		target.threshold = source.threshold;
 		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
 	}
@@ -74,6 +77,9 @@ struct OutlierCountWithThresholdOperation : public OutlierCountOperation {
 	static void UpdateValue(STATE &state, double value, double threshold) {
 		if (threshold <= 0.0 || !std::isfinite(threshold)) {
 			throw InvalidInputException("Outlier threshold must be positive and finite");
+		}
+		if (state.values && !state.values->empty() && state.threshold != threshold) {
+			throw InvalidInputException("Outlier threshold must be constant within a group");
 		}
 		state.threshold = threshold;
 		OutlierCountOperation::UpdateValue(state, value);
