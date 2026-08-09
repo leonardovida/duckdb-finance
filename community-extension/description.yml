@@ -1,7 +1,7 @@
 extension:
   name: finance
   description: SQL-native quant finance functions for DuckDB
-  version: 0.2.13
+  version: 0.2.14
   language: C++
   build: cmake
   license: MIT
