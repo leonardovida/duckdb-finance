@@ -73,33 +73,6 @@ static void TernaryScatterUpdate(Vector inputs[], AggregateInputData &, idx_t in
 }
 
 template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
-static void TernarySimpleUpdate(Vector inputs[], AggregateInputData &, idx_t input_count, data_ptr_t state,
-                                idx_t count) {
-	D_ASSERT(input_count == 3);
-	UnifiedVectorFormat adata;
-	UnifiedVectorFormat bdata;
-	UnifiedVectorFormat cdata;
-	FinanceToUnifiedFormat(inputs[0], count, adata);
-	FinanceToUnifiedFormat(inputs[1], count, bdata);
-	FinanceToUnifiedFormat(inputs[2], count, cdata);
-
-	auto a_values = UnifiedVectorFormat::GetData<A_TYPE>(adata);
-	auto b_values = UnifiedVectorFormat::GetData<B_TYPE>(bdata);
-	auto c_values = UnifiedVectorFormat::GetData<C_TYPE>(cdata);
-	auto state_value = reinterpret_cast<STATE *>(state);
-	for (idx_t i = 0; i < count; i++) {
-		auto aidx = adata.sel->get_index(i);
-		auto bidx = bdata.sel->get_index(i);
-		auto cidx = cdata.sel->get_index(i);
-		if (!adata.validity.RowIsValid(aidx) || !bdata.validity.RowIsValid(bidx) || !cdata.validity.RowIsValid(cidx)) {
-			continue;
-		}
-		OP::UpdateValue(*state_value, static_cast<double>(a_values[aidx]), static_cast<double>(b_values[bidx]),
-		                static_cast<double>(c_values[cidx]));
-	}
-}
-
-template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
 static AggregateFunction TernaryDoubleAggregate(const string &name, const LogicalType &a_type,
                                                 const LogicalType &b_type, const LogicalType &c_type) {
 	AggregateFunction result({a_type, b_type, c_type}, FinanceLogicalType(LogicalTypeId::DOUBLE), AggregateFunction::StateSize<STATE>,
@@ -138,33 +111,6 @@ static void TernaryDoubleVarcharDoubleScatterUpdate(Vector inputs[], AggregateIn
 		}
 		auto sidx = sdata.sel->get_index(i);
 		OP::UpdateValue(*state_values[sidx], x_values[xidx], method_values[midx].GetString(), threshold_values[tidx]);
-	}
-}
-
-template <class STATE, class OP>
-static void TernaryDoubleVarcharDoubleSimpleUpdate(Vector inputs[], AggregateInputData &, idx_t input_count,
-                                                   data_ptr_t state, idx_t count) {
-	D_ASSERT(input_count == 3);
-	UnifiedVectorFormat xdata;
-	UnifiedVectorFormat method_data;
-	UnifiedVectorFormat threshold_data;
-	FinanceToUnifiedFormat(inputs[0], count, xdata);
-	FinanceToUnifiedFormat(inputs[1], count, method_data);
-	FinanceToUnifiedFormat(inputs[2], count, threshold_data);
-
-	auto x_values = UnifiedVectorFormat::GetData<double>(xdata);
-	auto method_values = UnifiedVectorFormat::GetData<string_t>(method_data);
-	auto threshold_values = UnifiedVectorFormat::GetData<double>(threshold_data);
-	auto state_value = reinterpret_cast<STATE *>(state);
-	for (idx_t i = 0; i < count; i++) {
-		auto xidx = xdata.sel->get_index(i);
-		auto midx = method_data.sel->get_index(i);
-		auto tidx = threshold_data.sel->get_index(i);
-		if (!xdata.validity.RowIsValid(xidx) || !method_data.validity.RowIsValid(midx) ||
-		    !threshold_data.validity.RowIsValid(tidx)) {
-			continue;
-		}
-		OP::UpdateValue(*state_value, x_values[xidx], method_values[midx].GetString(), threshold_values[tidx]);
 	}
 }
 
