@@ -1024,11 +1024,11 @@ static void SetResultNull(Vector &result, idx_t row, idx_t count, bool constant)
 	}
 }
 
-template <class FUNC>
-static void ExecuteDouble(DataChunk &args, Vector &result, FUNC func) {
+template <class RESULT_TYPE, class FUNC, class ASSIGN>
+static void ExecuteValue(DataChunk &args, Vector &result, FUNC func, ASSIGN assign) {
 	auto constant = AllInputsConstant(args);
 	SetResultVectorType(result, constant);
-	auto output = GetResultData<double>(result, constant);
+	auto output = GetResultData<RESULT_TYPE>(result, constant);
 	PreparedInputs inputs(args);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
@@ -1037,8 +1037,7 @@ static void ExecuteDouble(DataChunk &args, Vector &result, FUNC func) {
 			continue;
 		}
 		try {
-			output[row] = func(inputs, row);
-			if (!std::isfinite(output[row])) {
+			if (!assign(result, output[row], func(inputs, row))) {
 				SetResultNull(result, row, args.size(), constant);
 			}
 		} catch (const std::exception &) {
@@ -1048,43 +1047,27 @@ static void ExecuteDouble(DataChunk &args, Vector &result, FUNC func) {
 }
 
 template <class FUNC>
+static void ExecuteDouble(DataChunk &args, Vector &result, FUNC func) {
+	ExecuteValue<double>(args, result, func, [](Vector &, double &target, double value) {
+		target = value;
+		return std::isfinite(target);
+	});
+}
+
+template <class FUNC>
 static void ExecuteBool(DataChunk &args, Vector &result, FUNC func) {
-	auto constant = AllInputsConstant(args);
-	SetResultVectorType(result, constant);
-	auto output = GetResultData<bool>(result, constant);
-	PreparedInputs inputs(args);
-	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
-	for (idx_t row = 0; row < row_count; row++) {
-		if (inputs.HasNull(row)) {
-			SetResultNull(result, row, args.size(), constant);
-			continue;
-		}
-		try {
-			output[row] = func(inputs, row);
-		} catch (const std::exception &) {
-			SetResultNull(result, row, args.size(), constant);
-		}
-	}
+	ExecuteValue<bool>(args, result, func, [](Vector &, bool &target, bool value) {
+		target = value;
+		return true;
+	});
 }
 
 template <class FUNC>
 static void ExecuteString(DataChunk &args, Vector &result, FUNC func) {
-	auto constant = AllInputsConstant(args);
-	SetResultVectorType(result, constant);
-	auto output = GetResultData<string_t>(result, constant);
-	PreparedInputs inputs(args);
-	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
-	for (idx_t row = 0; row < row_count; row++) {
-		if (inputs.HasNull(row)) {
-			SetResultNull(result, row, args.size(), constant);
-			continue;
-		}
-		try {
-			output[row] = StringVector::AddString(result, func(inputs, row));
-		} catch (const std::exception &) {
-			SetResultNull(result, row, args.size(), constant);
-		}
-	}
+	ExecuteValue<string_t>(args, result, func, [](Vector &result, string_t &target, const string &value) {
+		target = StringVector::AddString(result, value);
+		return true;
+	});
 }
 
 static vector<double> ReadDoubleList(Vector &list_vec, const list_entry_t &entry) {
