@@ -161,8 +161,10 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 			if (name == "npv") {
 				output[row] = CashflowNPV(input.GetDouble(0, row), cashflow_values, cashflow_entry);
 			} else if (name == "irr") {
-				output[row] = SolveRateBisection(
-				    [&](double rate) { return CashflowNPV(rate, cashflow_values, cashflow_entry); });
+				ValidateIRRCashflows(cashflow_values, cashflow_entry);
+				double guess = args.ColumnCount() >= 2 ? input.GetDouble(1, row) : 0.1;
+				output[row] = SolveRate(
+				    [&](double rate) { return CashflowNPV(rate, cashflow_values, cashflow_entry); }, guess);
 			} else if (name == "mirr") {
 				double finance_rate = input.GetDouble(1, row);
 				double reinvest_rate = input.GetDouble(2, row);
@@ -190,12 +192,15 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 				}
 				output[row] = std::pow(-fv_positive / pv_negative, 1.0 / double(n)) - 1.0;
 			} else {
+				ValidateIRRCashflows(cashflow_values, cashflow_entry);
 				auto date_idx = input.formats[1].sel->get_index(row);
 				auto date_entry = date_entries[date_idx];
 				ValidateListEntryNoNull(*date_validity, date_entry,
 				                        "Finance date-list functions do not accept NULL list elements");
-				output[row] = SolveRateBisection(
-				    [&](double rate) { return CashflowXNPV(rate, cashflow_values, cashflow_entry, date_values, date_entry); });
+				double guess = args.ColumnCount() >= 3 ? input.GetDouble(2, row) : 0.1;
+				output[row] = SolveRate(
+				    [&](double rate) { return CashflowXNPV(rate, cashflow_values, cashflow_entry, date_values, date_entry); },
+				    guess);
 			}
 			if (!std::isfinite(output[row])) {
 				SetResultNull(result, row, args.size(), constant);

@@ -1480,34 +1480,126 @@ static double CashflowXNPV(double rate, const double *cashflows, const list_entr
 	return result;
 }
 
-static double SolveRateBisection(const std::function<double(double)> &fn) {
-	double lo = -0.999999;
-	double hi = 10.0;
-	double flo = fn(lo);
-	double fhi = fn(hi);
-	for (int expand = 0; flo * fhi > 0.0 && expand < 10; expand++) {
-		hi *= 2.0;
-		fhi = fn(hi);
+static void ValidateIRRCashflows(const double *cashflows, const list_entry_t &entry) {
+	bool has_positive = false;
+	bool has_negative = false;
+	for (idx_t i = 0; i < entry.length; i++) {
+		double value = cashflows[entry.offset + i];
+		if (!std::isfinite(value)) {
+			throw InvalidInputException("IRR cashflows must be finite");
+		}
+		has_positive = has_positive || value > 0.0;
+		has_negative = has_negative || value < 0.0;
 	}
-	if (flo * fhi > 0.0) {
-		throw InvalidInputException("Could not bracket rate root");
+	if (!has_positive || !has_negative) {
+		throw InvalidInputException("IRR requires positive and negative cashflows");
 	}
-	for (int i = 0; i < 200; i++) {
+}
+
+static bool RateRootBracketed(double left, double right) {
+	return left == 0.0 || right == 0.0 || std::signbit(left) != std::signbit(right);
+}
+
+static double SolveBracketedRate(const std::function<double(double)> &fn, double lo, double hi, double flo,
+	                             double fhi) {
+	if (flo == 0.0) {
+		return lo;
+	}
+	if (fhi == 0.0) {
+		return hi;
+	}
+	for (idx_t i = 0; i < 200; i++) {
 		double mid = 0.5 * (lo + hi);
 		double fmid = fn(mid);
-		if (std::fabs(fmid) < 1e-10) {
+		if (!std::isfinite(fmid)) {
+			throw InvalidInputException("Rate root is not finite");
+		}
+		if (std::fabs(fmid) < 1e-10 || hi - lo < 1e-12 * std::max(1.0, std::fabs(mid))) {
 			return mid;
 		}
-		if (flo * fmid <= 0.0) {
+		if (RateRootBracketed(flo, fmid)) {
 			hi = mid;
-			fhi = fmid;
-			(void)fhi;
 		} else {
 			lo = mid;
 			flo = fmid;
 		}
 	}
 	return 0.5 * (lo + hi);
+}
+
+static double SolveRate(const std::function<double(double)> &fn, double guess) {
+	constexpr double MIN_RATE = -1.0 + 1e-12;
+	constexpr double MAX_RATE = 1e12;
+	if (!std::isfinite(guess) || guess <= MIN_RATE || guess > MAX_RATE) {
+		throw InvalidInputException("Rate guess must be finite and greater than -1");
+	}
+
+	// IRR and XIRR may have multiple valid roots. Start at the caller's guess so
+	// the selected root follows the documented overload contract.
+	double rate = guess;
+	for (idx_t i = 0; i < 100; i++) {
+		double value = fn(rate);
+		if (!std::isfinite(value)) {
+			break;
+		}
+		if (std::fabs(value) < 1e-10) {
+			return rate;
+		}
+		double step = 1e-6 * std::max(1.0, std::fabs(rate));
+		double lower = std::max(MIN_RATE, rate - step);
+		double upper = std::min(MAX_RATE, rate + step);
+		double lower_value = fn(lower);
+		double upper_value = fn(upper);
+		double derivative = (upper_value - lower_value) / (upper - lower);
+		if (!std::isfinite(derivative) || std::fabs(derivative) < 1e-14) {
+			break;
+		}
+		double next = rate - value / derivative;
+		if (!std::isfinite(next) || next <= MIN_RATE || next > MAX_RATE) {
+			break;
+		}
+		rate = next;
+	}
+
+	// Fall back to a safeguarded bracket search around the guess. Searching in
+	// log1p(rate) space covers rates close to -1 and large positive rates without
+	// allowing an overflow-prone global bracket to hide an even number of roots.
+	double center_value = fn(guess);
+	double center = std::log1p(guess);
+	double left_rate = guess;
+	double right_rate = guess;
+	double left_value = center_value;
+	double right_value = center_value;
+	constexpr double SEARCH_STEP = 0.05;
+	constexpr idx_t DENSE_SEARCH_STEPS = 80;
+	for (idx_t i = 1; i <= 100; i++) {
+		double offset = SEARCH_STEP * static_cast<double>(i);
+		if (i > DENSE_SEARCH_STEPS) {
+			offset = SEARCH_STEP * static_cast<double>(DENSE_SEARCH_STEPS) *
+			         std::pow(1.5, static_cast<double>(i - DENSE_SEARCH_STEPS));
+		}
+		double next_left = std::max(MIN_RATE, std::expm1(center - offset));
+		double next_left_value = fn(next_left);
+		if (std::isfinite(next_left_value) && std::isfinite(left_value) &&
+		    RateRootBracketed(next_left_value, left_value)) {
+			return SolveBracketedRate(fn, next_left, left_rate, next_left_value, left_value);
+		}
+		left_rate = next_left;
+		left_value = next_left_value;
+
+		double next_right = std::min(MAX_RATE, std::expm1(center + offset));
+		double next_right_value = fn(next_right);
+		if (std::isfinite(right_value) && std::isfinite(next_right_value) &&
+		    RateRootBracketed(right_value, next_right_value)) {
+			return SolveBracketedRate(fn, right_rate, next_right, right_value, next_right_value);
+		}
+		right_rate = next_right;
+		right_value = next_right_value;
+		if (left_rate == MIN_RATE && right_rate == MAX_RATE) {
+			break;
+		}
+	}
+	throw InvalidInputException("Could not find rate root near guess");
 }
 
 static double DotList(const double *x, const list_entry_t &x_entry, const double *y, const list_entry_t &y_entry) {

@@ -165,14 +165,14 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_fra_rate` | `fin_fra_rate(0.04, 0.05, 1.0, 2.0)` | Compute fra rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_future_value` | `fin_future_value(100.0, 0.05, 1.0, 'continuous')` | Compute future value for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_interpolate_curve` | `fin_interpolate_curve([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Compute interpolate curve for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_irr` | `fin_irr([-100.0, 60.0, 60.0])` | Compute irr for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_irr` | `fin_irr([-100.0, 60.0, 60.0], 0.1)` | Compute IRR for periodic cash flows. | Uses a 10% default guess; a supplied guess selects among multiple valid roots. |
 | `fin_mirr` | `fin_mirr([-100.0, 60.0, 60.0], 0.1, 0.05)` | Compute mirr for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_npv` | `fin_npv([-100.0, 60.0, 60.0], [0.0, 1.0, 2.0], 0.1, 'periodic')` | Compute npv for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_present_value` | `fin_present_value(105.12710963760242, 0.05, 1.0, 'continuous')` | Compute present value for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_rate_from_discount` | `fin_rate_from_discount(0.951229424500714, 1.0, 'continuous')` | Compute rate from discount for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_swap_rate` | `fin_swap_rate([1.0, 2.0], [0.95, 0.90])` | Compute swap rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_validate_curve_spec` | `fin_validate_curve_spec(spec)` | Validate input shape or finance-specific invariants and return a boolean or validation struct. | STRUCT. |
-| `fin_xirr` | `fin_xirr([-100.0, 110.0], [DATE '2026-01-01', DATE '2027-01-01'])` | Compute xirr for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_xirr` | `fin_xirr([-100.0, 110.0], [DATE '2026-01-01', DATE '2027-01-01'], 0.1)` | Compute IRR for dated cash flows. | Uses a 10% default guess; a supplied guess selects among multiple valid roots. |
 | `fin_yearfrac` | `fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', 'ACT/365F')` | Compute yearfrac for SQL finance workflows. | DOUBLE; reversed `ACT/ACT` dates return the negative forward fraction. |
 
 ### Options And Volatility Models

@@ -1,3 +1,5 @@
+.bail on
+
 INSTALL finance FROM community;
 LOAD finance;
 
