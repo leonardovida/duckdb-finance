@@ -28,18 +28,27 @@ static AggregateFunction BinaryDoubleAggregate(const string &name, const Logical
 	return NamedAggregateFunction(name, std::move(result));
 }
 
-template <class STATE, class OP>
-static AggregateFunction UnaryBigintAggregate(const string &name) {
-	auto result = AggregateFunction::UnaryAggregate<STATE, double, int64_t, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
-	return NamedAggregateFunction(name, std::move(result));
-}
-
 template <class STATE, class B_TYPE, class RESULT_TYPE, class OP>
 static AggregateFunction BinaryAggregate(const string &name, const LogicalType &b_type, const LogicalType &return_type) {
 	auto result =
 	    AggregateFunction::BinaryAggregate<STATE, double, B_TYPE, RESULT_TYPE, OP>(FinanceLogicalType(LogicalTypeId::DOUBLE), b_type,
 	                                                                              return_type);
 	return NamedAggregateFunction(name, std::move(result));
+}
+
+template <class RESULT_TYPE, class OP>
+static void RegisterDrawdownAggregate(ExtensionLoader &loader, const string &name,
+                                      const LogicalType &return_type) {
+	using InitialNavOperation = DrawdownWithInitialNavOperation<OP>;
+	AggregateFunctionSet function_set(FinanceFunctionName(name));
+	auto unary = AggregateFunction::UnaryAggregate<DrawdownState, double, RESULT_TYPE, OP>(
+	    FinanceLogicalType(LogicalTypeId::DOUBLE), return_type);
+	function_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, OP>(
+	    NamedAggregateFunction(name, std::move(unary)))));
+	function_set.AddFunction(OrderDependent(WithStateDestructor<DrawdownState, InitialNavOperation>(
+	    BinaryAggregate<DrawdownState, double, RESULT_TYPE, InitialNavOperation>(
+	        name, FinanceLogicalType(LogicalTypeId::DOUBLE), return_type))));
+	loader.RegisterFunction(std::move(function_set));
 }
 
 template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
