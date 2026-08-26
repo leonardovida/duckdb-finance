@@ -786,6 +786,26 @@ static double BachelierPrice(bool call, double forward, double strike, double tt
 	return df * undiscounted;
 }
 
+static double DeterministicBinomialPrice(bool call, double spot, double strike, double ttm, double rate,
+                                         double dividend_yield, int steps, bool american) {
+	if (!american) {
+		double terminal_spot = spot * std::exp((rate - dividend_yield) * ttm);
+		return std::exp(-rate * ttm) * OptionPayoff(call, terminal_spot, strike);
+	}
+	double dt = ttm / steps;
+	double spot_growth = std::exp((rate - dividend_yield) * dt);
+	double discount_step = std::exp(-rate * dt);
+	double path_spot = spot;
+	double discount = 1.0;
+	double best = OptionPayoff(call, path_spot, strike);
+	for (int step = 1; step <= steps; step++) {
+		path_spot *= spot_growth;
+		discount *= discount_step;
+		best = std::max(best, discount * OptionPayoff(call, path_spot, strike));
+	}
+	return best;
+}
+
 static double BinomialPrice(bool call, double spot, double strike, double ttm, double rate, double vol,
                             double dividend_yield, int steps, const string &exercise, const string &tree) {
 	constexpr int MAX_BINOMIAL_STEPS = 4096;
@@ -793,9 +813,6 @@ static double BinomialPrice(bool call, double spot, double strike, double ttm, d
 	    !IsFinite(rate) || !IsFinite(vol) || !IsFinite(dividend_yield) || !(spot > 0.0) || !(strike > 0.0) ||
 	    !(ttm >= 0.0) || !(vol >= 0.0)) {
 		throw InvalidInputException("Invalid binomial option input");
-	}
-	if (ttm == 0.0 || vol == 0.0) {
-		return OptionPayoff(call, spot, strike);
 	}
 	auto normalized_exercise = ParseExerciseStyle(exercise);
 	if (normalized_exercise == "bermudan") {
@@ -806,6 +823,12 @@ static double BinomialPrice(bool call, double spot, double strike, double ttm, d
 	if (normalized_tree != "crr" && normalized_tree != "cox-ross-rubinstein" && normalized_tree != "jr" &&
 	    normalized_tree != "jarrow-rudd") {
 		throw InvalidInputException("Unknown binomial tree '%s'", tree);
+	}
+	if (ttm == 0.0) {
+		return OptionPayoff(call, spot, strike);
+	}
+	if (vol == 0.0) {
+		return DeterministicBinomialPrice(call, spot, strike, ttm, rate, dividend_yield, steps, american);
 	}
 	double dt = ttm / steps;
 	double u;
