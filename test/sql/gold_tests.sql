@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.15');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.16');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -438,6 +438,17 @@ SELECT
   assert_not_null('black76 greeks', (fin_black76_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.2)).delta),
   assert_not_null('bachelier greeks', (fin_bachelier_greeks('call', 100.0, 100.0, 1.0, 0.05, 5.0)).delta),
   assert_not_null('binomial price', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'crr')),
+  assert_near('binomial zero vol european call discounts deterministic payoff',
+    fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'european', 'crr'),
+    exp(-0.05) * greatest(100.0 * exp(0.05) - 90.0, 0.0), 1e-12),
+  assert_near('binomial zero vol european put includes dividend yield',
+    fin_binomial_price('put', 100.0, 110.0, 2.0, 0.03, 0.0, 0.02, 20, 'european', 'jr'),
+    exp(-0.03 * 2.0) * greatest(110.0 - 100.0 * exp((0.03 - 0.02) * 2.0), 0.0), 1e-12),
+  assert_near('binomial zero vol american call reaches deterministic maturity value',
+    fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'american', 'crr'),
+    exp(-0.05) * greatest(100.0 * exp(0.05) - 90.0, 0.0), 1e-12),
+  assert_near('binomial zero vol american put can exercise immediately',
+    fin_binomial_price('put', 90.0, 100.0, 1.0, 0.05, 0.0, 0.0, 20, 'american', 'crr'), 10.0, 1e-12),
   assert_near('digital price', fin_digital_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 0.5323248154537634, 1e-10),
   assert_near('asset or nothing price', fin_asset_or_nothing_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 63.68306511756191, 1e-10),
   assert_not_null('asian geometric price', fin_asian_geometric_price('call', 100.0, 100.0, 1.0, 0.05, 0.2)),
@@ -835,7 +846,9 @@ SELECT
 SELECT
   assert_eq('currency rejects non-letters', fin_normalize_currency('12!'), NULL),
   assert_eq('binomial rejects unsupported exercise', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'bermudan', 'crr'), NULL),
+  assert_eq('binomial zero vol rejects unsupported exercise', fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'bermudan', 'crr'), NULL),
   assert_eq('binomial rejects unknown tree', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'typo'), NULL),
+  assert_eq('binomial zero vol rejects unknown tree', fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'european', 'typo'), NULL),
   assert_eq('binomial caps excessive work', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 4097), NULL);
 
 -- Window aggregation must combine states exactly, not treat each segment as a
