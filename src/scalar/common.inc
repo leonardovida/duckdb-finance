@@ -895,14 +895,21 @@ static double SABRVol(double forward, double strike, double ttm, double alpha, d
 	double log_fk = std::log(forward / strike);
 	double fk_beta = std::pow(fk, 0.5 * one_minus_beta);
 	double z = (nu / alpha) * fk_beta * log_fk;
-	double xz = std::log((std::sqrt(1.0 - 2.0 * rho * z + z * z) + z - rho) / (1.0 - rho));
+	double z_over_xz;
+	if (std::fabs(z) < 1e-4) {
+		// Taylor-expand the removable z/x(z) singularity to avoid cancellation near zero.
+		z_over_xz = 1.0 - 0.5 * rho * z + (2.0 - 3.0 * rho * rho) * z * z / 12.0;
+	} else {
+		double xz = std::log((std::sqrt(1.0 - 2.0 * rho * z + z * z) + z - rho) / (1.0 - rho));
+		z_over_xz = z / xz;
+	}
 	double denom = fk_beta * (1.0 + one_minus_beta * one_minus_beta * log_fk * log_fk / 24.0 +
 	                          std::pow(one_minus_beta, 4) * std::pow(log_fk, 4) / 1920.0);
 	double correction = ((one_minus_beta * one_minus_beta * alpha * alpha) / (24.0 * fk_beta * fk_beta) +
 	                     (rho * beta * nu * alpha) / (4.0 * fk_beta) +
 	                     (2.0 - 3.0 * rho * rho) * nu * nu / 24.0) *
 	                    ttm;
-	return (alpha / denom) * (z / xz) * (1.0 + correction);
+	return (alpha / denom) * z_over_xz * (1.0 + correction);
 }
 
 static double SviTotalVariance(double k, double a, double b, double rho, double m, double sigma) {

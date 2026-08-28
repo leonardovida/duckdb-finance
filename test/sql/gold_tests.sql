@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.16');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.17');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -464,6 +464,12 @@ SELECT
   assert_eq('black76 greeks reject zero expiry', fin_black76_greeks('call', 100.0, 100.0, 0.0, 0.05, 0.2), NULL),
   assert_eq('bachelier greeks reject zero volatility', fin_bachelier_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.0), NULL),
   assert_not_null('sabr vol', fin_sabr_vol(100.0, 100.0, 1.0, 0.2, 0.5, -0.2, 0.4)),
+  assert_near('sabr zero vol-of-vol limit',
+    fin_sabr_vol(100.0, 90.0, 1.25, 0.2, 0.5, -0.2, 0.0),
+    0.020531540432521474, 1e-14),
+  assert_near('sabr near-zero vol-of-vol continuity',
+    fin_sabr_vol(100.0, 90.0, 1.25, 0.2, 0.5, -0.2, 1e-12),
+    fin_sabr_vol(100.0, 90.0, 1.25, 0.2, 0.5, -0.2, 0.0), 1e-12),
   assert_not_null('svi total variance', fin_svi_total_variance(0.0, 0.02, 0.1, -0.3, 0.0, 0.2)),
   assert_not_null('svi vol', fin_svi_vol(0.0, 1.0, 0.02, 0.1, -0.3, 0.0, 0.2)),
   assert_near('black76 iv roundtrip', fin_black76_implied_vol('call', fin_black76_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 100.0, 100.0, 1.0, 0.05, 0.3, 1e-8), 0.2, 1e-8),
