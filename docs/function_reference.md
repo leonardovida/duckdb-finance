@@ -219,7 +219,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_option_spec_dates` | `fin_option_spec_dates(kind, spot, strike, valuation_date, expiry_date, rate, vol, dividend_yield := 0.0, day_count := 'ACT/365F', exercise := 'european', model := 'bsm')` | Build an option spec from valuation and expiry dates using a day-count convention for time to expiry. | STRUCT compatible with `fin_bsm_price`, `fin_bsm_greeks`, and `fin_bsm_all`. |
 | `fin_parse_option_kind` | `fin_parse_option_kind('CALL')` | Normalize and validate a finance convention string. | VARCHAR. |
 | `fin_put_call_parity` | `fin_put_call_parity(10.450583572185565, 5.573526022256971, 100.0, 100.0, 1.0, 0.05, 0.0)` | Compute put call parity for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_sabr_vol` | `fin_sabr_vol(100.0, 100.0, 1.0, 0.2, 0.5, -0.2, 0.4)` | Compute sabr vol for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_sabr_vol` | `fin_sabr_vol(100.0, 100.0, 1.0, 0.2, 0.5, -0.2, 0.4)` | Compute Hagan's lognormal SABR implied-volatility approximation. | `DOUBLE`; `nu = 0` is supported through the finite zero-vol-of-vol limit, including away from the money. |
 | `fin_svi_total_variance` | `fin_svi_total_variance(0.0, 0.02, 0.1, -0.3, 0.0, 0.2)` | Compute svi total variance for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_svi_vol` | `fin_svi_vol(0.0, 1.0, 0.02, 0.1, -0.3, 0.0, 0.2)` | Compute svi vol for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_validate_option_spec` | `fin_validate_option_spec(spec)` | Validate input shape or finance-specific invariants and return a boolean or validation struct. | STRUCT. |
