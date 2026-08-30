@@ -263,8 +263,10 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
 	AddOverload(bsm_vega, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaSpecFunction);
 	loader.RegisterFunction(std::move(bsm_vega));
-	RegisterOptionFunctionWithScale(loader, "fin_bsm_theta", BSMThetaFunction);
-	RegisterOptionFunctionWithScale(loader, "fin_bsm_rho", BSMRhoFunction);
+	RegisterOptionFunction(loader, "fin_bsm_theta", BSMThetaFunction,
+	                       {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)});
+	RegisterOptionFunction(loader, "fin_bsm_rho", BSMRhoFunction,
+	                       {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)});
 	ScalarFunctionSet greeks(FinanceFunctionName("fin_bsm_greeks"));
 	AddOverload(greeks,
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
