@@ -1711,27 +1711,18 @@ static void AddOverload(ScalarFunctionSet &set, vector<LogicalType> args, Logica
 	set.AddFunction(std::move(scalar));
 }
 
-static void RegisterOptionFunction(ExtensionLoader &loader, const string &name, scalar_function_t func) {
+static void RegisterOptionFunction(
+    ExtensionLoader &loader, const string &name, scalar_function_t func,
+    const vector<LogicalType> &optional_args = {FinanceLogicalType(LogicalTypeId::DOUBLE)}) {
 	ScalarFunctionSet set(FinanceFunctionName(name));
-	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
-	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
-	loader.RegisterFunction(std::move(set));
-}
-
-static void RegisterOptionFunctionWithScale(ExtensionLoader &loader, const string &name, scalar_function_t func) {
-	ScalarFunctionSet set(FinanceFunctionName(name));
-	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
-	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
-	AddOverload(set, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
-	                  FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	            FinanceLogicalType(LogicalTypeId::DOUBLE), func);
+	vector<LogicalType> args = {
+	    FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	    FinanceLogicalType(LogicalTypeId::DOUBLE),  FinanceLogicalType(LogicalTypeId::DOUBLE),
+	    FinanceLogicalType(LogicalTypeId::DOUBLE),  FinanceLogicalType(LogicalTypeId::DOUBLE)};
+	AddOverload(set, args, FinanceLogicalType(LogicalTypeId::DOUBLE), func);
+	for (auto &optional_arg : optional_args) {
+		args.push_back(optional_arg);
+		AddOverload(set, args, FinanceLogicalType(LogicalTypeId::DOUBLE), func);
+	}
 	loader.RegisterFunction(std::move(set));
 }
