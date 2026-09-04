@@ -18,8 +18,8 @@ breaking change.
 ## Maintainer Flow
 
 1. Make sure `main` is green.
-2. Confirm `community-extension/description.yml` has the target
-   `extension.version`.
+2. Confirm `community-extension/description.yml`, `extension_config.cmake`, and
+   `vcpkg.json` have the same target version.
 3. Confirm the local checkout is exactly on `origin/main`:
 
    ```sh
@@ -113,3 +113,6 @@ The rendered community manifest asset should include:
 - `repo.github: leonardovida/duckdb-finance`;
 - `repo.ref` pinned to the exact release commit SHA;
 - `license: MIT`.
+
+The source tree should also keep `extension_config.cmake`'s `EXTENSION_VERSION`
+and `vcpkg.json`'s `version-string` aligned with `extension.version`.

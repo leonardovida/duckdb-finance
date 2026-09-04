@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DESCRIPTION = ROOT / "community-extension" / "description.yml"
 EXTENSION_CONFIG = ROOT / "extension_config.cmake"
+VCPKG_MANIFEST = ROOT / "vcpkg.json"
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
@@ -41,9 +43,19 @@ def main() -> int:
     extension_config = read(EXTENSION_CONFIG)
     errors: list[str] = []
 
+    try:
+        vcpkg_manifest = json.loads(read(VCPKG_MANIFEST))
+    except (OSError, json.JSONDecodeError) as exc:
+        vcpkg_manifest = {}
+        errors.append(f"vcpkg.json must be valid JSON: {exc}")
+    if not isinstance(vcpkg_manifest, dict):
+        vcpkg_manifest = {}
+        errors.append("vcpkg.json must contain a JSON object")
+
     version = field(text, "version")
     extension_version_match = re.search(r"(?m)^\s*EXTENSION_VERSION\s+(\S+)\s*$", extension_config)
     extension_version = extension_version_match.group(1) if extension_version_match else None
+    vcpkg_version = vcpkg_manifest.get("version-string")
     repo = field(text, "github")
     ref = field(text, "ref")
     license_name = field(text, "license")
@@ -52,6 +64,8 @@ def main() -> int:
         errors.append("extension.version must be a plain MAJOR.MINOR.PATCH value")
     if extension_version != version:
         errors.append("extension_config.cmake EXTENSION_VERSION must match extension.version")
+    if vcpkg_version != version:
+        errors.append("vcpkg.json version-string must match extension.version")
     if repo != "leonardovida/duckdb-finance":
         errors.append("repo.github must be leonardovida/duckdb-finance")
     if not ref or (ref != "main" and not SHA.fullmatch(ref)):
