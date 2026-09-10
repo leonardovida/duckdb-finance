@@ -107,31 +107,9 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	weighted_quantile.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	loader.RegisterFunction(weighted_quantile);
 
-	auto winsorized_mean =
-	    TernaryDoubleAggregate<RobustStatisticsState, double, double, double, RobustMeanOperation<true>>(
-	        "finance_winsorized_mean_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
-	        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
-	winsorized_mean.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
-	winsorized_mean.SetStateDestructorCallback(
-	    AggregateFunction::StateDestroy<RobustStatisticsState, RobustMeanOperation<true>>);
-	loader.RegisterFunction(winsorized_mean);
-
-	auto trimmed_mean = TernaryDoubleAggregate<RobustStatisticsState, double, double, double, RobustMeanOperation<false>>(
-	    "finance_trimmed_mean_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
-	    FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
-	trimmed_mean.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
-	trimmed_mean.SetStateDestructorCallback(
-	    AggregateFunction::StateDestroy<RobustStatisticsState, RobustMeanOperation<false>>);
-	loader.RegisterFunction(trimmed_mean);
-
-	auto historical_cvar =
-	    TernaryDoubleAggregate<RobustStatisticsState, double, double, double, HistoricalCvarOperation>(
-	        "finance_cvar_internal", FinanceLogicalType(LogicalTypeId::DOUBLE),
-	        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE));
-	historical_cvar.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
-	historical_cvar.SetStateDestructorCallback(
-	    AggregateFunction::StateDestroy<RobustStatisticsState, HistoricalCvarOperation>);
-	loader.RegisterFunction(historical_cvar);
+	RegisterRobustStatisticsAggregate<RobustMeanOperation<true>>(loader, "finance_winsorized_mean_internal");
+	RegisterRobustStatisticsAggregate<RobustMeanOperation<false>>(loader, "finance_trimmed_mean_internal");
+	RegisterRobustStatisticsAggregate<HistoricalCvarOperation>(loader, "finance_cvar_internal");
 
 	auto weighted_mean =
 	    TernaryDoubleAggregate<WeightedMomentsState, double, double, double, WeightedMomentsOperation<true>>(

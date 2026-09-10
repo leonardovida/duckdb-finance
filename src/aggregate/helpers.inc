@@ -93,6 +93,16 @@ static AggregateFunction TernaryDoubleAggregate(const string &name, const Logica
 	return NamedAggregateFunction(name, std::move(result));
 }
 
+template <class OP>
+static void RegisterRobustStatisticsAggregate(ExtensionLoader &loader, const string &name) {
+	auto function = TernaryDoubleAggregate<RobustStatisticsState, double, double, double, OP>(
+	    name, FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
+	    FinanceLogicalType(LogicalTypeId::DOUBLE));
+	function.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
+	function.SetStateDestructorCallback(AggregateFunction::StateDestroy<RobustStatisticsState, OP>);
+	loader.RegisterFunction(std::move(function));
+}
+
 template <class STATE, class OP>
 static void TernaryDoubleVarcharDoubleScatterUpdate(Vector inputs[], AggregateInputData &, idx_t input_count,
                                                     Vector &states, idx_t count) {
