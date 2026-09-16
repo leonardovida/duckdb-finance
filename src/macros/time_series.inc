@@ -16,6 +16,6 @@
     {"fin_crosscorr", "(x, y, lag := 0) AS corr(x, y)"},
     {"fin_hurst", "(x) AS 0.5"},
     {"fin_half_life_mean_reversion", "(x) AS NULL"},
-    {"fin_linear_trend", "(y, x := NULL) AS struct_pack(slope := NULL, intercept := avg(y), r2 := NULL, stderr := NULL)"},
+    {"fin_linear_trend", "(y, x := NULL) AS struct_pack(slope := CASE WHEN count(x) = 0 OR regr_sxx(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) <= 0 THEN NULL::DOUBLE ELSE regr_slope(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) END, intercept := CASE WHEN count(x) = 0 THEN avg(y) WHEN regr_sxx(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) <= 0 THEN NULL::DOUBLE ELSE regr_intercept(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) END, r2 := CASE WHEN count(x) = 0 OR regr_sxx(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) <= 0 THEN NULL::DOUBLE ELSE regr_r2(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) END, stderr := CASE WHEN count(x) = 0 OR regr_sxx(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) <= 0 THEN NULL::DOUBLE ELSE sqrt(greatest(0.0, regr_syy(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) - (regr_sxy(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)) * regr_sxy(y, x) FILTER (WHERE isfinite(y) AND isfinite(x))) / nullif(regr_sxx(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)), 0)) / nullif(regr_count(y, x) FILTER (WHERE isfinite(y) AND isfinite(x))::DOUBLE - 2, 0) / nullif(regr_sxx(y, x) FILTER (WHERE isfinite(y) AND isfinite(x)), 0)) END)"},
     {"fin_adf", "(x, max_lag := 1, regression := 'c') AS NULL"},
     {"fin_ljung_box", "(x, lags := 10) AS NULL"},

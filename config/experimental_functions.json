@@ -62,8 +62,8 @@
     },
     {
       "name": "fin_linear_trend",
-      "reason": "returns NULL trend fields except intercept",
-      "replacement": "use DuckDB regr_slope, regr_intercept, and regr_r2 directly"
+      "reason": "explicit-axis regression is implemented but omitted or all-NULL x retains a partial compatibility fallback",
+      "replacement": "pass an explicit numeric axis and check the returned struct fields"
     },
     {
       "name": "fin_linearreg_slope",
