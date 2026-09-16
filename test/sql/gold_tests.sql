@@ -127,6 +127,16 @@ FROM fitted;
 
 WITH fitted AS (
   SELECT fin_linear_trend(y, x := x) AS t
+  FROM (VALUES (NULL::DOUBLE, 2.0), (NULL, 4.0), (NULL, NULL)) p(x, y)
+)
+SELECT assert_eq('trend all null axis slope', t.slope, NULL),
+       assert_near('trend all null axis mean', t.intercept, 3.0, 1e-12),
+       assert_eq('trend all null axis r2', t.r2, NULL),
+       assert_eq('trend all null axis stderr', t.stderr, NULL)
+FROM fitted;
+
+WITH fitted AS (
+  SELECT fin_linear_trend(y, x := x) AS t
   FROM (SELECT 1.0 x, 2.0 y WHERE false) p
 )
 SELECT assert_eq('trend empty slope', t.slope, NULL),
