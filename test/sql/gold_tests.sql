@@ -72,6 +72,79 @@ SELECT
   assert_near('quantile spread', fin_quantile_spread(factor, forward_return, 2), 0.009, 1e-12)
 FROM gold_returns;
 
+-- Explicit-axis trend: hand-calculated noisy fit (Sxx=10, Sxy=6, SSE=2.4).
+WITH points(x, y) AS (
+  VALUES (1.0, 2.0), (2.0, 4.0), (3.0, 5.0), (4.0, 4.0), (5.0, 5.0),
+         (NULL, 900.0), (900.0, NULL), ('Infinity'::DOUBLE, 8.0),
+         (8.0, 'NaN'::DOUBLE)
+), fitted AS (SELECT fin_linear_trend(y, x := x) AS t FROM points)
+SELECT assert_near('trend noisy slope', t.slope, 0.6, 1e-12),
+       assert_near('trend noisy intercept', t.intercept, 2.2, 1e-12),
+       assert_near('trend noisy r2', t.r2, 0.6, 1e-12),
+       assert_near('trend noisy slope stderr', t.stderr, sqrt(0.08), 1e-12)
+FROM fitted;
+
+WITH points(g, x, y) AS (
+  VALUES ('up', 1.0, 3.0), ('up', 2.0, 5.0), ('up', 3.0, 7.0),
+         ('down', 1.0, 7.0), ('down', 2.0, 5.0), ('down', 3.0, 3.0),
+         ('flat', 1.0, 5.0), ('flat', 2.0, 5.0), ('flat', 3.0, 5.0)
+), fitted AS (SELECT g, fin_linear_trend(y, x := x) AS t FROM points GROUP BY g)
+SELECT assert_near('trend grouped slope', t.slope,
+                    CASE g WHEN 'up' THEN 2 WHEN 'down' THEN -2 ELSE 0 END, 1e-12),
+       assert_near('trend grouped intercept', t.intercept,
+                    CASE g WHEN 'up' THEN 1 WHEN 'down' THEN 9 ELSE 5 END, 1e-12),
+       assert_near('trend grouped r2', t.r2, 1.0, 1e-12),
+       assert_near('trend grouped stderr', t.stderr, 0.0, 1e-12)
+FROM fitted;
+
+WITH points(g, x, y) AS (
+  VALUES ('single', 1.0, 3.0), ('constant_x', 1.0, 3.0),
+         ('constant_x', 1.0, 4.0), ('constant_x', 1.0, 5.0),
+         ('missing_y', 1.0, NULL), ('nonfinite', 'Infinity'::DOUBLE, 2.0)
+), fitted AS (SELECT g, fin_linear_trend(y, x := x) AS t FROM points GROUP BY g)
+SELECT assert_eq('trend degenerate slope', t.slope, NULL),
+       assert_eq('trend degenerate intercept', t.intercept, NULL),
+       assert_eq('trend degenerate r2', t.r2, NULL),
+       assert_eq('trend degenerate stderr', t.stderr, NULL)
+FROM fitted;
+
+WITH fitted AS (
+  SELECT fin_linear_trend(y, x := x) AS t FROM (VALUES (1, 3), (2, 5)) p(x,y)
+)
+SELECT assert_near('trend two point slope', t.slope, 2.0, 1e-12),
+       assert_near('trend two point intercept', t.intercept, 1.0, 1e-12),
+       assert_eq('trend two point stderr', t.stderr, NULL)
+FROM fitted;
+
+WITH fitted AS (
+  SELECT fin_linear_trend(y) AS t FROM (VALUES (2.0), (4.0), (NULL)) p(y)
+)
+SELECT assert_eq('trend fallback slope', t.slope, NULL),
+       assert_near('trend fallback mean', t.intercept, 3.0, 1e-12),
+       assert_eq('trend fallback r2', t.r2, NULL),
+       assert_eq('trend fallback stderr', t.stderr, NULL)
+FROM fitted;
+
+WITH fitted AS (
+  SELECT fin_linear_trend(y, x := x) AS t
+  FROM (VALUES (NULL::DOUBLE, 2.0), (NULL, 4.0), (NULL, NULL)) p(x, y)
+)
+SELECT assert_eq('trend all null axis slope', t.slope, NULL),
+       assert_near('trend all null axis mean', t.intercept, 3.0, 1e-12),
+       assert_eq('trend all null axis r2', t.r2, NULL),
+       assert_eq('trend all null axis stderr', t.stderr, NULL)
+FROM fitted;
+
+WITH fitted AS (
+  SELECT fin_linear_trend(y, x := x) AS t
+  FROM (SELECT 1.0 x, 2.0 y WHERE false) p
+)
+SELECT assert_eq('trend empty slope', t.slope, NULL),
+       assert_eq('trend empty intercept', t.intercept, NULL),
+       assert_eq('trend empty r2', t.r2, NULL),
+       assert_eq('trend empty stderr', t.stderr, NULL)
+FROM fitted;
+
 WITH parameterized_returns(seq, r) AS (
   VALUES (1, 0.10), (2, -0.05), (3, 0.02)
 )
@@ -260,7 +333,7 @@ SELECT
   assert_not_null('crosscorr alias', fin_crosscorr(close, volume)),
   assert_near('hurst placeholder', fin_hurst(close), 0.5, 1e-12),
   assert_eq('half life placeholder', fin_half_life_mean_reversion(close), NULL),
-  assert_eq('linear trend slope placeholder', (fin_linear_trend(close)).slope, NULL),
+  assert_eq('linear trend omitted axis compatibility', (fin_linear_trend(close)).slope, NULL),
   assert_eq('adf placeholder', fin_adf(close), NULL),
   assert_eq('ljung box placeholder', fin_ljung_box(close), NULL)
 FROM gold_prices;

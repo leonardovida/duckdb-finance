@@ -31,7 +31,7 @@ promoted out of this page.
 | `fin_half_life_mean_reversion` | Returns `NULL` until lagged-regression half-life support is added. | Estimate lagged regression manually and compute `-ln(2) / slope`. |
 | `fin_hurst` | Returns a fixed neutral value until a rescaled-range or variance-scaling implementation is added. | Use explicit log-log variance scaling in SQL. |
 | `fin_ks_test` | Returns `NULL` until Kolmogorov-Smirnov statistic support is added. | Compare empirical distributions with explicit SQL quantiles. |
-| `fin_linear_trend` | Returns `NULL` trend fields except intercept. | Use DuckDB `regr_slope`, `regr_intercept`, and `regr_r2` directly. |
+| `fin_linear_trend` | Explicit-axis regression is implemented, but omitted or all-NULL `x` retains the partial compatibility fallback and the macro has no implicit ordering. | Pass an explicit numeric axis and check the returned struct fields. |
 | `fin_linearreg_slope` | Returns `NULL` until rolling/windowed regression slope support is added. | Use DuckDB `regr_slope` over the desired window. |
 | `fin_ljung_box` | Returns `NULL` until autocorrelation test statistic support is added. | Compute lagged autocorrelations explicitly in SQL. |
 | `fin_macd` | Returns zero MACD fields instead of exponential moving-average signals. | Compute fast, slow, and signal EMAs explicitly before using the result. |
