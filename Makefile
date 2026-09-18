@@ -63,9 +63,13 @@ check-function-usability:
 check-release-metadata:
 	python3 scripts/check_release_metadata.py
 
-check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata test
+.PHONY: check-sql-runner
+check-sql-runner:
+	python3 -m unittest discover -s scripts -p 'test_run_sql_with_trace.py'
 
-ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata
+check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner test
+
+ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner
 
 ci-duckdb-smoke: smoke-quiet
 
