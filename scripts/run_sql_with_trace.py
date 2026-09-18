@@ -10,10 +10,27 @@ def split_statements(sql: str) -> list[str]:
     start = 0
     in_string = False
     in_identifier = False
+    in_line_comment = False
+    block_comment_depth = 0
     i = 0
 
     while i < len(sql):
         current = sql[i]
+        if in_line_comment:
+            if current in "\r\n":
+                in_line_comment = False
+            i += 1
+            continue
+        if block_comment_depth:
+            if sql.startswith("/*", i):
+                block_comment_depth += 1
+                i += 2
+            elif sql.startswith("*/", i):
+                block_comment_depth -= 1
+                i += 2
+            else:
+                i += 1
+            continue
         if in_string:
             if current == "'" and i + 1 < len(sql) and sql[i + 1] == "'":
                 i += 2
@@ -29,6 +46,14 @@ def split_statements(sql: str) -> list[str]:
             if current == '"':
                 in_identifier = False
             i += 1
+            continue
+        if sql.startswith("--", i):
+            in_line_comment = True
+            i += 2
+            continue
+        if sql.startswith("/*", i):
+            block_comment_depth = 1
+            i += 2
             continue
         if current == "'":
             in_string = True
