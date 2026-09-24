@@ -456,6 +456,27 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_vol_of_vol` | `fin_vol_of_vol(vol, annualization := 252)` | Compute vol of vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_yang_zhang_vol` | `fin_yang_zhang_vol(open, high, low, close, annualization := 252)` | Compute yang zhang vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 
+## Trend precision with large absolute levels
+
+For `fin_linear_trend`, subtract a group-specific origin from both axes before
+fitting when absolute levels are large relative to their variation. The executable
+source-build recipe `examples/linear_trend_centered.sql` filters finite pairs,
+computes origins with window functions, and fits each group in a separate step.
+Groups with no finite pairs are absent from that recipe's output.
+
+The fit uses DOUBLE arithmetic. In a 101-point synthetic series with slope 2,
+alternating quarter-unit noise, and both axes offset by `1e15`, the uncentered
+slope standard error was `0.0008786840531774002`. Centering produced
+`0.000861770574046724`, compared with the exact-arithmetic reference
+`0.000861770574038108`. The uncentered relative error was about 1.96% on
+DuckDB v1.5.5 and v1.6.0-dev11514. This is one reproducible case, not an error bound.
+
+Keep both origins with the fit. Its intercept describes shifted coordinates:
+`y_predicted = y_origin + trend.intercept + trend.slope * (x_new - x_origin)`.
+Centering cannot recover precision lost when converting inputs to DOUBLE, and
+does not eliminate residual-variance cancellation for nearly perfect fits.
+For timestamp axes, prefer elapsed time in the units needed by the analysis.
+
 ## Testing
 
 The reference surface is exercised by `make test`, which builds the extension, runs smoke SQL, loads `test/sql/gold_dataset.sql`, and evaluates `test/sql/gold_tests.sql`. The gold dataset is intentionally small and deterministic so expected values are easy to audit.

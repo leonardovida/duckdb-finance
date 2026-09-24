@@ -145,6 +145,26 @@ SELECT assert_eq('trend empty slope', t.slope, NULL),
        assert_eq('trend empty stderr', t.stderr, NULL)
 FROM fitted;
 
+-- Center large levels before fitting, preserving group-specific origins.
+-- Exact reference: Sxx=85850, slope=2, SSE=1275/202, n=101.
+WITH observations AS (
+  SELECT level, level + i::DOUBLE AS x,
+         level + 2 * i::DOUBLE + CASE WHEN i % 2 = 0 THEN 0.25 ELSE -0.25 END AS y
+  FROM (VALUES (1e15), (1e12)) levels(level), range(1, 102) t(i)
+), centered AS (
+  SELECT *, min(x) OVER (PARTITION BY level) AS x_origin,
+            min(y) OVER (PARTITION BY level) AS y_origin
+  FROM observations
+), fitted AS (
+  SELECT level, fin_linear_trend(y - y_origin, x := x - x_origin) AS t
+  FROM centered GROUP BY level
+)
+SELECT assert_near('centered trend slope', t.slope, 2.0, 1e-12),
+       assert_near('centered trend intercept', t.intercept, 25.0 / 101, 1e-12),
+       assert_near('centered trend stderr', t.stderr,
+                   sqrt((1275.0 / 202) / 99 / 85850), 1e-12)
+FROM fitted;
+
 WITH parameterized_returns(seq, r) AS (
   VALUES (1, 0.10), (2, -0.05), (3, 0.02)
 )
