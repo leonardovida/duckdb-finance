@@ -47,7 +47,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_round_to_tick` | `fin_round_to_tick(100.037, 0.05)` | Compute round to tick for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_safe_div` | `fin_safe_div(1.0, 0.0)` | Divide two numbers and return NULL or a fallback when the denominator is zero. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_student_t_cdf` | `fin_student_t_cdf(0.0, 10.0)` | Evaluate the Student-t CDF. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_student_t_inv` | `fin_student_t_inv(0.5, 10.0)` | Invert the Student-t CDF. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_student_t_inv` | `fin_student_t_inv(0.000001, 2.0)` | Invert the Student-t CDF. | DOUBLE; brackets heavy-tailed lower and upper probabilities. |
 
 ### Returns, Risk, And Statistics
 

@@ -349,13 +349,19 @@ static double InvertMonotone(double p, double lower, double upper, CDF cdf) {
 	if (!(p > 0.0 && p < 1.0)) {
 		throw InvalidInputException("Inverse CDF requires 0 < p < 1");
 	}
+	for (idx_t i = 0; i < 200 && cdf(lower) > p; i++) {
+		lower *= 2.0;
+	}
 	for (idx_t i = 0; i < 200 && cdf(upper) < p; i++) {
 		upper *= 2.0;
 	}
 	for (idx_t i = 0; i < 200; i++) {
 		double mid = 0.5 * (lower + upper);
+		if (mid == lower || mid == upper) {
+			return mid;
+		}
 		double value = cdf(mid);
-		if (std::fabs(value - p) < 1e-12) {
+		if (std::fabs(value - p) < 1e-12 * std::min(p, 1.0 - p)) {
 			return mid;
 		}
 		if (value < p) {

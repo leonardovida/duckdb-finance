@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.17');
+SELECT assert_eq('release version', fin_version(), 'finance 0.2.18');
 
 -- Numerical helpers and scalar edge cases.
 SELECT
@@ -23,6 +23,10 @@ SELECT
   assert_near('normal inv', fin_norm_inv(0.5), 0.0, 1e-12),
   assert_near('student t symmetry', fin_student_t_cdf(0.0, 10.0), 0.5, 1e-12),
   assert_near('student t inv median', fin_student_t_inv(0.5, 10.0), 0.0, 1e-10),
+  assert_near('student t inv lower tail', fin_student_t_inv(0.000001, 2.0), -707.1057205373853, 1e-5),
+  assert_near('student t inv upper tail', fin_student_t_inv(0.999999, 2.0), 707.1057205373853, 1e-4),
+  assert_near('student t inv tail cdf', fin_student_t_cdf(fin_student_t_inv(0.000001, 2.0), 2.0),
+              0.000001, 1e-14),
   assert_near('chi2 cdf zero', fin_chi2_cdf(0.0, 3.0), 0.0, 1e-12),
   assert_near('chi2 inv median', fin_chi2_inv(0.5, 2.0), 1.3862943611198906, 1e-10),
   assert_eq('safe div zero null', fin_safe_div(1.0, 0.0), NULL),
