@@ -357,6 +357,9 @@ static double InvertMonotone(double p, double lower, double upper, CDF cdf) {
 	}
 	for (idx_t i = 0; i < 200; i++) {
 		double mid = 0.5 * (lower + upper);
+		if (mid == lower || mid == upper) {
+			return mid;
+		}
 		double value = cdf(mid);
 		if (std::fabs(value - p) < 1e-12 * std::min(p, 1.0 - p)) {
 			return mid;
