@@ -318,8 +318,8 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_factor_turnover` | `fin_factor_turnover(factor_rank, period := 1)` | Compute factor turnover for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_inverse_vol_weights` | `fin_inverse_vol_weights(vols)` | Compute inverse vol weights for SQL finance workflows. | LIST. |
 | `fin_marginal_risk` | `fin_marginal_risk(weights, cov_matrix)` | Compute marginal risk for SQL finance workflows. | LIST. |
-| `fin_matrix_cholesky` | `fin_matrix_cholesky([[4.0, 2.0], [2.0, 3.0]])` | Compute matrix cholesky for SQL finance workflows. | LIST. |
-| `fin_matrix_is_psd` | `fin_matrix_is_psd([[1.0, 0.2], [0.2, 1.0]])` | Compute matrix is psd for SQL finance workflows. | LIST. |
+| `fin_matrix_cholesky` | `fin_matrix_cholesky([[4.0, 2.0], [2.0, 3.0]])` | Compute a Cholesky factor for a symmetric positive semidefinite matrix. | Matrix result; `NULL` when no valid factor exists. |
+| `fin_matrix_is_psd` | `fin_matrix_is_psd([[1.0, 0.2], [0.2, 1.0]])` | Check whether a symmetric matrix is positive semidefinite. | BOOLEAN. |
 | `fin_matrix_mul` | `fin_matrix_mul([[1.0, 2.0]], [[3.0], [4.0]])` | Compute matrix mul for SQL finance workflows. | LIST. |
 | `fin_matrix_shape` | `fin_matrix_shape([[1.0, 2.0], [3.0, 4.0]])` | Compute matrix shape for SQL finance workflows. | STRUCT. |
 | `fin_matrix_transpose` | `fin_matrix_transpose([[1.0, 2.0], [3.0, 4.0]])` | Compute matrix transpose for SQL finance workflows. | LIST. |
