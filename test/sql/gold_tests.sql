@@ -607,6 +607,7 @@ SELECT
   assert_eq('matrix cholesky', fin_matrix_cholesky([[4.0, 2.0], [2.0, 3.0]]), [[2.0, 0.0], [1.0, 1.4142135623730951]]),
   assert_eq('matrix cholesky rejects nonsymmetric input', fin_matrix_cholesky([[1.0, 99.0], [0.0, 1.0]]), NULL),
   assert_eq('matrix cholesky rejects indefinite zero pivot', fin_matrix_cholesky([[0.0, 0.1], [0.1, 0.1]]), NULL),
+  assert_not_null('matrix cholesky accepts small positive pivot', fin_matrix_cholesky([[1e-26, 2e-12], [2e-12, 400.0]])),
   assert_true('matrix psd', fin_matrix_is_psd([[1.0, 0.2], [0.2, 1.0]])),
   assert_eq('matrix psd rejects indefinite zero pivot', fin_matrix_is_psd([[0.0, 0.1], [0.1, 0.1]]), false),
   assert_true('matrix psd accepts singular matrix', fin_matrix_is_psd([[0.0, 0.0], [0.0, 1.0]])),
