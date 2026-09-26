@@ -1301,7 +1301,14 @@ static vector<vector<double>> MatrixCholesky(const vector<vector<double>> &matri
 				}
 				result[i][j] = std::sqrt(std::max(0.0, sum));
 			} else {
-				result[i][j] = result[j][j] <= tolerance ? 0.0 : sum / result[j][j];
+				if (result[j][j] == 0.0) {
+					if (std::fabs(sum) > tolerance) {
+						throw InvalidInputException("Matrix is not positive semidefinite");
+					}
+					result[i][j] = 0.0;
+				} else {
+					result[i][j] = sum / result[j][j];
+				}
 			}
 		}
 	}
