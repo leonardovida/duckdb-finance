@@ -6,8 +6,7 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
+from function_discovery import ROOT, read, source_files
 
 
 @dataclass(frozen=True)
@@ -18,15 +17,6 @@ class FunctionEntry:
     documented: bool
     gold_tested: bool
     perf_tested: bool
-
-
-def read(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
-
-
-def source_files() -> list[Path]:
-    suffixes = {".cpp", ".inc", ".hpp"}
-    return sorted(path for path in (ROOT / "src").rglob("*") if path.suffix in suffixes)
 
 
 def category_for(path: Path) -> str:
