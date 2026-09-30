@@ -332,6 +332,62 @@ SELECT
   assert_near('trimmed mean honors bounds', fin_trimmed_mean(x, 0.0, 0.5), 0.0, 1e-12)
 FROM (VALUES (0.0), (0.0), (100.0)) AS robust_values(x);
 
+-- Ternary aggregates skip a row when any input is NULL, before validating
+-- the other parameters, and route surviving rows to their own group state.
+WITH inputs(g, x, lower_q, upper_q) AS (
+  VALUES
+    ('a', 0.0, 0.0, 1.0), ('b', 2.0, 0.0, 1.0),
+    ('a', 0.0, 0.0, 1.0), ('b', 2.0, 0.0, 1.0),
+    ('a', 10.0, 0.0, 1.0), ('b', 2.0, 0.0, 1.0),
+    ('a', NULL, -1.0, 2.0), ('b', 999.0, NULL, -1.0),
+    ('a', 999.0, -1.0, NULL), ('nulls', NULL, -1.0, 2.0),
+    ('nulls', 999.0, NULL, -1.0), ('nulls', 999.0, -1.0, NULL)
+), results AS (
+  SELECT g, fin_winsorized_mean(x, lower_q, upper_q) AS actual
+  FROM inputs GROUP BY g
+)
+SELECT
+  assert_eq('numeric ternary group count', count(*), 3::BIGINT),
+  assert_near('numeric ternary first group', max(actual) FILTER (WHERE g = 'a'), 10.0 / 3.0, 1e-12),
+  assert_near('numeric ternary second group', max(actual) FILTER (WHERE g = 'b'), 2.0, 1e-12),
+  assert_eq('numeric ternary all skipped group', max(actual) FILTER (WHERE g = 'nulls'), NULL)
+FROM results;
+
+WITH inputs(g, x, method, threshold) AS (
+  VALUES
+    ('a', 0.0, 'zscore', 1.0), ('b', 2.0, 'zscore', 1.0),
+    ('a', 0.0, 'zscore', 1.0), ('b', 2.0, 'zscore', 1.0),
+    ('a', 10.0, 'zscore', 1.0), ('b', 2.0, 'zscore', 1.0),
+    ('a', NULL, 'invalid', -1.0), ('b', 999.0, NULL, -1.0),
+    ('a', 999.0, 'invalid', NULL), ('nulls', NULL, 'invalid', -1.0),
+    ('nulls', 999.0, NULL, -1.0), ('nulls', 999.0, 'invalid', NULL)
+), results AS (
+  SELECT g, fin_outlier_count(x, method, threshold) AS actual
+  FROM inputs GROUP BY g
+)
+SELECT
+  assert_eq('string ternary group count', count(*), 3::BIGINT),
+  assert_eq('string ternary first group', max(actual) FILTER (WHERE g = 'a'), 1::BIGINT),
+  assert_eq('string ternary second group', max(actual) FILTER (WHERE g = 'b'), 0::BIGINT),
+  assert_eq('string ternary all skipped group', max(actual) FILTER (WHERE g = 'nulls'), 0::BIGINT)
+FROM results;
+
+WITH inputs AS (
+  SELECT i % 7 AS g, (100 * (i % 7) + i % 3)::DOUBLE AS x
+  FROM range(10000) AS r(i) WHERE i % 5 <> 0
+), results AS (
+  SELECT g, fin_weighted_mean(x, 1.0) AS mean, avg(x) AS expected_mean,
+    fin_outlier_count(x, 'zscore', 100.0) AS outliers
+  FROM inputs GROUP BY g
+)
+SELECT
+  assert_eq('ternary multi-chunk group count', count(*), 7::BIGINT),
+  assert_true('ternary multi-chunk numeric routing',
+    bool_and(mean IS NOT NULL AND abs(mean - expected_mean) < 1e-10)),
+  assert_true('ternary multi-chunk string routing',
+    bool_and(outliers IS NOT NULL AND outliers = 0))
+FROM results;
+
 SELECT
   assert_near('historical cvar tail mean', fin_cvar(r, 0.5), 7.5, 1e-12),
   assert_near('historical expected shortfall', fin_expected_shortfall(r, 0.5), 7.5, 1e-12),
