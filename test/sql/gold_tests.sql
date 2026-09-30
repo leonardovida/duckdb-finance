@@ -898,6 +898,31 @@ SELECT
 FROM complex_filtered_matrix_inputs
 WHERE id <> 2;
 
+-- List result offsets must survive empty/invalid rows between different lengths.
+WITH inputs(id, x, m) AS (VALUES
+  (1, [1.0, 2.0]::DOUBLE[], [[1.0, 2.0], [3.0, 4.0]]::DOUBLE[][]),
+  (2, NULL::DOUBLE[], NULL::DOUBLE[][]),
+  (3, []::DOUBLE[], []::DOUBLE[][]),
+  (4, [1.0, NULL]::DOUBLE[], [[1.0, NULL]]::DOUBLE[][]),
+  (5, [7.0]::DOUBLE[], [[7.0]]::DOUBLE[][])
+)
+SELECT
+  assert_eq('list results retain offsets after empty and null rows',
+    list(fin_vector_scale(x, 2.0) ORDER BY id),
+    [[2.0, 4.0], NULL, [], NULL, [14.0]]::DOUBLE[][]),
+  assert_eq('nested list results retain offsets after empty and null rows',
+    list(fin_matrix_transpose(m) ORDER BY id),
+    [[[1.0, 3.0], [2.0, 4.0]], NULL, [], NULL, [[7.0]]]::DOUBLE[][][])
+FROM inputs;
+
+SELECT
+  assert_true('list results retain offsets across chunks',
+    bool_and(fin_vector_add([i::DOUBLE], [1.0]) = [i::DOUBLE + 1.0])),
+  assert_true('nested list results retain offsets across chunks',
+    bool_and(fin_matrix_transpose([[i::DOUBLE, i::DOUBLE + 1.0]]) =
+             [[i::DOUBLE], [i::DOUBLE + 1.0]]))
+FROM range(5000) AS t(i);
+
 -- Validation, parsers, and calendar helpers.
 SELECT
   assert_near('money sum', fin_money_sum(10.25), 10.25, 1e-12),

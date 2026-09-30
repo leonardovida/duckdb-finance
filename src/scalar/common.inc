@@ -1156,6 +1156,14 @@ static vector<vector<double>> ReadDoubleMatrix(Vector &matrix_vec, const list_en
 	return matrix;
 }
 
+static list_entry_t WriteDoubleList(double *values, const vector<double> &list, idx_t &offset) {
+	auto entry = list_entry_t(offset, list.size());
+	for (auto value : list) {
+		values[offset++] = value;
+	}
+	return entry;
+}
+
 static void WriteDoubleLists(Vector &result, const vector<vector<double>> &lists, idx_t count, bool constant = false) {
 	SetResultVectorType(result, constant);
 	auto row_count = constant && count > 0 ? idx_t(1) : count;
@@ -1169,12 +1177,7 @@ static void WriteDoubleLists(Vector &result, const vector<vector<double>> &lists
 	auto result_entries = GetResultData<list_entry_t>(result, constant);
 	idx_t offset = 0;
 	for (idx_t row = 0; row < row_count; row++) {
-		auto &list = lists[row];
-		result_entries[row] = list_entry_t(offset, list.size());
-		for (idx_t i = 0; i < list.size(); i++) {
-			child_data[offset + i] = list[i];
-		}
-		offset += list.size();
+		result_entries[row] = WriteDoubleList(child_data, lists[row], offset);
 	}
 	ListVector::SetListSize(result, total);
 }
@@ -1206,10 +1209,7 @@ static void WriteDoubleMatrices(Vector &result, const vector<vector<vector<doubl
 		auto &matrix = matrices[outer];
 		result_entries[outer] = list_entry_t(row_offset, matrix.size());
 		for (auto &matrix_row : matrix) {
-			row_entries[row_offset++] = list_entry_t(value_offset, matrix_row.size());
-			for (auto value : matrix_row) {
-				values[value_offset++] = value;
-			}
+			row_entries[row_offset++] = WriteDoubleList(values, matrix_row, value_offset);
 		}
 	}
 	ListVector::SetListSize(result, total_rows);
