@@ -158,6 +158,15 @@ struct WeightedMomentsOperation {
 	}
 
 	template <class STATE>
+	static void UpdateParameters(STATE &state, double ddof) {
+		if (state.parameters_set && state.ddof != ddof) {
+			throw InvalidInputException("Weighted variance ddof must be constant within a group");
+		}
+		state.ddof = ddof;
+		state.parameters_set = true;
+	}
+
+	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double weight, double ddof) {
 		if (!std::isfinite(value) || !std::isfinite(weight)) {
 			throw InvalidInputException("Weighted values and weights must be finite");
@@ -168,11 +177,7 @@ struct WeightedMomentsOperation {
 		if (!std::isfinite(ddof) || ddof < 0.0) {
 			throw InvalidInputException("Weighted variance ddof must be non-negative and finite");
 		}
-		if (state.parameters_set && state.ddof != ddof) {
-			throw InvalidInputException("Weighted variance ddof must be constant within a group");
-		}
-		state.ddof = ddof;
-		state.parameters_set = true;
+		UpdateParameters(state, ddof);
 		if (weight == 0.0) {
 			return;
 		}
@@ -188,11 +193,7 @@ struct WeightedMomentsOperation {
 		if (!source.parameters_set) {
 			return;
 		}
-		if (target.parameters_set && target.ddof != source.ddof) {
-			throw InvalidInputException("Weighted variance ddof must be constant within a group");
-		}
-		target.ddof = source.ddof;
-		target.parameters_set = true;
+		UpdateParameters(target, source.ddof);
 		if (source.weight_sum == 0.0) {
 			return;
 		}

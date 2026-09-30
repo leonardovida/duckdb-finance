@@ -31,3 +31,15 @@ FROM (
         (0.0, 'zscore', 1.0),
         (10.0, 'zscore', 10.0)
 ) AS t(x, method, threshold)
+
+statement error
+SELECT fin_weighted_var(x, w, ddof)
+FROM (VALUES (999.0, 0.0, 0.0), (1.0, 1.0, 1.0)) AS t(x, w, ddof)
+----
+Weighted variance ddof must be constant within a group
+
+statement error
+SELECT fin_weighted_var(x, w, ddof)
+FROM (VALUES (1.0, 1.0, 0.0), (999.0, 0.0, 1.0)) AS t(x, w, ddof)
+----
+Weighted variance ddof must be constant within a group
