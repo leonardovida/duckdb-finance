@@ -1,4 +1,9 @@
-static void ValidatePositiveBarThreshold(const Value &value, const string &function_name) {
+static string BarThresholdLiteral(const TableFunctionBindInput &input, idx_t threshold_index,
+                                  const string &function_name) {
+	if (input.inputs.size() <= threshold_index) {
+		return "100";
+	}
+	auto &value = input.inputs[threshold_index];
 	if (value.IsNull()) {
 		throw BinderException("%s threshold cannot be NULL", function_name);
 	}
@@ -11,6 +16,8 @@ static void ValidatePositiveBarThreshold(const Value &value, const string &funct
 	if (!(threshold > 0.0) || !std::isfinite(threshold)) {
 		throw BinderException("%s threshold must be positive and finite", function_name);
 	}
+	// Validate as DOUBLE, but retain the original value's SQL literal and type.
+	return SqlLiteral(value);
 }
 
 static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctionBindInput &input, const string &kind) {
@@ -22,10 +29,7 @@ static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctio
 	string volume = "1.0";
 	string threshold = "100";
 	if (kind == "tick") {
-		if (input.inputs.size() >= 4) {
-			ValidatePositiveBarThreshold(input.inputs[3], "fin_tick_bars");
-			threshold = SqlLiteral(input.inputs[3]);
-		}
+		threshold = BarThresholdLiteral(input, 3, "fin_tick_bars");
 	} else if (kind == "imbalance") {
 		volume = SqlColumn(input.inputs[3]);
 		if (input.inputs.size() >= 5) {
@@ -37,10 +41,7 @@ static unique_ptr<TableRef> BarsBindReplace(ClientContext &context, TableFunctio
 		}
 	} else {
 		volume = input.inputs.size() >= 4 ? SqlColumn(input.inputs[3]) : "1.0";
-		if (input.inputs.size() >= 5) {
-			ValidatePositiveBarThreshold(input.inputs[4], kind == "volume" ? "fin_volume_bars" : "fin_dollar_bars");
-			threshold = SqlLiteral(input.inputs[4]);
-		}
+		threshold = BarThresholdLiteral(input, 4, kind == "volume" ? "fin_volume_bars" : "fin_dollar_bars");
 	}
 	auto threshold_expr = "nullif((" + threshold + ")::DOUBLE, 0.0)";
 	string bucket_expr = "floor(((row_number() OVER (ORDER BY ts) - 1)::DOUBLE) / " + threshold_expr + ")";

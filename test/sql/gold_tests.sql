@@ -1179,6 +1179,60 @@ FROM fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 100000.0);
 SELECT assert_eq('imbalance bars rows', count(*), 5::BIGINT)
 FROM fin_imbalance_bars('gold_prices', 'ts', 'close', 'volume', 'signed');
 
+-- Full rows protect threshold bucketing, time order, OHLC, volume and VWAP.
+WITH actual AS (
+  SELECT 'tick' AS kind, row_number() OVER (ORDER BY start_ts, end_ts) AS seq, *
+  FROM fin_tick_bars('gold_prices', 'ts', 'close', 2::BIGINT)
+  UNION ALL
+  SELECT 'volume', row_number() OVER (ORDER BY start_ts, end_ts), *
+  FROM fin_volume_bars('gold_prices', 'ts', 'close', 'volume', 3000.0)
+  UNION ALL
+  SELECT 'dollar', row_number() OVER (ORDER BY start_ts, end_ts), *
+  FROM fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 300000.0)
+), expected(kind, seq, start_ts, end_ts, open, high, low, close, volume, vwap) AS (
+  VALUES
+    ('tick', 1, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
+     100.0, 102.0, 100.0, 102.0, 2.0, 101.0),
+    ('tick', 2, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:33:00',
+     99.0, 104.0, 99.0, 104.0, 2.0, 101.5),
+    ('tick', 3, TIMESTAMP '2026-01-02 09:34:00', TIMESTAMP '2026-01-02 09:34:00',
+     103.0, 103.0, 103.0, 103.0, 1.0, 103.0),
+    ('volume', 1, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
+     100.0, 102.0, 100.0, 102.0, 2500.0, 101.2),
+    ('volume', 2, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:32:00',
+     99.0, 99.0, 99.0, 99.0, 2000.0, 99.0),
+    ('volume', 3, TIMESTAMP '2026-01-02 09:33:00', TIMESTAMP '2026-01-02 09:34:00',
+     104.0, 104.0, 103.0, 103.0, 3000.0, 103.6),
+    ('dollar', 1, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
+     100.0, 102.0, 100.0, 102.0, 2500.0, 101.2),
+    ('dollar', 2, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:32:00',
+     99.0, 99.0, 99.0, 99.0, 2000.0, 99.0),
+    ('dollar', 3, TIMESTAMP '2026-01-02 09:33:00', TIMESTAMP '2026-01-02 09:34:00',
+     104.0, 104.0, 103.0, 103.0, 3000.0, 103.6)
+)
+SELECT
+  assert_eq('bar full row count', (SELECT count(*) FROM actual), 9::BIGINT),
+  assert_eq('bar full row keys', count(*), 9::BIGINT),
+  assert_true('bar full row values', bool_and(
+    a.start_ts IS NOT DISTINCT FROM e.start_ts AND a.end_ts IS NOT DISTINCT FROM e.end_ts
+    AND a.open IS NOT DISTINCT FROM e.open AND a.high IS NOT DISTINCT FROM e.high
+    AND a.low IS NOT DISTINCT FROM e.low AND a.close IS NOT DISTINCT FROM e.close
+    AND a.volume IS NOT DISTINCT FROM e.volume
+    AND a.vwap IS NOT NULL AND abs(a.vwap - e.vwap) <= 1e-12))
+FROM actual a JOIN expected e USING (kind, seq);
+
+SELECT assert_eq('tick threshold overload equivalence',
+  (SELECT list(struct_pack(start_ts, end_ts, open, high, low, close, volume, vwap) ORDER BY start_ts)
+   FROM fin_tick_bars('gold_prices', 'ts', 'close', 2::INTEGER)),
+  (SELECT list(struct_pack(start_ts, end_ts, open, high, low, close, volume, vwap) ORDER BY start_ts)
+   FROM fin_tick_bars('gold_prices', 'ts', 'close', 2::BIGINT)));
+
+SELECT assert_eq('tick omitted threshold equals explicit default',
+  (SELECT list(struct_pack(start_ts, end_ts, open, high, low, close, volume, vwap) ORDER BY start_ts)
+   FROM fin_tick_bars('gold_prices', 'ts', 'close')),
+  (SELECT list(struct_pack(start_ts, end_ts, open, high, low, close, volume, vwap) ORDER BY start_ts)
+   FROM fin_tick_bars('gold_prices', 'ts', 'close', 100)));
+
 SELECT assert_eq('grid rows', count(*), 5::BIGINT)
 FROM fin_resample_grid(
   'gold_prices', 'ts', 'close',
