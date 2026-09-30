@@ -322,6 +322,37 @@ FROM (VALUES (1000000000001.0, 1.0), (1000000000002.0, 1.0), (1000000000003.0, 1
 SELECT assert_near('weighted null pairs', fin_weighted_mean(x, w), 2.0, 1e-12)
 FROM (VALUES (1.0, 1.0), (NULL, 100.0), (3.0, 1.0)) AS weighted_nulls(x, w);
 
+-- Zero-weight rows fix the group's ddof but do not contribute moments.
+-- Rows with any NULL argument are skipped before validating ddof.
+SELECT
+  assert_near('weighted zero weight mean', fin_weighted_mean(CASE WHEN ddof IS NOT NULL THEN x END, w), 2.0, 1e-12),
+  assert_near('weighted skipped ddof sample variance', fin_weighted_var(x, w, ddof), 2.0, 1e-12),
+  assert_near('weighted skipped ddof sample stddev', fin_weighted_stddev(x, w, ddof), sqrt(2.0), 1e-12)
+FROM (VALUES (999.0, 0.0, 1.0), (1.0, 1.0, 1.0), (3.0, 1.0, 1.0),
+  (NULL, 1.0, -1.0), (100.0, NULL, -1.0), (100.0, 1.0, NULL)) AS weighted_skips(x, w, ddof);
+
+SELECT
+  assert_eq('weighted zero total mean', fin_weighted_mean(x, w), NULL),
+  assert_eq('weighted zero total variance', fin_weighted_var(x, w, 0), NULL),
+  assert_eq('weighted exhausted denominator', fin_weighted_var(x, 1.0, 2), NULL)
+FROM (VALUES (1.0, 0.0), (3.0, 0.0)) AS weighted_zero(x, w);
+
+-- A moving frame spanning multiple chunks also contains runs of zero weights.
+-- Every contributing value is 7, so the moments are known independently.
+WITH results AS (
+  SELECT i,
+    fin_weighted_mean(7.0, w) OVER frame AS mean,
+    fin_weighted_var(7.0, w, 1) OVER frame AS variance
+  FROM (SELECT i, CASE WHEN i < 4096 THEN 0.0 ELSE 1.0 END AS w FROM range(8192) AS r(i))
+  WINDOW frame AS (ORDER BY i ROWS BETWEEN 2048 PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('weighted window zero states', bool_and(mean IS NULL AND variance IS NULL) FILTER (WHERE i < 4096)),
+  assert_near('weighted window first contribution', max(mean) FILTER (WHERE i = 4096), 7.0, 1e-12),
+  assert_eq('weighted window exhausted denominator', max(variance) FILTER (WHERE i = 4096), NULL),
+  assert_true('weighted window combined moments', bool_and(mean = 7.0 AND variance = 0.0) FILTER (WHERE i > 4096))
+FROM results;
+
 SELECT
   assert_near('weighted median honors weights', fin_weighted_quantile(x, w, 0.5), 1.0, 1e-12),
   assert_near('weighted inverted cdf', fin_weighted_quantile(x, w, 0.995, 'inverted_cdf'), 100.0, 1e-12)
