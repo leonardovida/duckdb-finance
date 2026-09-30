@@ -51,9 +51,9 @@ static void RegisterDrawdownAggregate(ExtensionLoader &loader, const string &nam
 	loader.RegisterFunction(std::move(function_set));
 }
 
-template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
-static void TernaryScatterUpdate(Vector inputs[], AggregateInputData &, idx_t input_count, Vector &states,
-                                 idx_t count) {
+template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class UPDATE>
+static void TernaryScatterUpdateValues(Vector inputs[], idx_t input_count, Vector &states, idx_t count,
+                                       UPDATE update) {
 	D_ASSERT(input_count == 3);
 	UnifiedVectorFormat adata;
 	UnifiedVectorFormat bdata;
@@ -76,9 +76,17 @@ static void TernaryScatterUpdate(Vector inputs[], AggregateInputData &, idx_t in
 			continue;
 		}
 		auto sidx = sdata.sel->get_index(i);
-		OP::UpdateValue(*state_values[sidx], static_cast<double>(a_values[aidx]), static_cast<double>(b_values[bidx]),
-		                static_cast<double>(c_values[cidx]));
+		update(*state_values[sidx], a_values[aidx], b_values[bidx], c_values[cidx]);
 	}
+}
+
+template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
+static void TernaryScatterUpdate(Vector inputs[], AggregateInputData &, idx_t input_count, Vector &states,
+                                 idx_t count) {
+	TernaryScatterUpdateValues<STATE, A_TYPE, B_TYPE, C_TYPE>(
+	    inputs, input_count, states, count, [](STATE &state, A_TYPE a, B_TYPE b, C_TYPE c) {
+		    OP::UpdateValue(state, static_cast<double>(a), static_cast<double>(b), static_cast<double>(c));
+	    });
 }
 
 template <class STATE, class A_TYPE, class B_TYPE, class C_TYPE, class OP>
@@ -106,31 +114,10 @@ static void RegisterRobustStatisticsAggregate(ExtensionLoader &loader, const str
 template <class STATE, class OP>
 static void TernaryDoubleVarcharDoubleScatterUpdate(Vector inputs[], AggregateInputData &, idx_t input_count,
                                                     Vector &states, idx_t count) {
-	D_ASSERT(input_count == 3);
-	UnifiedVectorFormat xdata;
-	UnifiedVectorFormat method_data;
-	UnifiedVectorFormat threshold_data;
-	UnifiedVectorFormat sdata;
-	FinanceToUnifiedFormat(inputs[0], count, xdata);
-	FinanceToUnifiedFormat(inputs[1], count, method_data);
-	FinanceToUnifiedFormat(inputs[2], count, threshold_data);
-	FinanceToUnifiedFormat(states, count, sdata);
-
-	auto x_values = UnifiedVectorFormat::GetData<double>(xdata);
-	auto method_values = UnifiedVectorFormat::GetData<string_t>(method_data);
-	auto threshold_values = UnifiedVectorFormat::GetData<double>(threshold_data);
-	auto state_values = UnifiedVectorFormat::GetData<STATE *>(sdata);
-	for (idx_t i = 0; i < count; i++) {
-		auto xidx = xdata.sel->get_index(i);
-		auto midx = method_data.sel->get_index(i);
-		auto tidx = threshold_data.sel->get_index(i);
-		if (!xdata.validity.RowIsValid(xidx) || !method_data.validity.RowIsValid(midx) ||
-		    !threshold_data.validity.RowIsValid(tidx)) {
-			continue;
-		}
-		auto sidx = sdata.sel->get_index(i);
-		OP::UpdateValue(*state_values[sidx], x_values[xidx], method_values[midx].GetString(), threshold_values[tidx]);
-	}
+	TernaryScatterUpdateValues<STATE, double, string_t, double>(
+	    inputs, input_count, states, count, [](STATE &state, double x, string_t method, double threshold) {
+		    OP::UpdateValue(state, x, method.GetString(), threshold);
+	    });
 }
 
 template <class STATE, class OP>
