@@ -153,6 +153,9 @@ static void WeightedQuantileScatterUpdate(Vector inputs[], AggregateInputData &,
 	auto quantiles = UnifiedVectorFormat::GetData<double>(quantile_data);
 	auto methods = UnifiedVectorFormat::GetData<string_t>(method_data);
 	auto states_ptr = UnifiedVectorFormat::GetData<STATE *>(state_data);
+	const bool constant_method = inputs[3].GetVectorType() == VectorType::CONSTANT_VECTOR;
+	bool method_cached = false;
+	WeightedQuantileMethod cached_method = WeightedQuantileMethod::LINEAR;
 	for (idx_t i = 0; i < count; i++) {
 		auto value_idx = value_data.sel->get_index(i);
 		auto weight_idx = weight_data.sel->get_index(i);
@@ -163,8 +166,18 @@ static void WeightedQuantileScatterUpdate(Vector inputs[], AggregateInputData &,
 			continue;
 		}
 		auto state_idx = state_data.sel->get_index(i);
+		WeightedQuantileMethod method;
+		if (constant_method) {
+			if (!method_cached) {
+				cached_method = ParseWeightedQuantileMethod(methods[method_idx].GetString());
+				method_cached = true;
+			}
+			method = cached_method;
+		} else {
+			method = ParseWeightedQuantileMethod(methods[method_idx].GetString());
+		}
 		OP::UpdateValue(*states_ptr[state_idx], values[value_idx], weights[weight_idx], quantiles[quantile_idx],
-		                methods[method_idx].GetString());
+		                method);
 	}
 }
 

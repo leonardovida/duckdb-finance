@@ -61,9 +61,22 @@ promoted out of this page.
 | `fin_rank_corr` | Computes Pearson correlation on raw values and ignores method. | Rank observations explicitly before correlating them. |
 | `fin_rank_ic` | Correlates raw values rather than ranks. | Rank factors and returns explicitly before correlating them. |
 | `fin_factor_ic` | Computes Pearson correlation and ignores the requested method. | Use `corr` for Pearson IC or explicitly rank pairs for rank IC. |
-| `fin_iv_percentile` | Computes min-max IV rank rather than an empirical percentile. | Count historical IV values below the current value and divide by their count. |
-| `fin_ema` | Computes an arithmetic mean without exponential weighting. | Compute the exponential recurrence over ordered observations. |
 | `fin_ema_halflife` | Computes an arithmetic mean, ignoring timestamps and half-life. | Compute time-dependent exponential weights explicitly. |
+| `fin_sma` | Averages supplied rows and ignores period. | Use `avg` with an explicit SQL window for the lookback. |
+| `fin_wma` | Uses an arithmetic mean without chronological weights. | Assign linearly increasing weights explicitly. |
+| `fin_dema` | Uses an arithmetic mean instead of DEMA. | Compute two ordered EMA stages in separate SQL subqueries. |
+| `fin_tema` | Uses an arithmetic mean instead of TEMA. | Compute three ordered EMA stages in separate SQL subqueries. |
+| `fin_trima` | Uses an arithmetic mean without triangular weights. | Assign triangular weights explicitly. |
+| `fin_t3` | Uses an arithmetic mean and ignores period and volume factor. | Use an independently validated T3 model. |
+| `fin_kama` | Uses an arithmetic mean without adaptive smoothing. | Use an independently validated KAMA model. |
+| `fin_hma` | Uses an arithmetic mean instead of HMA. | Compute the staged weighted moving averages explicitly. |
+| `fin_linearreg` | Returns an arithmetic mean instead of an endpoint regression estimate. | Use `regr_slope` and `regr_intercept` with a chronological axis. |
+| `fin_linearreg_intercept` | Returns an arithmetic mean instead of an intercept. | Use `regr_intercept` with a chronological axis. |
+| `fin_tsf` | Returns an arithmetic mean instead of a forecast. | Estimate slope and intercept before forecasting. |
+| `fin_exp_decay_sum` | Sums values without applying decay. | Sum explicit time-dependent weighted values. |
+| `fin_exp_decay_avg` | Averages values without applying decay. | Compute a time-weighted mean explicitly. |
+| `fin_exp_decay_count` | Counts timestamps without applying decay. | Sum explicit time-dependent weights. |
+| `fin_exp_decay_max` | Returns an ordinary maximum without applying decay. | Define and implement the desired decay convention explicitly. |
 
 Additional technical indicators retain simplified formulas. The WMA, DEMA,
 TEMA, TRIMA, T3, KAMA, HMA, and regression-level aliases currently use arithmetic

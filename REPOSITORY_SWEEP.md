@@ -11,6 +11,11 @@ It implements the geometric bond-risk calculations, analytic IRR derivatives,
 selection-based robust cutoffs, and bounded RSI state proposed here, and adds
 release benchmarks and clearer defaults.
 
+The next sweep starts from released v0.2.21 and is documented in
+`SECOND_REPOSITORY_SWEEP.md`. It implements EMA and empirical IV percentile,
+repairs further aggregate numerical failures, and replaces quantile-spread sorting
+with selection. The reports describe their respective starting revisions.
+
 ## Scope and evidence
 
 Reviewed the native scalar, aggregate, SQL macro, and table-function families,
@@ -116,7 +121,7 @@ SELECT fsum(fin_bsm_implied_vol('call', p, s, 100, 1, .05)) FROM quotes;
 | Priority | Evidence and recommended improvement | Acceptance criteria |
 |---|---|---|
 | P1: named model accuracy | Optimizer/HRP return equal weights; frontier uses constant equal-weight risk; bootstrap treats quotes as zero rates; GARCH fit returns fixed parameters; Fama-MacBeth lacks second-stage inference. Implement each model or explicitly constrain its contract. See `config/experimental_functions.json` and `docs/experimental_functions.md`. | Independent reference datasets, invariants and failure-domain tests; documented supported instruments/objectives/conventions before promotion. |
-| P1: time series and ranking | Autocorrelation/cross-correlation ignore lag; rank correlation/IC use raw Pearson correlation; EMA ignores exponential weighting; IV percentile uses min-max rank. Further technical indicators and decay functions use simplified proxies. | Explicit ordering/window semantics and independently calculated lagged, ranked, and recurrence-based expected values, including ties and missing observations. |
+| P1: time series and ranking | Autocorrelation/cross-correlation ignore lag; rank correlation/IC use raw Pearson correlation. EMA and IV percentile are corrected in the second sweep; further technical indicators and time-decay functions still use simplified proxies. | Explicit ordering/window semantics and independently calculated lagged, ranked, and recurrence-based expected values, including ties and missing observations. |
 | P1: convention contracts | Several parameters remain nominal: money-rounding mode and some model/method metadata do not change computation. Calendars are weekday based; exchange holidays and settlement schedules need a defined contract. Regular coupon bonds do not model settlement or stubs. | Inventory every parameter/overload, implement supported behavior, and reject unsupported selections rather than silently substituting another model. |
 | P1: stronger accuracy coverage | Name/reference checks and many smoke assertions only establish callability. The 383-name catalog is much broader than the independent numerical reference suite. | Versioned independent oracle fixtures for every promoted model; boundaries, NULL selection vectors, financial identities, and error bounds across parameter grids. |
 | P2: aggregate memory | Drawdown, weighted quantiles, and outlier counting retain observations. RSI is now bounded by its seed period; robust means/CVaR use selection instead of full sorting. Large groups still need memory profiling. | Profile large/skewed groups; design exact mergeable states where possible and bounded-memory approximation only as an explicit separate contract. Preserve weighted-quantile/tie semantics when changing selection strategies. |

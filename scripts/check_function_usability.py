@@ -19,9 +19,21 @@ PLACEHOLDER_PATTERNS = (
     re.compile(r"\bAS\s+\[\[1\.0\]\]\b"),
     re.compile(r"struct_pack\([^}]*:=\s*NULL", re.DOTALL),
     re.compile(r"/\s+NULL\b"),
+    re.compile(r"\([^)]*,[^)]*\)\s+AS\s+avg\(x\)\s*$"),
+    re.compile(r"\(x,\s*ts,\s*halflife\)\s+AS\s+(?:fsum|max)\(x\)\s*$"),
+    re.compile(r"\(ts,\s*halflife\)\s+AS\s+count\(ts\)\s*$"),
 )
 
 DOC_QUALITY_FUNCTIONS = {
+    "fin_ema",
+    "fin_iv_percentile",
+    "fin_iv_rank",
+    "fin_ewma_variance",
+    "fin_ewma_vol",
+    "fin_outlier_count",
+    "fin_quantile_spread",
+    "fin_sortino",
+    "fin_weighted_quantile",
     "fin_bsm_all",
     "fin_bsm_delta",
     "fin_bsm_gamma",

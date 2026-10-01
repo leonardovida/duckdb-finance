@@ -194,7 +194,7 @@ static bool IsLoadTimeSafeMacro(const FinanceMacro &macro) {
 	// lambda/list-comprehension syntax are valid SQL in query context, but they can
 	// recurse deeply in CreateInternalMacroInfo before a binder is available.
 	auto name = string(macro.name);
-	if (name == "fin_sortino" || name == "fin_ewma_variance" || name == "fin_ewma_vol" || name == "fin_rsi" ||
+	if (name == "fin_ema" || name == "fin_sortino" || name == "fin_ewma_variance" || name == "fin_ewma_vol" || name == "fin_rsi" ||
 	    name == "fin_turnover" || name == "fin_equal_weights" || name == "fin_inverse_vol_weights" ||
 	    name == "fin_portfolio_sharpe" || name == "fin_drawdown" || name == "fin_max_drawdown" ||
 	    name == "fin_avg_drawdown" || name == "fin_drawdown_duration" || name == "fin_ulcer_index" ||

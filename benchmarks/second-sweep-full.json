@@ -1,0 +1,525 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/workspace/duckdb/build/release/extension/finance/finance.duckdb_extension",
+  "scale": 1.0,
+  "threads": 4,
+  "warmups": 2,
+  "repeats": 9,
+  "cases": {
+    "bsm_separate": {
+      "median_seconds": 0.06,
+      "seconds": [
+        0.047,
+        0.06,
+        0.052,
+        0.044,
+        0.072,
+        0.063,
+        0.063,
+        0.063,
+        0.051
+      ],
+      "result": [
+        {
+          "price": 9067767.211890943,
+          "delta": 78233.98546971126,
+          "vega": 35640741.35982984
+        }
+      ],
+      "sql": "SELECT fsum(fin_bsm_price(kind,s,k,t,r,v)) price, fsum(fin_bsm_delta(kind,s,k,t,r,v)) delta, fsum(fin_bsm_vega(kind,s,k,t,r,v)) vega FROM options",
+      "profile": "/tmp/finance-second-sweep-all-profiles/bsm_separate.json"
+    },
+    "bsm_all": {
+      "median_seconds": 0.041,
+      "seconds": [
+        0.038,
+        0.041,
+        0.041,
+        0.04,
+        0.036,
+        0.041,
+        0.042,
+        0.041,
+        0.041
+      ],
+      "result": [
+        {
+          "price": 9067767.211890943,
+          "delta": 78233.98546971126,
+          "vega": 35640741.35982985
+        }
+      ],
+      "sql": "SELECT fsum(a.price) price, fsum(a.delta) delta, fsum(a.vega) vega FROM (SELECT fin_bsm_all(kind,s,k,t,r,v) a FROM options)",
+      "profile": "/tmp/finance-second-sweep-all-profiles/bsm_all.json"
+    },
+    "bsm_iv": {
+      "median_seconds": 0.016,
+      "seconds": [
+        0.016,
+        0.016,
+        0.02,
+        0.017,
+        0.027,
+        0.016,
+        0.016,
+        0.018,
+        0.015
+      ],
+      "result": [
+        {
+          "result": 11499.790000214301
+        }
+      ],
+      "sql": "SELECT fsum(fin_bsm_implied_vol(kind,bsm,s,k,t,r)) result FROM quotes",
+      "profile": "/tmp/finance-second-sweep-all-profiles/bsm_iv.json"
+    },
+    "black76_iv": {
+      "median_seconds": 0.015,
+      "seconds": [
+        0.018,
+        0.015,
+        0.015,
+        0.014,
+        0.014,
+        0.015,
+        0.015,
+        0.014,
+        0.014
+      ],
+      "result": [
+        {
+          "result": 11499.790000225183
+        }
+      ],
+      "sql": "SELECT fsum(fin_black76_implied_vol(kind,black,s,k,t,r)) result FROM quotes",
+      "profile": "/tmp/finance-second-sweep-all-profiles/black76_iv.json"
+    },
+    "bachelier_iv": {
+      "median_seconds": 0.012,
+      "seconds": [
+        0.012,
+        0.012,
+        0.012,
+        0.012,
+        0.012,
+        0.014,
+        0.012,
+        0.012,
+        0.012
+      ],
+      "result": [
+        {
+          "result": 1149979.00005651
+        }
+      ],
+      "sql": "SELECT fsum(fin_bachelier_implied_vol(kind,normal,s-100,k-100,t,r)) result FROM quotes",
+      "profile": "/tmp/finance-second-sweep-all-profiles/bachelier_iv.json"
+    },
+    "binomial_default": {
+      "median_seconds": 0.005,
+      "seconds": [
+        0.005,
+        0.005,
+        0.006,
+        0.006,
+        0.005,
+        0.005,
+        0.005,
+        0.005,
+        0.006
+      ],
+      "result": [
+        {
+          "result": 18138.24450981917
+        }
+      ],
+      "sql": "SELECT fsum(fin_binomial_price(kind,s,k,t,r,v)) result FROM (SELECT * FROM options LIMIT 2000)",
+      "profile": "/tmp/finance-second-sweep-all-profiles/binomial_default.json"
+    },
+    "bond_risk_600_periods": {
+      "median_seconds": 0.059,
+      "seconds": [
+        0.052,
+        0.055,
+        0.059,
+        0.065,
+        0.058,
+        0.069,
+        0.07,
+        0.07,
+        0.055
+      ],
+      "result": [
+        {
+          "duration": 41028008.1523722,
+          "convexity": 3300769436.229949
+        }
+      ],
+      "sql": "SELECT fsum(fin_bond_duration(coupon,ytm,300)) duration, fsum(fin_bond_convexity(coupon,ytm,300)) convexity FROM bonds",
+      "profile": "/tmp/finance-second-sweep-all-profiles/bond_risk_600_periods.json"
+    },
+    "irr": {
+      "median_seconds": 0.013,
+      "seconds": [
+        0.015,
+        0.013,
+        0.013,
+        0.014,
+        0.015,
+        0.011,
+        0.012,
+        0.012,
+        0.013
+      ],
+      "result": [
+        {
+          "result": 8980.392697132842
+        }
+      ],
+      "sql": "SELECT fsum(fin_irr(cf)) result FROM flows",
+      "profile": "/tmp/finance-second-sweep-all-profiles/irr.json"
+    },
+    "xirr": {
+      "median_seconds": 0.033,
+      "seconds": [
+        0.034,
+        0.03,
+        0.042,
+        0.033,
+        0.031,
+        0.031,
+        0.033,
+        0.035,
+        0.034
+      ],
+      "result": [
+        {
+          "result": 47087.42060407264
+        }
+      ],
+      "sql": "SELECT fsum(fin_xirr(cf,dates)) result FROM flows",
+      "profile": "/tmp/finance-second-sweep-all-profiles/xirr.json"
+    },
+    "matrix_vecmul": {
+      "median_seconds": 0.069,
+      "seconds": [
+        0.091,
+        0.068,
+        0.07,
+        0.069,
+        0.072,
+        0.08,
+        0.065,
+        0.064,
+        0.063
+      ],
+      "result": [
+        {
+          "result": 60225.0
+        }
+      ],
+      "sql": "SELECT fsum(fin_vector_sum(fin_matrix_vecmul(cov,w))) result FROM vectors",
+      "profile": "/tmp/finance-second-sweep-all-profiles/matrix_vecmul.json"
+    },
+    "portfolio_risk": {
+      "median_seconds": 0.157,
+      "seconds": [
+        0.157,
+        0.142,
+        0.165,
+        0.177,
+        0.178,
+        0.144,
+        0.157,
+        0.138,
+        0.141
+      ],
+      "result": [
+        {
+          "vol": 122937.18816704465,
+          "components": 122937.18816704465
+        }
+      ],
+      "sql": "SELECT fsum(fin_portfolio_vol(w,cov)) vol, fsum(fin_vector_sum(fin_component_risk(w,cov))) components FROM vectors",
+      "profile": "/tmp/finance-second-sweep-all-profiles/portfolio_risk.json"
+    },
+    "robust_means_cvar": {
+      "median_seconds": 0.054,
+      "seconds": [
+        0.057,
+        0.048,
+        0.065,
+        0.048,
+        0.058,
+        0.047,
+        0.048,
+        0.054,
+        0.054
+      ],
+      "result": [
+        {
+          "trimmed": 0.000600002079055998,
+          "winsorized": 0.0006000004239355371,
+          "cvar": 0.009583784327558006
+        }
+      ],
+      "sql": "SELECT fin_trimmed_mean(r) trimmed, fin_winsorized_mean(r) winsorized, fin_cvar(r) cvar FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/robust_means_cvar.json"
+    },
+    "weighted_mean": {
+      "median_seconds": 0.004,
+      "seconds": [
+        0.004,
+        0.003,
+        0.004,
+        0.003,
+        0.004,
+        0.004,
+        0.003,
+        0.004,
+        0.004
+      ],
+      "result": [
+        {
+          "result": 0.0006000006118202021
+        }
+      ],
+      "sql": "SELECT fin_weighted_mean(r,w) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/weighted_mean.json"
+    },
+    "weighted_quantile": {
+      "median_seconds": 0.103,
+      "seconds": [
+        0.109,
+        0.101,
+        0.103,
+        0.103,
+        0.112,
+        0.099,
+        0.101,
+        0.109,
+        0.098
+      ],
+      "result": [
+        {
+          "result": 0.01047790411138252
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,.95) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/weighted_quantile.json"
+    },
+    "weighted_quantile_endpoints": {
+      "median_seconds": 0.03,
+      "seconds": [
+        0.029,
+        0.033,
+        0.023,
+        0.025,
+        0.027,
+        0.033,
+        0.03,
+        0.032,
+        0.031
+      ],
+      "result": [
+        {
+          "minimum": -0.00999999997835429,
+          "maximum": 0.01119999995173126
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,0) minimum, fin_weighted_quantile(r,w,1) maximum FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/weighted_quantile_endpoints.json"
+    },
+    "quantile_spread": {
+      "median_seconds": 0.022,
+      "seconds": [
+        0.023,
+        0.02,
+        0.025,
+        0.019,
+        0.022,
+        0.022,
+        0.023,
+        0.02,
+        0.018
+      ],
+      "result": [
+        {
+          "result": 0.01870978867450267
+        }
+      ],
+      "sql": "SELECT fin_quantile_spread(sin(i::DOUBLE),r) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/quantile_spread.json"
+    },
+    "outlier_count": {
+      "median_seconds": 0.009,
+      "seconds": [
+        0.01,
+        0.009,
+        0.009,
+        0.009,
+        0.013,
+        0.009,
+        0.008,
+        0.008,
+        0.009
+      ],
+      "result": [
+        {
+          "result": 0
+        }
+      ],
+      "sql": "SELECT fin_outlier_count(r,1.5) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/outlier_count.json"
+    },
+    "sortino": {
+      "median_seconds": 0.002,
+      "seconds": [
+        0.002,
+        0.001,
+        0.002,
+        0.002,
+        0.001,
+        0.002,
+        0.002,
+        0.001,
+        0.002
+      ],
+      "result": [
+        {
+          "result": 2.0577324303380062
+        }
+      ],
+      "sql": "SELECT fin_sortino(r) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/sortino.json"
+    },
+    "ewma": {
+      "median_seconds": 0.065,
+      "seconds": [
+        0.061,
+        0.068,
+        0.065,
+        0.07,
+        0.067,
+        0.055,
+        0.068,
+        0.062,
+        0.056
+      ],
+      "result": [
+        {
+          "result": 0.11617830436215007
+        }
+      ],
+      "sql": "SELECT fin_ewma_vol(r ORDER BY i) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/ewma.json"
+    },
+    "ema": {
+      "median_seconds": 0.075,
+      "seconds": [
+        0.072,
+        0.074,
+        0.075,
+        0.091,
+        0.099,
+        0.073,
+        0.09,
+        0.091,
+        0.072
+      ],
+      "result": [
+        {
+          "result": 99.62586122000448
+        }
+      ],
+      "sql": "SELECT fin_ema(px ORDER BY i) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/ema.json"
+    },
+    "iv_percentile": {
+      "median_seconds": 0.056,
+      "seconds": [
+        0.054,
+        0.056,
+        0.069,
+        0.054,
+        0.059,
+        0.062,
+        0.056,
+        0.056,
+        0.057
+      ],
+      "result": [
+        {
+          "result": 0.06788606788606788
+        }
+      ],
+      "sql": "SELECT fin_iv_percentile(px ORDER BY i) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/iv_percentile.json"
+    },
+    "ordered_risk": {
+      "median_seconds": 0.202,
+      "seconds": [
+        0.196,
+        0.202,
+        0.203,
+        0.198,
+        0.205,
+        0.201,
+        0.212,
+        0.219,
+        0.193
+      ],
+      "result": [
+        {
+          "rsi": 44.01884837523992,
+          "ewma": 0.11617830436215007,
+          "drawdown": -0.02037321257812641
+        }
+      ],
+      "sql": "SELECT fin_rsi(px ORDER BY i) rsi, fin_ewma_vol(r ORDER BY i) ewma, fin_max_drawdown(r ORDER BY i) drawdown FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/ordered_risk.json"
+    },
+    "calendar": {
+      "median_seconds": 0.013,
+      "seconds": [
+        0.013,
+        0.013,
+        0.013,
+        0.013,
+        0.009,
+        0.009,
+        0.011,
+        0.013,
+        0.012
+      ],
+      "result": [
+        {
+          "result": "1399572602"
+        }
+      ],
+      "sql": "SELECT sum(date_diff('day',d,fin_next_business_day(d,'weekday',1000))) result FROM calendar_dates",
+      "profile": "/tmp/finance-second-sweep-all-profiles/calendar.json"
+    },
+    "curve_128_knots": {
+      "median_seconds": 0.009,
+      "seconds": [
+        0.009,
+        0.01,
+        0.013,
+        0.009,
+        0.01,
+        0.009,
+        0.006,
+        0.007,
+        0.006
+      ],
+      "result": [
+        {
+          "result": 94744.97499999999
+        }
+      ],
+      "sql": "SELECT fsum(fin_curve_zero_rate(list_transform(range(1,129),lambda x: x/10.0),list_transform(range(1,129),lambda x: .03+.001*x),.1+(i%256)::DOUBLE*.05)) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-all-profiles/curve_128_knots.json"
+    }
+  }
+}
