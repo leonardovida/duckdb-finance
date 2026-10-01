@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -14,6 +15,8 @@ namespace {
 
 #include "aggregate/constants.inc"
 #include "aggregate/update_helpers.inc"
+#include "aggregate/numeric_helpers.inc"
+#include "aggregate/ema.inc"
 #include "aggregate/sortino.inc"
 #include "aggregate/ewma.inc"
 #include "aggregate/bipower_variation.inc"

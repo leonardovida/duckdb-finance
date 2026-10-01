@@ -62,7 +62,7 @@ the repository checkout where the DuckDB shell is running.
 
 ## Repeatable Release Benchmarks
 
-Use `make benchmark` to build an optimized extension and run sixteen
+Use `make benchmark` to build an optimized extension and run twenty-four
 representative workloads. It defaults to one million observations, four DuckDB
 threads, one warmup, and five measured repetitions per query. Solver and tree
 workloads use smaller subsets. Setup and loading are excluded from query timings.
@@ -103,9 +103,13 @@ execution; sorting or SQL macro expansion may dominate the native function.
 | Returns/risk | Decimal simple returns; annualization 252. | Use the actual observation frequency and explicitly select log returns when applicable. |
 | Weighted statistics | Population variance (`ddof=0`); linear weighted quantile. | Use the required weight interpretation and explicit degrees of freedom. |
 | Robust statistics | Exact 5th/95th percentile bounds; historical CVaR confidence 0.95. | Choose bounds/confidence for the application. Cutoffs use selection rather than full sorting; summation is scaled and compensated. |
-| Ordered indicators | RSI period 14; EWMA lambda 0.94 and annualization 252. | Always define observation order; adjust periods and decay to sampling frequency. |
+| Ordered indicators | EMA period 20, seeded with the first observation; RSI period 14; EWMA lambda 0.94 and annualization 252. | Always define observation order; adjust periods and decay to sampling frequency. |
+| IV percentile | Fraction of prior observations strictly below the latest IV, excluding that latest observation from the denominator. | Use an explicitly bounded SQL window for rolling history; ties do not count as below. |
+| Quantile spread | Five buckets; boundary ties share slots equally. | Choose bucket count for the sample size. Selection avoids sorting the full sample. |
 
-Performance changes preserve these established conventions. The Bachelier
+EMA and IV percentile now implement their named calculations; quantile spread
+now handles boundary ties without arbitrary row-order preference. These results
+can differ from earlier versions. The Bachelier
 starting guess is now automatic; explicit guesses remain supported. Curve
 inputs must have finite, strictly increasing knots and finite values. Invalid
 scalar inputs and failed solves return `NULL`; aggregate validation errors
@@ -116,6 +120,10 @@ model validation.
 ## CI Coverage
 
 `make check` runs:
+
+- `scripts/verify_aggregate_numerics.py`, which checks grouped and windowed
+  aggregates against 80-digit Decimal references at one and four threads, and
+  verifies controlled rejection of invalid inputs. `make ci-duckdb` also runs it.
 
 - `scripts/check_function_docs.py`, which verifies every registered function has
   a Function Reference entry.

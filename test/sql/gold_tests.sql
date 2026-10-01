@@ -860,7 +860,7 @@ SELECT
   assert_eq('resets aggregate', fin_resets(close - 100.0), 1::BIGINT),
   assert_eq('last non null', fin_last_non_null(close), 103.0),
   assert_eq('first non null', fin_first_non_null(close), 100.0),
-  assert_near('ema alias', fin_ema(close), 101.6, 1e-12),
+  assert_near('ema default recurrence', fin_ema(close ORDER BY seq), 100.69349705112582, 1e-12),
   assert_near('ema halflife alias', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
   assert_near('exp decay sum alias', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 508.0, 1e-12),
   assert_near('exp decay avg alias', fin_exp_decay_avg(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
@@ -971,6 +971,200 @@ SELECT
   assert_near('iv percentile respects ascending aggregate order', fin_iv_percentile(iv ORDER BY iv), 1.0, 1e-12),
   assert_near('iv percentile respects descending aggregate order', fin_iv_percentile(iv ORDER BY iv DESC), 0.0, 1e-12)
 FROM iv_path;
+
+-- Second sweep: exponential weighting and empirical percentiles have their
+-- own independent expectations, including ordering, NULLs, ties and windows.
+WITH path(i, x) AS (VALUES (1, 10.0), (2, 20.0), (3, NULL), (4, 40.0))
+SELECT
+  assert_near('ema default period', fin_ema(x ORDER BY i), 13.718820861678005, 1e-12),
+  assert_near('ema period three', fin_ema(x, 3 ORDER BY i), 27.5, 1e-12),
+  assert_near('ema named period', fin_ema(x, period := 3 ORDER BY i), 27.5, 1e-12),
+  assert_near('ema reverse order', fin_ema(x, 3 ORDER BY i DESC), 20.0, 1e-12),
+  assert_near('ema period one', fin_ema(x, 1 ORDER BY i), 40.0, 1e-12),
+  assert_near('ema filtered rows', fin_ema(x, 3 ORDER BY i) FILTER (WHERE i <> 2), 25.0, 1e-12),
+  assert_near('ema subset without ordering', fin_ema(x, 3) FILTER (WHERE i = 2), 20.0, 1e-12)
+FROM path;
+
+SELECT
+  assert_eq('ema empty', fin_ema(x), NULL),
+  assert_eq('iv percentile empty', fin_iv_percentile(x), NULL)
+FROM (SELECT NULL::DOUBLE AS x WHERE false);
+
+SELECT
+  assert_eq('ema null input', fin_ema(NULL::DOUBLE), NULL),
+  assert_eq('ema null period', fin_ema(10.0, NULL), NULL),
+  assert_eq('iv percentile singleton', fin_iv_percentile(0.2), NULL);
+
+WITH path(i, x) AS (VALUES (1, 10.0), (2, 20.0), (3, 40.0)), results AS (
+  SELECT i, fin_ema(x, 3) OVER (ORDER BY i ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS ema
+  FROM path
+)
+SELECT assert_true('ema sliding window reseeds', bool_and(ema = CASE i WHEN 1 THEN 10 WHEN 2 THEN 15 ELSE 30 END))
+FROM results;
+
+SELECT
+  assert_near('ema constant batch default', fin_ema(7.0), 7.0, 1e-12),
+  assert_near('ema constant batch period one', fin_ema(7.0, 1), 7.0, 1e-12),
+  assert_near('ema extreme finite constant', fin_ema(1.7e308)/1.7e308, 1.0, 1e-12)
+FROM range(10000);
+
+SELECT assert_near('ema avoids extreme subtraction overflow', fin_ema(x, 3 ORDER BY i), 0.0, 0.0)
+FROM (VALUES (1, -1e308), (2, 1e308)) t(i,x);
+
+WITH path AS (SELECT i, CASE WHEN i = 0 THEN 1e200 ELSE 0.0 END AS x FROM range(1501) t(i))
+SELECT
+  assert_near('ema decay preserves finite late value', fin_ema(x,3 ORDER BY i)/(1e200*pow(2.0,-1000)), pow(2.0,-500), 1e-162),
+  assert_near('ewma decay preserves finite late volatility', fin_ewma_vol(x,0.5,1 ORDER BY i)/1e200, pow(2.0,-750), 1e-237)
+FROM path;
+
+SELECT assert_near('ewma tiny lambda retains past contribution', fin_ewma_vol(x,1e-300,1 ORDER BY i)/1e50, 1.0, 1e-12)
+FROM (VALUES (1,1e200),(2,0.0)) t(i,x);
+
+SELECT assert_near('ewma repeated tiny lambda preserves decay', fin_ewma_vol(x,1e-190,1 ORDER BY i)/1e118, 1.0, 1e-12)
+FROM (VALUES (1,1e308),(2,0.0),(3,0.0)) t(i,x);
+
+SELECT assert_near('ema cancellation releases scale', fin_ema(x,3 ORDER BY i)/1e-320, 0.5, 1e-3)
+FROM (VALUES (1,0.0),(2,1e308),(3,-5e307),(4,1e-320)) t(i,x);
+
+WITH path(i,x) AS (VALUES (1,-1e308),(2,1e308),(3,1e-320))
+SELECT assert_near('ema cancellation before tiny observation', fin_ema(x,3 ORDER BY i)/1e-320, 0.5, 1e-3)
+FROM path;
+
+WITH path(i,x) AS (VALUES (1,-1e308),(2,1e308),(3,1e-320)), results AS (
+  SELECT i, fin_ema(x,3) OVER (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ema FROM path
+)
+SELECT assert_near('ema window merge retains tiny correction', ema/1e-320, 0.5, 1e-3) FROM results WHERE i=3;
+
+SELECT assert_eq('ema period one returns tiny latest value', fin_ema(x,1 ORDER BY i), 1e-320)
+FROM (VALUES (1,1e308),(2,1e-320)) t(i,x);
+
+WITH path AS (
+  SELECT i, CASE WHEN i=8193 THEN -1e308 WHEN i=8194 THEN 1e308 WHEN i=8195 THEN 1e-320 ELSE 0.0 END AS x
+  FROM range(8196) t(i)
+), results AS (
+  SELECT i, fin_ema(x,3) OVER (ORDER BY i ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS ema FROM path
+)
+SELECT assert_near('ema segment tree retains cancellation residual', ema/1e-320, 0.5, 1e-3)
+FROM results WHERE i=8195;
+
+WITH path(i, iv) AS (VALUES (1, 0.1), (2, 0.11), (3, 0.9), (4, NULL), (5, 0.2))
+SELECT
+  assert_near('iv empirical percentile differs from rank', fin_iv_percentile(iv ORDER BY i), 2.0/3.0, 1e-12),
+  assert_near('iv minmax rank remains separate', fin_iv_rank(iv ORDER BY i), 0.125, 1e-12)
+FROM path;
+
+WITH path(i, iv) AS (VALUES (1, 0.1), (2, 0.2), (3, 0.2), (4, 0.2))
+SELECT assert_near('iv strict ties', fin_iv_percentile(iv ORDER BY i), 1.0/3.0, 1e-12)
+FROM path;
+
+SELECT
+  assert_near('iv constant percentile', fin_iv_percentile(0.2), 0.0, 0.0),
+  assert_eq('iv constant rank undefined', fin_iv_rank(0.2), NULL)
+FROM range(4);
+
+WITH path(i, iv) AS (VALUES (1, 0.1), (2, 0.11), (3, 0.9), (4, 0.2)), results AS (
+  SELECT i, fin_iv_percentile(iv) OVER (ORDER BY i ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS p
+  FROM path
+)
+SELECT assert_true('iv percentile sliding window',
+  bool_and(p IS NOT DISTINCT FROM CASE WHEN i = 1 THEN NULL WHEN i < 4 THEN 1.0 ELSE 0.5 END))
+FROM results;
+
+-- Large values and weights must not overflow intermediate arithmetic.
+SELECT
+  assert_near('weighted linear opposite extremes', fin_weighted_quantile(x,w,0.75)/1e308, 0.0, 0.0),
+  assert_near('weighted midpoint opposite extremes', fin_weighted_quantile(x,w,0.75,'midpoint')/1e308, 0.0, 0.0),
+  assert_near('weighted quantile large weight', fin_weighted_quantile(x,w,0.875)/1e308, 0.5, 1e-12),
+  assert_near('weighted quantile case compatibility', fin_weighted_quantile(x,w,0.875,'LiNeAr')/1e308, 0.5, 1e-12),
+  assert_near('weighted quantile zero endpoint', fin_weighted_quantile(x,w,0)/1e308, -1.0, 1e-12),
+  assert_near('weighted quantile one endpoint', fin_weighted_quantile(x,w,1)/1e308, 1.0, 1e-12)
+FROM (VALUES (-1e308,1e308), (1e308,1e308)) t(x,w);
+
+SELECT assert_near('weighted midpoint large same sign', fin_weighted_quantile(x,1.0,0.75,'midpoint')/1e308, 1.4, 1e-12)
+FROM (VALUES (1.2e308), (1.6e308)) t(x);
+
+SELECT assert_near('weighted tiny scale invariant', fin_weighted_quantile(x,w,0.75), 15.0, 1e-12)
+FROM (VALUES (10.0,1e-300), (20.0,1e-300)) t(x,w);
+
+SELECT assert_near('weighted subnormal weights', fin_weighted_quantile(x,w,0.75), 15.0, 1e-12)
+FROM (VALUES (10.0,1e-320), (20.0,1e-320)) t(x,w);
+
+SELECT assert_near('weighted value ties canonicalize weights', fin_weighted_quantile(x,w,0.4), 10.0, 1e-12)
+FROM (VALUES (0.0,1.0),(10.0,2.0),(10.0,5.0),(20.0,3.0)) t(x,w);
+
+SELECT assert_near('weighted reversed ties same knots', fin_weighted_quantile(x,w,0.4), 10.0, 1e-12)
+FROM (VALUES (20.0,3.0),(10.0,5.0),(10.0,2.0),(0.0,1.0)) t(x,w);
+
+WITH observations AS (
+  SELECT i, CASE WHEN i = 9 THEN 1.0 ELSE 0.0 END AS x FROM range(10) t(i)
+)
+SELECT
+  assert_eq('outlier extreme scale', fin_outlier_count(x*1e308,2.0), 1::BIGINT),
+  assert_eq('outlier tiny scale', fin_outlier_count(x*1e-300,2.0), 1::BIGINT),
+  assert_eq('outlier affine shift', fin_outlier_count((1+x)*1e200,2.0), 1::BIGINT),
+  assert_eq('outlier sign reversal', fin_outlier_count(-x*1e308,2.0), 1::BIGINT)
+FROM observations;
+
+WITH observations AS (
+  SELECT CASE WHEN i = 9 THEN 1e-320 ELSE 0.0 END AS x FROM range(10) t(i)
+)
+SELECT assert_eq('outlier subnormal scale', fin_outlier_count(x,2.0), 1::BIGINT) FROM observations;
+
+WITH observations AS (
+  SELECT CASE WHEN i < 5 THEN 1.0 ELSE -1.0 END AS x FROM range(10) t(i)
+)
+SELECT assert_eq('outlier huge opposite signs', fin_outlier_count(x*1e308,0.5), 10::BIGINT)
+FROM observations;
+
+SELECT
+  assert_eq('outlier extreme constant', fin_outlier_count(1e308), 0::BIGINT),
+  assert_eq('outlier zero constant', fin_outlier_count(0.0), 0::BIGINT)
+FROM range(10);
+
+SELECT assert_eq('outlier constant rounding cannot create variance', fin_outlier_count(0.1,0.5), 0::BIGINT)
+FROM range(3);
+
+SELECT assert_eq('outlier non-finite and null fallback', fin_outlier_count(x,2.0), 1::BIGINT)
+FROM (VALUES (0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(10.0),
+             ('NaN'::DOUBLE),('Infinity'::DOUBLE),(NULL)) t(x);
+
+SELECT assert_eq('outlier non-finite chunk cannot append twice', fin_outlier_count(x,2.0), 1::BIGINT)
+FROM (VALUES (0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(10.0),
+             ('NaN'::DOUBLE)) t(x);
+
+WITH samples(factor, r) AS (VALUES (0.0,0.0),(0.0,6.0),(0.0,12.0),(1.0,20.0),(2.0,40.0))
+SELECT
+  assert_near('quantile spread proportional boundary ties', fin_quantile_spread(factor,r,2), 16.0, 1e-12),
+  assert_near('quantile spread tie order invariant', fin_quantile_spread(factor,r,2 ORDER BY r DESC), 16.0, 1e-12),
+  assert_near('quantile spread constant factor', fin_quantile_spread(1.0,r,2), 0.0, 0.0)
+FROM samples;
+
+SELECT assert_near('quantile spread avoids sum overflow', fin_quantile_spread(factor,r,2)/1e307, 1.0, 1e-12)
+FROM (VALUES (1.0,1e308),(2.0,1e308),(3.0,1.1e308),(4.0,1.1e308)) t(factor,r);
+
+SELECT assert_eq('quantile spread unrepresentable result', fin_quantile_spread(factor,r,2), NULL)
+FROM (VALUES (1.0,-1e308),(2.0,1e308)) t(factor,r);
+
+SELECT
+  assert_near('ewma extreme finite volatility', fin_ewma_vol(1e200)/1e200, sqrt(252.0), 1e-12),
+  assert_eq('ewma unrepresentable variance', fin_ewma_variance(1e200), NULL),
+  assert_near('ewma tiny finite volatility', fin_ewma_vol(1e-200)/1e-200, sqrt(252.0), 1e-12),
+  assert_near('ewma small annualization', fin_ewma_variance(1e200,0.94,1e-200)/1e200, 1.0, 1e-12)
+FROM range(100);
+
+SELECT
+  assert_near('sortino huge scale invariance', fin_sortino(x*1e200,0,1), 2.0/sqrt(3.0), 1e-12),
+  assert_near('sortino tiny scale invariance', fin_sortino(x*1e-200,0,1), 2.0/sqrt(3.0), 1e-12)
+FROM (VALUES (-1.0),(1.0),(2.0)) t(x);
+
+SELECT assert_near('sortino compensated cancellation', fin_sortino(x,0,1), 1e-16/sqrt(3.0), 1e-28)
+FROM (VALUES (1e16),(1.0),(-1e16)) t(x);
+
+SELECT assert_near('sortino asymmetric extreme scales', fin_sortino(x,0,1)/1e208, 1.0/sqrt(2.0), 1e-12)
+FROM (VALUES (-1e100),(1e308)) t(x);
+
+SELECT assert_near('sortino annualization rescues ratio overflow', fin_sortino(x,0,1e-200)/1e208, 1.0/sqrt(2.0), 1e-12)
+FROM (VALUES (-1.0),(1e308)) t(x);
 
 -- Fixed income, cash-flow, and curve helpers.
 SELECT

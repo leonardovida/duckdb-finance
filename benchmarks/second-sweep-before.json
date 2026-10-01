@@ -1,0 +1,133 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/tmp/finance-second-sweep-baseline/release/finance.duckdb_extension",
+  "scale": 1.0,
+  "threads": 4,
+  "warmups": 2,
+  "repeats": 9,
+  "cases": {
+    "weighted_quantile": {
+      "median_seconds": 0.11,
+      "seconds": [
+        0.115,
+        0.11,
+        0.112,
+        0.112,
+        0.101,
+        0.114,
+        0.106,
+        0.101,
+        0.105
+      ],
+      "result": [
+        {
+          "result": 0.010477904111382517
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,.95) result FROM observations"
+    },
+    "weighted_quantile_endpoints": {
+      "median_seconds": 0.227,
+      "seconds": [
+        0.226,
+        0.234,
+        0.235,
+        0.231,
+        0.227,
+        0.223,
+        0.215,
+        0.212,
+        0.238
+      ],
+      "result": [
+        {
+          "minimum": -0.00999999997835429,
+          "maximum": 0.01119999995173126
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,0) minimum, fin_weighted_quantile(r,w,1) maximum FROM observations"
+    },
+    "quantile_spread": {
+      "median_seconds": 0.101,
+      "seconds": [
+        0.101,
+        0.098,
+        0.098,
+        0.098,
+        0.098,
+        0.101,
+        0.107,
+        0.104,
+        0.103
+      ],
+      "result": [
+        {
+          "result": 0.018709788674502577
+        }
+      ],
+      "sql": "SELECT fin_quantile_spread(sin(i::DOUBLE),r) result FROM observations"
+    },
+    "outlier_count": {
+      "median_seconds": 0.006,
+      "seconds": [
+        0.008,
+        0.007,
+        0.007,
+        0.006,
+        0.005,
+        0.006,
+        0.005,
+        0.006,
+        0.006
+      ],
+      "result": [
+        {
+          "result": 0
+        }
+      ],
+      "sql": "SELECT fin_outlier_count(r,1.5) result FROM observations"
+    },
+    "sortino": {
+      "median_seconds": 0.001,
+      "seconds": [
+        0.0,
+        0.001,
+        0.001,
+        0.001,
+        0.001,
+        0.001,
+        0.001,
+        0.001,
+        0.001
+      ],
+      "result": [
+        {
+          "result": 2.0577324303379974
+        }
+      ],
+      "sql": "SELECT fin_sortino(r) result FROM observations"
+    },
+    "ordered_risk": {
+      "median_seconds": 0.196,
+      "seconds": [
+        0.225,
+        0.187,
+        0.207,
+        0.193,
+        0.196,
+        0.177,
+        0.193,
+        0.205,
+        0.21
+      ],
+      "result": [
+        {
+          "rsi": 44.01884837523992,
+          "ewma": 0.11617830436215007,
+          "drawdown": -0.02037321257812641
+        }
+      ],
+      "sql": "SELECT fin_rsi(px ORDER BY i) rsi, fin_ewma_vol(r ORDER BY i) ewma, fin_max_drawdown(r ORDER BY i) drawdown FROM observations"
+    }
+  }
+}

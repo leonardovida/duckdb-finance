@@ -3,7 +3,8 @@ struct EWMAState {
 	double variance;
 	double lambda;
 	double annualization;
-	double first_square;
+	double tail;
+	double scale;
 	double decay_product;
 	idx_t count;
 };
@@ -16,7 +17,8 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 		state.variance = 0.0;
 		state.lambda = DEFAULT_EWMA_LAMBDA;
 		state.annualization = DEFAULT_ANNUALIZATION;
-		state.first_square = 0.0;
+		state.tail = 0.0;
+		state.scale = 0.0;
 		state.decay_product = 1.0;
 		state.count = 0;
 	}
@@ -26,18 +28,38 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 		if (!std::isfinite(value)) {
 			throw InvalidInputException("EWMA returns must be finite");
 		}
-		auto square = value * value;
+		auto scale = std::abs(value);
+		if (scale >= 1e-100 && scale <= 1.0) {
+			scale = 1.0;
+		}
+		if (scale > state.scale) {
+			auto ratio = state.scale / scale;
+			state.variance *= ratio * ratio;
+			state.tail *= ratio * ratio;
+			state.scale = scale;
+		}
+		auto normalized = state.scale == 1.0 ? value : state.scale > 0.0 ? value / state.scale : 0.0;
+		auto square = normalized * normalized;
 		if (!state.isset) {
 			state.variance = square;
-			state.first_square = square;
+			state.tail = (1.0 - state.lambda) * square;
 			state.decay_product = state.lambda;
 			state.count = 1;
 			state.isset = true;
 			return;
 		}
 		state.variance = state.lambda * state.variance + (1.0 - state.lambda) * square;
+		state.tail = state.lambda * state.tail + (1.0 - state.lambda) * square;
 		state.decay_product *= state.lambda;
 		state.count++;
+		if (state.variance > 0.0 && state.variance <= 1e-100 &&
+		    state.scale > std::numeric_limits<double>::denorm_min()) {
+			auto scale = std::max(std::numeric_limits<double>::denorm_min(), state.scale * std::sqrt(state.variance));
+			auto ratio = state.scale / scale;
+			state.variance = state.variance * ratio * ratio;
+			state.tail = state.tail * ratio * ratio;
+			state.scale = scale;
+		}
 	}
 
 	template <class STATE, class OP>
@@ -52,10 +74,28 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 		if (target.lambda != source.lambda || target.annualization != source.annualization) {
 			throw InvalidInputException("EWMA lambda and annualization must be constant within a group");
 		}
-		// A standalone state treats its first observation as the initial
-		// variance. When it follows another state, that observation is an EWMA
-		// update too. This affine form preserves the row-by-row recurrence.
-		target.variance = source.variance + source.decay_product * (target.variance - source.first_square);
+		auto scale = std::max(source.scale, target.scale);
+		auto left = scale > 0.0 ? target.scale / scale : 0.0;
+		auto right = scale > 0.0 ? source.scale / scale : 0.0;
+		// The zero-seeded tail appends source observations without a subtraction
+		// of nearly equal seeded variances. Work in a common scale before merging.
+		auto variance = source.decay_product * target.variance * left * left + source.tail * right * right;
+		auto tail = source.decay_product * target.tail * left * left + source.tail * right * right;
+		if (source.decay_product == 0.0 || variance <= 1e-100) {
+			auto log_decay = 0.5 * static_cast<double>(source.count) * std::log(source.lambda);
+			auto magnitude = std::max(DecayedMagnitude(std::sqrt(target.variance), target.scale, log_decay),
+			                          DecayedMagnitude(std::sqrt(target.tail), target.scale, log_decay));
+			magnitude = std::max(magnitude, DecayedMagnitude(std::sqrt(source.tail), source.scale, 0.0));
+			scale = ScaleForMagnitude(magnitude);
+			auto root = ExponentialScaledRatio(std::sqrt(target.variance), target.scale, scale, log_decay);
+			auto left_tail = ExponentialScaledRatio(std::sqrt(target.tail), target.scale, scale, log_decay);
+			auto right_tail = ExponentialScaledRatio(std::sqrt(source.tail), source.scale, scale, 0.0);
+			variance = root * root + right_tail * right_tail;
+			tail = left_tail * left_tail + right_tail * right_tail;
+		}
+		target.variance = variance;
+		target.tail = tail;
+		target.scale = scale;
 		target.decay_product *= source.decay_product;
 		target.count += source.count;
 	}
@@ -66,8 +106,12 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 			finalize_data.ReturnNull();
 			return;
 		}
-		auto annualized = state.variance * state.annualization;
-		target = RETURN_VOL ? std::sqrt(annualized) : annualized;
+		auto vol = ScaledRatio(std::sqrt(std::max(0.0, state.variance)), state.scale, 1.0, 1.0,
+		                       std::sqrt(state.annualization));
+		target = RETURN_VOL ? vol : vol * vol;
+		if (!std::isfinite(target)) {
+			finalize_data.ReturnNull();
+		}
 	}
 
 	static bool IgnoreNull() {

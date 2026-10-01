@@ -1,0 +1,94 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/workspace/duckdb/build/release/extension/finance/finance.duckdb_extension",
+  "scale": 4.0,
+  "threads": 4,
+  "warmups": 2,
+  "repeats": 9,
+  "cases": {
+    "weighted_quantile": {
+      "median_seconds": 0.48,
+      "seconds": [
+        0.499,
+        0.473,
+        0.499,
+        0.477,
+        0.478,
+        0.49,
+        0.474,
+        0.48,
+        0.481
+      ],
+      "result": [
+        {
+          "result": 0.010477854609398981
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,.95) result FROM observations",
+      "speedup": 1.0562500000000001
+    },
+    "outlier_count": {
+      "median_seconds": 0.051,
+      "seconds": [
+        0.051,
+        0.049,
+        0.05,
+        0.039,
+        0.067,
+        0.067,
+        0.054,
+        0.047,
+        0.064
+      ],
+      "result": [
+        {
+          "result": 0
+        }
+      ],
+      "sql": "SELECT fin_outlier_count(r,1.5) result FROM observations",
+      "speedup": 0.6862745098039217
+    },
+    "sortino": {
+      "median_seconds": 0.005,
+      "seconds": [
+        0.005,
+        0.005,
+        0.004,
+        0.005,
+        0.005,
+        0.005,
+        0.004,
+        0.004,
+        0.004
+      ],
+      "result": [
+        {
+          "result": 2.0577383433950387
+        }
+      ],
+      "sql": "SELECT fin_sortino(r) result FROM observations",
+      "speedup": 0.6
+    },
+    "ewma": {
+      "median_seconds": 0.253,
+      "seconds": [
+        0.241,
+        0.262,
+        0.232,
+        0.24,
+        0.265,
+        0.291,
+        0.235,
+        0.254,
+        0.253
+      ],
+      "result": [
+        {
+          "result": 0.10909769677209182
+        }
+      ],
+      "sql": "SELECT fin_ewma_vol(r ORDER BY i) result FROM observations",
+      "speedup": 1.0197628458498025
+    }
+  }
+}

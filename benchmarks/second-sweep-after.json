@@ -1,0 +1,145 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/workspace/duckdb/build/release/extension/finance/finance.duckdb_extension",
+  "scale": 1.0,
+  "threads": 4,
+  "warmups": 2,
+  "repeats": 9,
+  "cases": {
+    "weighted_quantile": {
+      "median_seconds": 0.113,
+      "seconds": [
+        0.113,
+        0.12,
+        0.114,
+        0.109,
+        0.104,
+        0.115,
+        0.114,
+        0.099,
+        0.11
+      ],
+      "result": [
+        {
+          "result": 0.01047790411138252
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,.95) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-profiles/weighted_quantile.json",
+      "speedup": 0.9734513274336283
+    },
+    "weighted_quantile_endpoints": {
+      "median_seconds": 0.032,
+      "seconds": [
+        0.037,
+        0.017,
+        0.032,
+        0.017,
+        0.032,
+        0.027,
+        0.037,
+        0.035,
+        0.033
+      ],
+      "result": [
+        {
+          "minimum": -0.00999999997835429,
+          "maximum": 0.01119999995173126
+        }
+      ],
+      "sql": "SELECT fin_weighted_quantile(r,w,0) minimum, fin_weighted_quantile(r,w,1) maximum FROM observations",
+      "profile": "/tmp/finance-second-sweep-profiles/weighted_quantile_endpoints.json",
+      "speedup": 7.09375
+    },
+    "quantile_spread": {
+      "median_seconds": 0.021,
+      "seconds": [
+        0.022,
+        0.022,
+        0.021,
+        0.021,
+        0.021,
+        0.02,
+        0.022,
+        0.018,
+        0.027
+      ],
+      "result": [
+        {
+          "result": 0.01870978867450267
+        }
+      ],
+      "sql": "SELECT fin_quantile_spread(sin(i::DOUBLE),r) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-profiles/quantile_spread.json",
+      "speedup": 4.809523809523809
+    },
+    "outlier_count": {
+      "median_seconds": 0.01,
+      "seconds": [
+        0.01,
+        0.01,
+        0.009,
+        0.01,
+        0.01,
+        0.009,
+        0.01,
+        0.01,
+        0.01
+      ],
+      "result": [
+        {
+          "result": 0
+        }
+      ],
+      "sql": "SELECT fin_outlier_count(r,1.5) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-profiles/outlier_count.json",
+      "speedup": 0.6
+    },
+    "sortino": {
+      "median_seconds": 0.002,
+      "seconds": [
+        0.002,
+        0.002,
+        0.002,
+        0.002,
+        0.002,
+        0.001,
+        0.002,
+        0.002,
+        0.001
+      ],
+      "result": [
+        {
+          "result": 2.0577324303380062
+        }
+      ],
+      "sql": "SELECT fin_sortino(r) result FROM observations",
+      "profile": "/tmp/finance-second-sweep-profiles/sortino.json",
+      "speedup": 0.5
+    },
+    "ordered_risk": {
+      "median_seconds": 0.198,
+      "seconds": [
+        0.201,
+        0.187,
+        0.175,
+        0.197,
+        0.198,
+        0.2,
+        0.208,
+        0.184,
+        0.198
+      ],
+      "result": [
+        {
+          "rsi": 44.01884837523992,
+          "ewma": 0.11617830436215007,
+          "drawdown": -0.02037321257812641
+        }
+      ],
+      "sql": "SELECT fin_rsi(px ORDER BY i) rsi, fin_ewma_vol(r ORDER BY i) ewma, fin_max_drawdown(r ORDER BY i) drawdown FROM observations",
+      "profile": "/tmp/finance-second-sweep-profiles/ordered_risk.json",
+      "speedup": 0.98989898989899
+    }
+  }
+}

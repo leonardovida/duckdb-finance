@@ -5,7 +5,6 @@
     {"fin_resets", "(x) AS count(*) FILTER (WHERE x < 0)"},
     {"fin_last_non_null", "(x) AS last(x) FILTER (WHERE x IS NOT NULL)"},
     {"fin_first_non_null", "(x) AS first(x) FILTER (WHERE x IS NOT NULL)"},
-    {"fin_ema", "(x, period := 20) AS avg(x)"},
     {"fin_ema_halflife", "(x, ts, halflife) AS avg(x)"},
     {"fin_exp_decay_sum", "(x, ts, halflife) AS fsum(x)"},
     {"fin_exp_decay_avg", "(x, ts, halflife) AS avg(x)"},

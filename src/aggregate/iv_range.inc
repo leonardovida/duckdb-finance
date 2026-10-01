@@ -6,8 +6,13 @@ struct IVRangeState {
 	idx_t count;
 };
 
-template <bool PERCENTILE>
-struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation<PERCENTILE>> {
+static void ValidateIVObservation(double value) {
+	if (!std::isfinite(value) || value < 0.0) {
+		throw InvalidInputException("IV observations must be non-negative and finite");
+	}
+}
+
+struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
@@ -19,6 +24,7 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation<PER
 
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
+		ValidateIVObservation(value);
 		if (!state.isset) {
 			state.isset = true;
 			state.min_iv = value;
@@ -52,7 +58,51 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation<PER
 			return;
 		}
 		auto rank = (state.last_iv - state.min_iv) / (state.max_iv - state.min_iv);
-		target = PERCENTILE ? std::min(1.0, std::max(0.0, rank)) : rank;
+		target = rank;
+	}
+
+	static bool IgnoreNull() {
+		return true;
+	}
+};
+
+struct IVPercentileState {
+	vector<double> *values;
+};
+
+struct IVPercentileOperation : public UnaryDoubleUpdateOperation<IVPercentileOperation> {
+	template <class STATE>
+	static void Initialize(STATE &state) {
+		state.values = new vector<double>();
+	}
+
+	template <class STATE>
+	static void UpdateValue(STATE &state, double value) {
+		ValidateIVObservation(value);
+		state.values->push_back(value);
+	}
+
+	template <class STATE, class OP>
+	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
+	}
+
+	template <class T, class STATE>
+	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
+		if (state.values->size() < 2) {
+			finalize_data.ReturnNull();
+			return;
+		}
+		auto current = state.values->back();
+		auto below = std::count_if(state.values->begin(), state.values->end() - 1,
+		                           [current](double value) { return value < current; });
+		target = static_cast<double>(below) / static_cast<double>(state.values->size() - 1);
+	}
+
+	template <class STATE>
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.values;
+		state.values = nullptr;
 	}
 
 	static bool IgnoreNull() {

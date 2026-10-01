@@ -75,13 +75,17 @@ check-release-metadata:
 check-sql-runner:
 	python3 -m unittest discover -s scripts -p 'test_*.py'
 
-check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner test
+.PHONY: check-aggregate-numerics
+check-aggregate-numerics: debug
+	python3 scripts/verify_aggregate_numerics.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)"
+
+check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner test check-aggregate-numerics
 
 ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner
 
 ci-duckdb-smoke: smoke-quiet
 
-ci-duckdb: gold-quiet
+ci-duckdb: gold-quiet check-aggregate-numerics
 
 ci: ci-static ci-duckdb
 

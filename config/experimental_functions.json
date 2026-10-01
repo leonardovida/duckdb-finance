@@ -1,6 +1,81 @@
 {
   "functions": [
     {
+      "name": "fin_sma",
+      "reason": "averages supplied rows and ignores the period argument",
+      "replacement": "use avg with an explicit SQL window matching the desired lookback"
+    },
+    {
+      "name": "fin_wma",
+      "reason": "returns an arithmetic mean without linearly increasing weights and ignores period",
+      "replacement": "assign chronological weights in SQL before aggregating"
+    },
+    {
+      "name": "fin_dema",
+      "reason": "returns an arithmetic mean instead of a double exponential moving average",
+      "replacement": "compute two ordered EMA stages and combine them explicitly"
+    },
+    {
+      "name": "fin_tema",
+      "reason": "returns an arithmetic mean instead of a triple exponential moving average",
+      "replacement": "compute three ordered EMA stages and combine them explicitly"
+    },
+    {
+      "name": "fin_trima",
+      "reason": "returns an arithmetic mean instead of a triangularly weighted moving average",
+      "replacement": "assign triangular chronological weights explicitly"
+    },
+    {
+      "name": "fin_t3",
+      "reason": "returns an arithmetic mean and ignores period and volume factor",
+      "replacement": "use a validated external T3 implementation"
+    },
+    {
+      "name": "fin_kama",
+      "reason": "returns an arithmetic mean and ignores adaptive smoothing parameters",
+      "replacement": "use a validated external Kaufman adaptive moving average implementation"
+    },
+    {
+      "name": "fin_hma",
+      "reason": "returns an arithmetic mean instead of a Hull moving average",
+      "replacement": "compute the staged weighted moving averages explicitly"
+    },
+    {
+      "name": "fin_linearreg",
+      "reason": "returns an arithmetic mean instead of an endpoint regression estimate",
+      "replacement": "use regr_slope and regr_intercept over an explicit chronological axis"
+    },
+    {
+      "name": "fin_linearreg_intercept",
+      "reason": "returns an arithmetic mean instead of a regression intercept",
+      "replacement": "use regr_intercept with an explicit chronological axis"
+    },
+    {
+      "name": "fin_tsf",
+      "reason": "returns an arithmetic mean instead of a regression forecast",
+      "replacement": "estimate slope and intercept explicitly before forecasting"
+    },
+    {
+      "name": "fin_exp_decay_sum",
+      "reason": "sums supplied values without using timestamps or half-life",
+      "replacement": "construct time-dependent exponential weights explicitly before summing"
+    },
+    {
+      "name": "fin_exp_decay_avg",
+      "reason": "averages supplied values without using timestamps or half-life",
+      "replacement": "construct time-dependent exponential weights and compute a weighted mean"
+    },
+    {
+      "name": "fin_exp_decay_count",
+      "reason": "counts supplied timestamps without applying half-life decay",
+      "replacement": "sum explicit time-dependent exponential weights"
+    },
+    {
+      "name": "fin_exp_decay_max",
+      "reason": "returns an ordinary maximum without using timestamps or half-life",
+      "replacement": "define the intended decay convention and compute it explicitly"
+    },
+    {
       "name": "fin_adf",
       "reason": "returns NULL until an Augmented Dickey-Fuller implementation is added",
       "replacement": "use explicit SQL regression diagnostics or keep this out of production workflows"
@@ -209,16 +284,6 @@
       "name": "fin_factor_ic",
       "reason": "uses Pearson correlation on raw values and ignores the requested method",
       "replacement": "use corr for Pearson IC or rank observations explicitly for rank IC"
-    },
-    {
-      "name": "fin_iv_percentile",
-      "reason": "returns min-max IV rank rather than an empirical percentile",
-      "replacement": "count historical observations below the current IV and divide by the observation count"
-    },
-    {
-      "name": "fin_ema",
-      "reason": "returns the arithmetic mean without exponential weighting",
-      "replacement": "compute the exponential recurrence explicitly over ordered observations"
     },
     {
       "name": "fin_ema_halflife",

@@ -1,6 +1,12 @@
 void RegisterFinanceAggregates(ExtensionLoader &loader) {
+	AggregateFunctionSet ema_set(FinanceFunctionName("fin_ema"));
+	ema_set.AddFunction(OrderDependent(UnaryDoubleAggregate<EMAState, EMAUnaryOperation>("fin_ema")));
+	ema_set.AddFunction(OrderDependent(BinaryDoubleAggregate<EMAState, double, EMAOperation>(
+	    "fin_ema", FinanceLogicalType(LogicalTypeId::DOUBLE))));
+	loader.RegisterFunction(std::move(ema_set));
 	AggregateFunctionSet sortino_set(FinanceFunctionName("fin_sortino"));
 	auto sortino = UnaryDoubleAggregate<SortinoState, SortinoOperation>("fin_sortino");
+	sortino.SetStateSimpleUpdateCallback(SortinoSimpleUpdate);
 	sortino.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	sortino_set.AddFunction(sortino);
 	auto sortino_mar =
@@ -72,12 +78,16 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	                                                              AggregateDestructorType::LEGACY>(
 	                               FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)));
 	outlier_count.SetStateDestructorCallback(AggregateFunction::StateDestroy<OutlierCountState, OutlierCountOperation>);
+	outlier_count.SetStateSimpleUpdateCallback(OutlierCountSimpleUpdate<false>);
+	outlier_count.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	outlier_count_set.AddFunction(outlier_count);
 	auto outlier_count_threshold =
 	    BinaryAggregate<OutlierCountState, double, int64_t, OutlierCountWithThresholdOperation>(
 	        "fin_outlier_count", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT));
 	outlier_count_threshold.SetStateDestructorCallback(
 	    AggregateFunction::StateDestroy<OutlierCountState, OutlierCountWithThresholdOperation>);
+	outlier_count_threshold.SetStateSimpleUpdateCallback(OutlierCountSimpleUpdate<true>);
+	outlier_count_threshold.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	outlier_count_set.AddFunction(outlier_count_threshold);
 	outlier_count_set.AddFunction(
 	    TernaryDoubleVarcharDoubleBigintAggregate<OutlierCountState, OutlierCountWithMethodOperation>(
@@ -125,10 +135,11 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	weighted_variance.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	loader.RegisterFunction(weighted_variance);
 
-	auto iv_rank = UnaryDoubleAggregate<IVRangeState, IVRangeOperation<false>>("fin_iv_rank");
+	auto iv_rank = UnaryDoubleAggregate<IVRangeState, IVRangeOperation>("fin_iv_rank");
 	iv_rank.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
 	loader.RegisterFunction(iv_rank);
-	auto iv_percentile = UnaryDoubleAggregate<IVRangeState, IVRangeOperation<true>>("fin_iv_percentile");
+	auto iv_percentile = WithStateDestructor<IVPercentileState, IVPercentileOperation>(
+	    UnaryDoubleAggregate<IVPercentileState, IVPercentileOperation>("fin_iv_percentile"));
 	iv_percentile.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
 	loader.RegisterFunction(iv_percentile);
 }

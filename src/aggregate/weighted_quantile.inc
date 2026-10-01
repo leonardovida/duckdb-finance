@@ -1,24 +1,29 @@
 enum class WeightedQuantileMethod : uint8_t { LINEAR, LOWER, HIGHER, NEAREST, MIDPOINT, INVERTED_CDF };
 
 static WeightedQuantileMethod ParseWeightedQuantileMethod(const string &method) {
-	auto normalized = StringUtil::Lower(method);
-	if (normalized == "linear") {
+	// The documented lowercase spellings are the hot path; retain case-insensitive
+	// compatibility without allocating a lowercase string for every observation.
+	if (method == "linear") {
 		return WeightedQuantileMethod::LINEAR;
 	}
-	if (normalized == "lower") {
+	if (method == "lower") {
 		return WeightedQuantileMethod::LOWER;
 	}
-	if (normalized == "higher") {
+	if (method == "higher") {
 		return WeightedQuantileMethod::HIGHER;
 	}
-	if (normalized == "nearest") {
+	if (method == "nearest") {
 		return WeightedQuantileMethod::NEAREST;
 	}
-	if (normalized == "midpoint") {
+	if (method == "midpoint") {
 		return WeightedQuantileMethod::MIDPOINT;
 	}
-	if (normalized == "inverted_cdf") {
+	if (method == "inverted_cdf") {
 		return WeightedQuantileMethod::INVERTED_CDF;
+	}
+	auto normalized = StringUtil::Lower(method);
+	if (normalized != method) {
+		return ParseWeightedQuantileMethod(normalized);
 	}
 	throw InvalidInputException("Unknown weighted quantile method '%s'", method);
 }
@@ -28,6 +33,7 @@ struct WeightedQuantileState {
 	double quantile;
 	WeightedQuantileMethod method;
 	bool parameters_set;
+	double weight_scale;
 };
 
 struct WeightedQuantileOperation {
@@ -37,10 +43,11 @@ struct WeightedQuantileOperation {
 		state.quantile = 0.5;
 		state.method = WeightedQuantileMethod::LINEAR;
 		state.parameters_set = false;
+		state.weight_scale = 0.0;
 	}
 
 	template <class STATE>
-	static void UpdateValue(STATE &state, double value, double weight, double quantile, const string &method) {
+	static void UpdateValue(STATE &state, double value, double weight, double quantile, WeightedQuantileMethod parsed_method) {
 		if (!std::isfinite(value) || !std::isfinite(weight)) {
 			throw InvalidInputException("Weighted quantile values and weights must be finite");
 		}
@@ -50,7 +57,6 @@ struct WeightedQuantileOperation {
 		if (!std::isfinite(quantile) || quantile < 0.0 || quantile > 1.0) {
 			throw InvalidInputException("Weighted quantile must be finite and in [0, 1]");
 		}
-		auto parsed_method = ParseWeightedQuantileMethod(method);
 		if (state.parameters_set && (state.quantile != quantile || state.method != parsed_method)) {
 			throw InvalidInputException("Weighted quantile and method must be constant within a group");
 		}
@@ -59,6 +65,7 @@ struct WeightedQuantileOperation {
 		state.parameters_set = true;
 		if (weight > 0.0) {
 			state.values->push_back({value, weight});
+			state.weight_scale = std::max(state.weight_scale, weight);
 		}
 	}
 
@@ -74,6 +81,7 @@ struct WeightedQuantileOperation {
 		target.quantile = source.quantile;
 		target.method = source.method;
 		target.parameters_set = true;
+		target.weight_scale = std::max(target.weight_scale, source.weight_scale);
 		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
 	}
 
@@ -83,44 +91,75 @@ struct WeightedQuantileOperation {
 			finalize_data.ReturnNull();
 			return;
 		}
+		auto first_value = state.values->front().first;
+		if (std::all_of(state.values->begin(), state.values->end(),
+		                [first_value](const auto &entry) { return entry.first == first_value; })) {
+			target = first_value;
+			return;
+		}
+		if (state.quantile == 0.0 || state.quantile == 1.0) {
+			auto extrema = std::minmax_element(state.values->begin(), state.values->end(),
+			                                  [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
+			target = state.quantile == 0.0 ? extrema.first->first : extrema.second->first;
+			return;
+		}
 		std::sort(state.values->begin(), state.values->end(),
 		          [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
-		double total_weight = 0.0;
-		for (const auto &entry : *state.values) {
-			total_weight += entry.second;
+		// Canonicalize weights only inside value ties. Distinct observations need
+		// a single value comparison in the full sort, while interpolation knots
+		// remain independent of the input order when tied weights differ.
+		auto begin = state.values->begin();
+		while (begin != state.values->end()) {
+			auto end = begin + 1;
+			while (end != state.values->end() && end->first == begin->first) {
+				end++;
+			}
+			if (end - begin > 1) {
+				std::sort(begin, end, [](const auto &lhs, const auto &rhs) { return lhs.second < rhs.second; });
+			}
+			begin = end;
 		}
-		if (!std::isfinite(total_weight) || total_weight <= 0.0) {
-			throw InvalidInputException("Weighted quantile requires a positive finite total weight");
+		auto inverse_scale = 1.0 / state.weight_scale;
+		auto normalize_weight = [&](double weight) {
+			if (weight == state.weight_scale) {
+				return 1.0;
+			}
+			return std::isfinite(inverse_scale) ? weight * inverse_scale : weight / state.weight_scale;
+		};
+		double total_weight = 0.0;
+		double correction = 0.0;
+		for (const auto &entry : *state.values) {
+			AddCompensated(normalize_weight(entry.second), total_weight, correction);
 		}
 
 		auto target_weight = state.quantile * total_weight;
 		double cumulative = 0.0;
-		double previous_cdf = 0.0;
+		double previous_weight = 0.0;
 		double previous_value = state.values->front().first;
+		correction = 0.0;
 		for (const auto &entry : *state.values) {
-			cumulative += entry.second;
-			auto cdf = cumulative / total_weight;
+			AddCompensated(normalize_weight(entry.second), cumulative, correction);
 			if (target_weight <= cumulative) {
 				if (target_weight == cumulative) {
 					target = entry.first;
 					return;
 				}
 				if (state.method == WeightedQuantileMethod::HIGHER ||
-				    state.method == WeightedQuantileMethod::INVERTED_CDF || cdf == previous_cdf) {
+				    state.method == WeightedQuantileMethod::INVERTED_CDF || cumulative == previous_weight) {
 					target = entry.first;
 				} else if (state.method == WeightedQuantileMethod::LOWER) {
 					target = previous_value;
 				} else if (state.method == WeightedQuantileMethod::MIDPOINT) {
-					target = (previous_value + entry.first) / 2.0;
+					target = ConvexCombination(previous_value, entry.first, 0.5);
 				} else if (state.method == WeightedQuantileMethod::NEAREST) {
-					target = state.quantile - previous_cdf <= cdf - state.quantile ? previous_value : entry.first;
+					target = target_weight - previous_weight <= cumulative - target_weight ? previous_value : entry.first;
 				} else {
-					auto fraction = (state.quantile - previous_cdf) / (cdf - previous_cdf);
-					target = previous_value + fraction * (entry.first - previous_value);
+					auto fraction = (target_weight - previous_weight) / (cumulative - previous_weight);
+					target = ConvexCombination(previous_value, entry.first, std::min(1.0, std::max(0.0, fraction)));
 				}
 				return;
 			}
-			previous_cdf = cdf;
+			previous_weight = cumulative;
 			previous_value = entry.first;
 		}
 		target = state.values->back().first;

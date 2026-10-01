@@ -5,7 +5,7 @@ SELECT
   round(fin_total_return(r), 6) AS total_return,
   round(fin_volatility(r), 6) AS volatility,
   round(fin_sortino(r), 6) AS sortino,
-  round(fin_iv_rank(r), 6) AS iv_rank
+  round(fin_iv_rank(abs(r)), 6) AS iv_rank
 FROM (VALUES (0.01), (-0.02), (0.03), (0.015)) AS t(r);
 
 SELECT
