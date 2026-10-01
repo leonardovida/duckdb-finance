@@ -20,6 +20,9 @@ breaking change.
 1. Make sure `main` is green.
 2. Confirm `community-extension/description.yml`, `extension_config.cmake`, and
    `vcpkg.json` have the same target version.
+   Add version-specific highlights, compatibility changes, and validation to
+   `.github/release-notes/vMAJOR.MINOR.PATCH.md`. The workflow uses that file when
+   present and appends the exact build, commit, and comparison links.
 3. Confirm the local checkout is exactly on `origin/main`:
 
    ```sh
