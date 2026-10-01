@@ -1,15 +1,29 @@
 struct RSIState {
 	bool isset;
-	vector<double> *values;
+	vector<double> *prefix;
 	int32_t period;
+	idx_t count;
+	double last;
+	double gain;
+	double loss;
+	double tail_gain;
+	double tail_loss;
+	double tail_decay;
 };
 
 struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
-		state.values = new vector<double>();
+		state.prefix = new vector<double>();
 		state.period = 14;
+		state.count = 0;
+		state.last = 0.0;
+		state.gain = 0.0;
+		state.loss = 0.0;
+		state.tail_gain = 0.0;
+		state.tail_loss = 0.0;
+		state.tail_decay = 1.0;
 	}
 
 	template <class STATE>
@@ -17,8 +31,30 @@ struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 		if (!std::isfinite(value)) {
 			throw InvalidInputException("RSI prices must be finite");
 		}
+		if (state.prefix->size() <= idx_t(state.period)) {
+			state.prefix->push_back(value);
+		}
+		if (state.isset) {
+			auto diff = value - state.last;
+			auto gain = std::max(diff, 0.0);
+			auto loss = std::max(-diff, 0.0);
+			if (state.count <= idx_t(state.period)) {
+				state.gain += gain;
+				state.loss += loss;
+				if (state.count == idx_t(state.period)) {
+					state.gain /= state.period;
+					state.loss /= state.period;
+				}
+			} else {
+				auto decay = double(state.period - 1) / state.period;
+				state.tail_gain = (state.tail_gain * (state.period - 1) + gain) / state.period;
+				state.tail_loss = (state.tail_loss * (state.period - 1) + loss) / state.period;
+				state.tail_decay *= decay;
+			}
+		}
+		state.last = value;
+		state.count++;
 		state.isset = true;
-		state.values->push_back(value);
 	}
 
 	template <class STATE, class OP>
@@ -29,32 +65,46 @@ struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 		if (target.isset && target.period != source.period) {
 			throw InvalidInputException("RSI period must be constant within a group");
 		}
-		target.period = source.period;
-		target.isset = true;
-		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
+		if (!target.isset) {
+			auto prefix = target.prefix;
+			target = source;
+			target.prefix = prefix;
+			*target.prefix = *source.prefix;
+			return;
+		}
+		// Retain only the seed prices. Later changes are an affine Wilder
+		// recurrence, so an arbitrarily long tail merges in constant time.
+		for (auto value : *source.prefix) {
+			UpdateValue(target, value);
+		}
+		auto tail_count = source.count - source.prefix->size();
+		if (tail_count > 0) {
+			target.tail_gain = source.tail_gain + source.tail_decay * target.tail_gain;
+			target.tail_loss = source.tail_loss + source.tail_decay * target.tail_loss;
+			target.tail_decay *= source.tail_decay;
+			target.count += tail_count;
+			target.last = source.last;
+		}
 	}
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (!state.isset || state.values->size() < 2) {
+		if (!state.isset || state.count < 2) {
 			finalize_data.ReturnNull();
 			return;
 		}
-		auto changes = state.values->size() - 1;
-		auto initial_count = std::min<idx_t>(NumericCast<idx_t>(state.period), changes);
-		double avg_gain = 0.0;
-		double avg_loss = 0.0;
-		for (idx_t i = 1; i <= initial_count; i++) {
-			auto diff = (*state.values)[i] - (*state.values)[i - 1];
-			avg_gain += std::max(diff, 0.0);
-			avg_loss += std::max(-diff, 0.0);
+		double avg_gain = state.gain;
+		double avg_loss = state.loss;
+		if (state.count - 1 < idx_t(state.period)) {
+			avg_gain /= double(state.count - 1);
+			avg_loss /= double(state.count - 1);
+		} else {
+			avg_gain = state.tail_gain + state.tail_decay * avg_gain;
+			avg_loss = state.tail_loss + state.tail_decay * avg_loss;
 		}
-		avg_gain /= static_cast<double>(initial_count);
-		avg_loss /= static_cast<double>(initial_count);
-		for (idx_t i = initial_count + 1; i <= changes; i++) {
-			auto diff = (*state.values)[i] - (*state.values)[i - 1];
-			avg_gain = (avg_gain * (state.period - 1) + std::max(diff, 0.0)) / state.period;
-			avg_loss = (avg_loss * (state.period - 1) + std::max(-diff, 0.0)) / state.period;
+		if (!std::isfinite(avg_gain) || !std::isfinite(avg_loss)) {
+			finalize_data.ReturnNull();
+			return;
 		}
 		if (avg_loss == 0.0) {
 			target = 100.0;
@@ -66,8 +116,8 @@ struct RSIOperation : public UnaryDoubleUpdateOperation<RSIOperation> {
 
 	template <class STATE>
 	static void Destroy(STATE &state, AggregateInputData &) {
-		delete state.values;
-		state.values = nullptr;
+		delete state.prefix;
+		state.prefix = nullptr;
 	}
 
 	static bool IgnoreNull() {

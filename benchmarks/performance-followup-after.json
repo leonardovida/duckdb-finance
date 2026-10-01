@@ -1,0 +1,83 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/workspace/duckdb/build/release/extension/finance/finance.duckdb_extension",
+  "scale": 4.0,
+  "threads": 4,
+  "warmups": 2,
+  "repeats": 9,
+  "cases": {
+    "bsm_separate": {
+      "median_seconds": 0.219,
+      "seconds": [
+        0.213,
+        0.231,
+        0.221,
+        0.227,
+        0.232,
+        0.207,
+        0.219,
+        0.186,
+        0.208
+      ],
+      "result": [
+        {
+          "price": 36271137.409391224,
+          "delta": 312932.30445370736,
+          "vega": 142562954.31300175
+        }
+      ],
+      "sql": "SELECT fsum(fin_bsm_price(kind,s,k,t,r,v)) price, fsum(fin_bsm_delta(kind,s,k,t,r,v)) delta, fsum(fin_bsm_vega(kind,s,k,t,r,v)) vega FROM options",
+      "speedup": 1.0136986301369864
+    },
+    "weighted_mean": {
+      "median_seconds": 0.012,
+      "seconds": [
+        0.012,
+        0.012,
+        0.012,
+        0.012,
+        0.014,
+        0.012,
+        0.012,
+        0.012,
+        0.013
+      ],
+      "result": [
+        {
+          "result": 0.0006000023219914132
+        }
+      ],
+      "sql": "SELECT fin_weighted_mean(r,w) result FROM observations",
+      "speedup": 1.0
+    },
+    "calendar": {
+      "median_seconds": 0.039,
+      "seconds": [
+        0.033,
+        0.034,
+        0.037,
+        0.044,
+        0.043,
+        0.041,
+        0.038,
+        0.039,
+        0.042
+      ],
+      "result": [
+        {
+          "result": "5598290411"
+        }
+      ],
+      "sql": "SELECT sum(date_diff('day',d,fin_next_business_day(d,'weekday',1000))) result FROM calendar_dates",
+      "speedup": 1.076923076923077
+    }
+  },
+  "build_context": {
+    "duckdb_version": "v1.5.5",
+    "compiler": "GNU C++ 14.2.0",
+    "configuration": "Release (-O3)",
+    "platform": "linux_amd64",
+    "source_sha256": "48de1ded2f80e293c926001e6b549d37d32f752715393001c30f8dc630dc7c5b",
+    "stage": "after performance improvements"
+  }
+}

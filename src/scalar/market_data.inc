@@ -75,12 +75,12 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 	FinanceFlatten(child, list_size);
 	auto &validity = FlatVector::Validity(child);
 	auto values = FlatVector::GetData<double>(child);
-	vector<vector<double>> output_lists(count);
+	vector<vector<double>> output_lists(result.GetType().id() == LogicalTypeId::LIST ? row_count : 0);
 	SetResultVectorType(result, constant);
 	auto output_double =
 	    result.GetType().id() == LogicalTypeId::DOUBLE ? GetResultData<double>(result, constant) : nullptr;
 	for (idx_t row = 0; row < row_count; row++) {
-		if (input.IsNull(0, row)) {
+		if (input.HasNull(row)) {
 			SetResultNull(result, row, count, constant);
 			continue;
 		}
@@ -94,6 +94,9 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 				}
 				double sum = SumList(values, entry);
 				output_double[row] = name == "sum" ? sum : sum / double(entry.length);
+				if (!IsFinite(output_double[row])) {
+					throw InvalidInputException("Vector result must be finite");
+				}
 			} else if (name == "inverse_vol") {
 				vector<double> inv;
 				inv.reserve(entry.length);
@@ -110,10 +113,17 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 				output_lists[row] = NormalizeSum(x);
 			} else if (name == "scale") {
 				double a = input.GetDouble(1, row);
+				if (!IsFinite(a)) {
+					throw InvalidInputException("Vector scale must be finite");
+				}
 				vector<double> out;
 				out.reserve(entry.length);
 				for (idx_t i = 0; i < entry.length; i++) {
-					out.push_back(values[entry.offset + i] * a);
+					auto value = values[entry.offset + i] * a;
+					if (!IsFinite(value)) {
+						throw InvalidInputException("Vector result must be finite");
+					}
+					out.push_back(value);
 				}
 				output_lists[row] = std::move(out);
 			}
@@ -143,7 +153,7 @@ static void BinaryListFunction(DataChunk &args, ExpressionState &, Vector &resul
 	auto &right_validity = FlatVector::Validity(right_child);
 	auto left_values = FlatVector::GetData<double>(left_child);
 	auto right_values = FlatVector::GetData<double>(right_child);
-	vector<vector<double>> output_lists(count);
+	vector<vector<double>> output_lists(result.GetType().id() == LogicalTypeId::LIST ? row_count : 0);
 	SetResultVectorType(result, constant);
 	auto output_double =
 	    result.GetType().id() == LogicalTypeId::DOUBLE ? GetResultData<double>(result, constant) : nullptr;
@@ -175,9 +185,15 @@ static void BinaryListFunction(DataChunk &args, ExpressionState &, Vector &resul
 				for (idx_t i = 0; i < left_entry.length; i++) {
 					auto l = left_values[left_entry.offset + i];
 					auto r = right_values[right_entry.offset + i];
-					out[i] = name == "add" ? l + r : l - r;
+					out[i] = name == "add" ? l + r : name == "multiply" ? l * r : l - r;
+					if (!IsFinite(out[i])) {
+						throw InvalidInputException("Vector result must be finite");
+					}
 				}
 				output_lists[row] = std::move(out);
+			}
+			if (output_double && !IsFinite(output_double[row])) {
+				throw InvalidInputException("Vector result must be finite");
 			}
 		} catch (const std::exception &) {
 			SetResultNull(result, row, count, constant);
@@ -379,39 +395,46 @@ static void MatrixShapeFunction(DataChunk &args, ExpressionState &, Vector &resu
 	}
 }
 
-static void MatrixFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
+static void MatrixVecMulFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	PreparedInputs input(args);
 	auto count = args.size();
 	auto constant = AllInputsConstant(args);
 	auto row_count = constant && count > 0 ? idx_t(1) : count;
 	SetResultVectorType(result, constant);
-	vector<vector<double>> output_rows(count);
+	vector<vector<double>> output_rows(row_count);
 	auto entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
+	auto &matrix_rows = ListVector::GetChildMutable(args.data[0]);
+	FinanceFlatten(matrix_rows, ListVector::GetListSize(args.data[0]));
+	auto rows = FlatVector::GetData<list_entry_t>(matrix_rows);
+	auto &matrix_values = ListVector::GetChildMutable(matrix_rows);
+	FinanceFlatten(matrix_values, ListVector::GetListSize(matrix_rows));
+	auto values = FlatVector::GetData<double>(matrix_values);
+	auto vector_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
+	auto &vector_values = ListVector::GetChildMutable(args.data[1]);
+	FinanceFlatten(vector_values, ListVector::GetListSize(args.data[1]));
+	auto v = FlatVector::GetData<double>(vector_values);
 	for (idx_t row = 0; row < row_count; row++) {
-		if (input.IsNull(0, row)) {
+		if (input.HasNull(row)) {
 			SetResultNull(result, row, count, constant);
 			continue;
 		}
 		try {
 			auto idx = input.formats[0].sel->get_index(row);
-			auto matrix = ReadDoubleMatrix(args.data[0], entries[idx]);
-			if (name == "vecmul") {
-				auto v_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
-				auto v_idx = input.formats[1].sel->get_index(row);
-				auto v = ReadDoubleList(args.data[1], v_entries[v_idx]);
-				output_rows[row] = MatrixVecMul(matrix, v);
-			} else if (name == "transpose") {
-				if (matrix.empty()) {
-					output_rows[row] = {};
-				} else {
-					vector<double> flattened;
-					for (idx_t c = 0; c < matrix[0].size(); c++) {
-						for (idx_t r = 0; r < matrix.size(); r++) {
-							flattened.push_back(matrix[r][c]);
-						}
-					}
-					output_rows[row] = std::move(flattened);
+			auto matrix_entry = entries[idx];
+			auto v_idx = input.formats[1].sel->get_index(row);
+			auto vector_entry = vector_entries[v_idx];
+			ValidateListEntryNoNull(FlatVector::Validity(matrix_rows), matrix_entry, "Matrix rows must not be NULL");
+			ValidateListEntryNoNull(FlatVector::Validity(vector_values), vector_entry, "Vector elements must not be NULL");
+			auto &out = output_rows[row];
+			out.reserve(matrix_entry.length);
+			for (idx_t i = 0; i < matrix_entry.length; i++) {
+				auto matrix_row = rows[matrix_entry.offset + i];
+				ValidateListEntryNoNull(FlatVector::Validity(matrix_values), matrix_row, "Matrix elements must not be NULL");
+				auto value = DotList(values, matrix_row, v, vector_entry);
+				if (!IsFinite(value)) {
+					throw InvalidInputException("Matrix/vector result must be finite");
 				}
+				out.push_back(value);
 			}
 		} catch (const std::exception &) {
 			SetResultNull(result, row, count, constant);
@@ -614,22 +637,59 @@ static void NextPrevBusinessDayFunction(DataChunk &args, ExpressionState &, Vect
 	auto out = GetResultData<date_t>(result, constant);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
-		if (input.IsNull(0, row)) {
+		if (input.HasNull(row)) {
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
-		int n = args.ColumnCount() >= 3 ? input.GetInt32(2, row) : 1;
+		int64_t n = args.ColumnCount() >= 3 ? input.GetInt32(2, row) :
+		            args.ColumnCount() == 2 ? input.GetInt64(1, row) : 1;
 		if (n < 0) {
 			throw InvalidInputException("business-day offset must be non-negative");
 		}
-		auto d = input.GetDate(0, row);
-		for (int i = 0; i < n;) {
-			d = d + direction;
-			if (IsBusinessDay(d)) {
-				i++;
+		try {
+			auto d = input.GetDate(0, row);
+			if (!Date::IsFinite(d)) {
+				throw InvalidInputException("Business days require a finite date");
 			}
+			// Reach the first weekday, skip full weeks, then walk at most six days.
+			auto checked_date = [](int64_t day) {
+				if (day <= -int64_t(std::numeric_limits<int32_t>::max()) ||
+				    day >= int64_t(std::numeric_limits<int32_t>::max())) {
+					throw InvalidInputException("Business-day result is out of range");
+				}
+				return date_t(static_cast<int32_t>(day));
+			};
+			int64_t day = d.days;
+			auto available_days = direction > 0 ? int64_t(std::numeric_limits<int32_t>::max()) - 1 - day
+			                                   : day + int64_t(std::numeric_limits<int32_t>::max()) - 1;
+			if (n > available_days) {
+				throw InvalidInputException("Business-day result is out of range");
+			}
+			auto remaining = int64_t(n);
+			if (remaining > 0) {
+				do {
+					day += direction;
+					d = checked_date(day);
+				} while (!IsBusinessDay(d));
+				remaining--;
+				day += direction * (remaining / 5) * 7;
+				d = checked_date(day);
+				remaining %= 5;
+				while (remaining > 0) {
+					day += direction;
+					d = checked_date(day);
+					if (IsBusinessDay(d)) {
+						remaining--;
+					}
+				}
+			}
+			if (!Date::IsFinite(d)) {
+				throw InvalidInputException("Business-day result is out of range");
+			}
+			out[row] = d;
+		} catch (const std::exception &) {
+			SetResultNull(result, row, args.size(), constant);
 		}
-		out[row] = d;
 	}
 }
 
@@ -644,9 +704,13 @@ static void BusinessDaysBetweenFunction(DataChunk &args, ExpressionState &, Vect
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
-		auto start = input.GetDate(0, row);
-		auto end = input.GetDate(1, row);
-		out[row] = end.days >= start.days ? BusinessDaysForward(start, end) : -BusinessDaysForward(end, start);
+		try {
+			auto start = input.GetDate(0, row);
+			auto end = input.GetDate(1, row);
+			out[row] = end.days >= start.days ? BusinessDaysForward(start, end) : -BusinessDaysForward(end, start);
+		} catch (const std::exception &) {
+			SetResultNull(result, row, args.size(), constant);
+		}
 	}
 }
 

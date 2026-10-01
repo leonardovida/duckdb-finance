@@ -2,6 +2,7 @@ struct RobustStatisticsState {
 	vector<double> *values;
 	double first_parameter;
 	double second_parameter;
+	double scale;
 	bool parameters_set;
 };
 
@@ -11,6 +12,7 @@ struct RobustStatisticsOperationBase {
 		state.values = new vector<double>();
 		state.first_parameter = 0.0;
 		state.second_parameter = 0.0;
+		state.scale = 1.0;
 		state.parameters_set = false;
 	}
 
@@ -31,10 +33,11 @@ struct RobustStatisticsOperationBase {
 			return;
 		}
 		UpdateParameters(target, source.first_parameter, source.second_parameter);
+		target.scale = std::max(target.scale, source.scale);
 		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
 	}
 
-	static double ContinuousQuantile(const vector<double> &values, double quantile) {
+	static double ContinuousQuantile(vector<double> &values, double quantile) {
 		if (values.size() == 1) {
 			return values[0];
 		}
@@ -42,7 +45,20 @@ struct RobustStatisticsOperationBase {
 		auto lower = static_cast<idx_t>(std::floor(position));
 		auto upper = std::min<idx_t>(lower + 1, values.size() - 1);
 		auto fraction = position - static_cast<double>(lower);
-		return values[lower] + fraction * (values[upper] - values[lower]);
+		std::nth_element(values.begin(), values.begin() + lower, values.end());
+		auto lower_value = values[lower];
+		if (fraction == 0.0 || upper == lower) {
+			return lower_value;
+		}
+		auto upper_value = *std::min_element(values.begin() + upper, values.end());
+		return (1.0 - fraction) * lower_value + fraction * upper_value;
+	}
+
+	static void AddToSum(double value, double &sum, double &correction) {
+		auto adjusted = value - correction;
+		auto next = sum + adjusted;
+		correction = (next - sum) - adjusted;
+		sum = next;
 	}
 
 	template <class STATE>
@@ -51,7 +67,6 @@ struct RobustStatisticsOperationBase {
 			finalize_data.ReturnNull();
 			return false;
 		}
-		std::sort(state.values->begin(), state.values->end());
 		return true;
 	}
 
@@ -74,6 +89,7 @@ struct RobustMeanOperation : public RobustStatisticsOperationBase {
 			throw InvalidInputException("Robust mean quantiles must satisfy 0 <= lower_q <= upper_q <= 1");
 		}
 		UpdateParameters(state, lower_quantile, upper_quantile);
+		state.scale = std::max(state.scale, std::fabs(value));
 		state.values->push_back(value);
 	}
 
@@ -85,13 +101,14 @@ struct RobustMeanOperation : public RobustStatisticsOperationBase {
 		auto lower = ContinuousQuantile(*state.values, state.first_parameter);
 		auto upper = ContinuousQuantile(*state.values, state.second_parameter);
 		double sum = 0.0;
+		double correction = 0.0;
 		idx_t count = 0;
 		for (auto value : *state.values) {
 			if (WINSORIZE) {
-				sum += std::max(lower, std::min(value, upper));
+				AddToSum(std::max(lower, std::min(value, upper)) / state.scale, sum, correction);
 				count++;
 			} else if (value >= lower && value <= upper) {
-				sum += value;
+				AddToSum(value / state.scale, sum, correction);
 				count++;
 			}
 		}
@@ -99,7 +116,7 @@ struct RobustMeanOperation : public RobustStatisticsOperationBase {
 			finalize_data.ReturnNull();
 			return;
 		}
-		target = sum / static_cast<double>(count);
+		target = (sum / static_cast<double>(count)) * state.scale;
 	}
 };
 
@@ -116,6 +133,7 @@ struct HistoricalCvarOperation : public RobustStatisticsOperationBase {
 			throw InvalidInputException("CVaR loss-positive flag must be boolean");
 		}
 		UpdateParameters(state, confidence, loss_positive);
+		state.scale = std::max(state.scale, std::fabs(value));
 		state.values->push_back(value);
 	}
 
@@ -126,14 +144,15 @@ struct HistoricalCvarOperation : public RobustStatisticsOperationBase {
 		}
 		auto threshold = ContinuousQuantile(*state.values, 1.0 - state.first_parameter);
 		double sum = 0.0;
+		double correction = 0.0;
 		idx_t count = 0;
 		for (auto value : *state.values) {
 			if (value <= threshold) {
-				sum += value;
+				AddToSum(value / state.scale, sum, correction);
 				count++;
 			}
 		}
-		auto tail_mean = sum / static_cast<double>(count);
+		auto tail_mean = (sum / static_cast<double>(count)) * state.scale;
 		target = state.second_parameter == 1.0 ? -tail_mean : tail_mean;
 	}
 };
@@ -181,10 +200,17 @@ struct WeightedMomentsOperation {
 		if (weight == 0.0) {
 			return;
 		}
+		if (state.weight_sum == 0.0) {
+			state.weight_sum = weight;
+			state.mean = value;
+			return;
+		}
 		auto combined_weight = state.weight_sum + weight;
 		auto delta = value - state.mean;
-		state.mean += delta * weight / combined_weight;
-		state.m2 += weight * delta * (value - state.mean);
+		state.mean += delta * (weight / combined_weight);
+		if (!RETURN_MEAN) {
+			state.m2 += weight * delta * (value - state.mean);
+		}
 		state.weight_sum = combined_weight;
 	}
 
@@ -205,14 +231,18 @@ struct WeightedMomentsOperation {
 		}
 		auto combined_weight = target.weight_sum + source.weight_sum;
 		auto delta = source.mean - target.mean;
-		target.m2 += source.m2 + delta * delta * target.weight_sum * source.weight_sum / combined_weight;
-		target.mean += delta * source.weight_sum / combined_weight;
+		if (!RETURN_MEAN) {
+			target.m2 += source.m2 + delta * (delta * (source.weight_sum / combined_weight)) * target.weight_sum;
+		}
+		target.mean += delta * (source.weight_sum / combined_weight);
 		target.weight_sum = combined_weight;
 	}
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (state.weight_sum <= 0.0 || (!RETURN_MEAN && state.weight_sum <= state.ddof)) {
+		if (!std::isfinite(state.weight_sum) || !std::isfinite(state.mean) ||
+		    (!RETURN_MEAN && !std::isfinite(state.m2)) || state.weight_sum <= 0.0 ||
+		    (!RETURN_MEAN && state.weight_sum <= state.ddof)) {
 			finalize_data.ReturnNull();
 			return;
 		}

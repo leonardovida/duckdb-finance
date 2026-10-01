@@ -9,11 +9,15 @@ SMOKE_SQL ?= test/sql/smoke_queries.sql
 GOLD_DATASET_SQL ?= test/sql/gold_dataset.sql
 GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
+BENCH_OUTPUT ?= /tmp/duckdb-finance-benchmark.json
+BENCH_SCALE ?= 1
+BENCH_REPEATS ?= 5
+RELEASE_BUILD_DIR ?= $(DUCKDB_ROOT)/build/release
 GOLD_TRACE_SQL ?= /tmp/duckdb-finance-gold.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -35,7 +39,11 @@ gold-quiet: debug
 	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(GOLD_TRACE_SQL)" >/dev/null
 
 perf: debug
-	{ $(SQL_TEST_PREAMBLE); printf "PRAGMA enable_profiling='json';\nPRAGMA profiling_output='$(PERF_OUTPUT)';\n"; cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned
+	{ cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } > "$(GOLD_TRACE_SQL)"
+	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" --profile-output "$(PERF_OUTPUT)" "$(GOLD_TRACE_SQL)"
+
+benchmark: release
+	python3 scripts/benchmark_functions.py --duckdb "$(RELEASE_BUILD_DIR)/duckdb" --extension "$(RELEASE_BUILD_DIR)/extension/finance/finance.duckdb_extension" --scale "$(BENCH_SCALE)" --repeats "$(BENCH_REPEATS)" --output "$(BENCH_OUTPUT)"
 
 test: smoke gold
 
@@ -65,7 +73,7 @@ check-release-metadata:
 
 .PHONY: check-sql-runner
 check-sql-runner:
-	python3 -m unittest discover -s scripts -p 'test_run_sql_with_trace.py'
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 
 check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner test
 

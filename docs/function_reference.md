@@ -51,6 +51,14 @@ This document is generated from the extension registration surface in `src/` and
 
 ### Returns, Risk, And Statistics
 
+`fin_stable_var` and `fin_stable_stddev` use denominator `count(x) - ddof` for
+any finite non-negative `ddof`; an exhausted denominator returns `NULL`.
+Downside/upside deviation, semivariance, and hit/win/loss rates skip NULL
+observations. Beta, alpha, capture ratios, and VWAP use complete input pairs.
+Drawdown ratios track wealth relative to the running peak to avoid overflow;
+the positive `initial_nav` scale does not change those ratios. Weighted moments
+that overflow return `NULL` rather than a fabricated zero variance.
+
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
 | `fin_active_return` | `fin_active_return(r, benchmark_r, annualization := 252)` | Compute active return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -61,7 +69,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_anova_oneway` | `fin_anova_oneway(r, asset)` | Compute anova oneway for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_arithmetic_return` | `fin_arithmetic_return(r)` | Compute arithmetic return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_avg_drawdown` | `fin_avg_drawdown(r, initial_nav := 1.0)` | Compute avg drawdown for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_beta` | `fin_beta(r, benchmark_r)` | Compute beta for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_beta` | `fin_beta(r, benchmark_r)` | Compute the regression slope of returns against benchmark returns. | `DOUBLE`; both moments use complete pairs. Returns `NULL` for constant or insufficient benchmark observations. |
 | `fin_calmar` | `fin_calmar(r, annualization := 252)` | Compute calmar for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_conditional_drawdown_at_risk` | `fin_conditional_drawdown_at_risk(r, confidence := 0.95)` | Compute conditional drawdown at risk for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_cramers_v` | `fin_cramers_v(x, y, bias_corrected := true)` | Compute cramers v for SQL finance workflows. | NULL placeholder. |
@@ -86,7 +94,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_information_ratio` | `fin_information_ratio(r, benchmark_r, annualization := 252)` | Compute information ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_is_decimal_return` | `fin_is_decimal_return(x)` | Predicate helper for finance input validation. | Aggregate or scalar SQL macro result. |
 | `fin_is_outlier_zscore` | `fin_is_outlier_zscore(3.1, 0.0, 1.0, 3.0)` | Predicate helper for finance input validation. | BOOLEAN. |
-| `fin_iv_percentile` | `fin_iv_percentile(implied_volatility ORDER BY quote_ts)` | Compute where the latest implied volatility sits within the observed min/max range. | Order-sensitive aggregate; use aggregate `ORDER BY` to define the latest observation. |
+| `fin_iv_percentile` | `fin_iv_percentile(implied_volatility ORDER BY quote_ts)` | Compute where the latest implied volatility sits within the observed min/max range. | Experimental min-max rank alias; does not compute an empirical percentile. |
 | `fin_iv_rank` | `fin_iv_rank(implied_volatility ORDER BY quote_ts)` | Compute where the latest implied volatility sits within the observed min/max range. | Order-sensitive aggregate; use aggregate `ORDER BY` to define the latest observation. |
 | `fin_jensen_alpha` | `fin_jensen_alpha(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Compute jensen alpha for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_kahan_sum` | `fin_kahan_sum(x)` | Compute kahan sum for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -104,7 +112,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_parse_return_method` | `fin_parse_return_method('log')` | Normalize and validate a finance convention string. | VARCHAR. |
 | `fin_payoff_ratio` | `fin_payoff_ratio(r)` | Compute payoff ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_price_from_return` | `fin_price_from_return(prev_price, r, method := 'simple')` | Compute price from return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_rank_corr` | `fin_rank_corr(x, y, method := 'spearman')` | Compute rank corr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_rank_corr` | `fin_rank_corr(x, y, method := 'spearman')` | Compute rank corr for SQL finance workflows. | Experimental Pearson correlation on raw values; method is ignored. |
 | `fin_realized_beta` | `fin_realized_beta(r, benchmark_r)` | Compute realized beta for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_realized_corr` | `fin_realized_corr(r1, r2)` | Compute realized corr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_realized_cov` | `fin_realized_cov(r1, r2)` | Compute realized cov for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -127,7 +135,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_tail_ratio` | `fin_tail_ratio(r, upper_q := 0.95, lower_q := 0.05)` | Compute tail ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_theils_u` | `fin_theils_u(x, y)` | Compute theils u for SQL finance workflows. | NULL placeholder. |
 | `fin_to_log_return` | `fin_to_log_return(r)` | Compute to log return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_total_return` | `fin_total_return(r, method := 'simple')` | Compute total return for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_total_return` | `fin_total_return(r, method := 'simple')` | Compound decimal simple or log returns. | `DOUBLE`; skips NULL observations. A simple return of -1 produces total loss; returns below -1, non-finite observations, invalid methods, and empty groups return `NULL`. |
 | `fin_tracking_error` | `fin_tracking_error(r, benchmark_r, annualization := 252)` | Compute tracking error for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_treynor_ratio` | `fin_treynor_ratio(r, benchmark_r, risk_free := 0.0, annualization := 252)` | Compute treynor ratio for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_trimmed_mean` | `fin_trimmed_mean(x, lower_q := 0.05, upper_q := 0.95)` | Average observations between the inclusive lower and upper quantiles. | Quantile bounds must satisfy `0 <= lower_q <= upper_q <= 1`. |
@@ -141,7 +149,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_weighted_mean` | `fin_weighted_mean(x, w)` | Compute the mean over value/weight pairs. | Null pairs are skipped; weights must be finite and non-negative. |
 | `fin_weighted_quantile` | `fin_weighted_quantile(x, w, q, method := 'linear')` | Compute a quantile from the weighted empirical distribution. | Supports `linear`, `lower`, `higher`, `nearest`, `midpoint`, and `inverted_cdf`; zero weights are ignored. |
 | `fin_weighted_stddev` | `fin_weighted_stddev(x, w, ddof := 0)` | Compute weighted standard deviation with a weight-sum degrees-of-freedom correction. | Null pairs are skipped; weights must be finite and non-negative. |
-| `fin_weighted_var` | `fin_weighted_var(x, w, ddof := 0)` | Compute weighted variance with denominator `sum(w) - ddof`. | Returns `NULL` when the denominator is not positive. |
+| `fin_weighted_var` | `fin_weighted_var(x, w, ddof := 0)` | Compute weighted variance with denominator `sum(w) - ddof`. | Returns `NULL` when the denominator is not positive or the accumulated moments overflow. |
 | `fin_welch_ttest` | `fin_welch_ttest(x, y)` | Compute welch ttest for SQL finance workflows. | STRUCT. |
 | `fin_win_rate` | `fin_win_rate(r)` | Compute win rate for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_winsorized_mean` | `fin_winsorized_mean(x, lower_q := 0.05, upper_q := 0.95)` | Clamp observations to the lower and upper quantiles, then average them. | Quantile bounds must satisfy `0 <= lower_q <= upper_q <= 1`. |
@@ -154,25 +162,25 @@ This document is generated from the extension registration surface in `src/` and
 |---|---|---|---|
 | `fin_accrued_interest` | `fin_accrued_interest(DATE '2026-04-01', DATE '2026-01-01', DATE '2026-07-01', 0.04, 100.0, 'ACT/365F')` | Compute accrued interest for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_annuity_payment` | `fin_annuity_payment(0.0, 10.0, 100.0)` | Compute annuity payment for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_bond_convexity` | `fin_bond_convexity(0.05, 0.04, 5.0, 2, 100.0)` | Compute bond convexity for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_bond_duration` | `fin_bond_duration(0.05, 0.04, 5.0, 2, 100.0, 'modified')` | Compute bond duration for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_bond_price` | `fin_bond_price(0.05, 0.04, 5.0, 2, 100.0)` | Compute bond price for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_bond_ytm` | `fin_bond_ytm(fin_bond_price(0.05, 0.04, 5.0, 2, 100.0), 0.05, 5.0, 2, 100.0)` | Compute bond ytm for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_bond_convexity` | `fin_bond_convexity(0.05, 0.04, 5.0, 2, 100.0)` | Compute convexity for the regular coupon model. | `DOUBLE`; defaults to frequency 2 and face 100. Geometric moments require logarithmic rather than linear work in coupon periods. |
+| `fin_bond_duration` | `fin_bond_duration(0.05, 0.04, 5.0, 2, 100.0, 'modified')` | Compute duration for the regular coupon model. | `DOUBLE`; defaults to frequency 2, face 100, and Macaulay duration in years. Specify `modified` for the first-order yield sensitivity. Uses logarithmic-time geometric moments. |
+| `fin_bond_price` | `fin_bond_price(0.05, 0.04, 5.0, 2, 100.0)` | Discount a regular coupon bond using nominal annual YTM. | `DOUBLE`; coupon periods are rounded from maturity times frequency. Uses a constant-time geometric sum, including zero and small yields. Invalid inputs or out-of-range period counts return `NULL`. No settlement or stub-period model. |
+| `fin_bond_ytm` | `fin_bond_ytm(fin_bond_price(0.05, 0.04, 5.0, 2, 100.0), 0.05, 5.0, 2, 100.0)` | Solve nominal annual yield for the regular coupon model. | `DOUBLE`; requires positive price and non-negative coupon. Brackets yields above -frequency, including yields above 100; returns `NULL` if it cannot bracket or converge. |
 | `fin_cashflow_spec` | `fin_cashflow_spec(amount, date, currency := NULL)` | Compute cashflow spec for SQL finance workflows. | STRUCT. |
 | `fin_curve_spec` | `fin_curve_spec(maturities, values, value_type := 'zero_rate', interpolation := 'linear', compounding := 'continuous', day_count := 'ACT/365F')` | Compute curve spec for SQL finance workflows. | STRUCT. |
-| `fin_curve_zero_rate` | `fin_curve_zero_rate([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Compute curve zero rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_curve_zero_rate` | `fin_curve_zero_rate([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Linearly interpolate zero rates. | `DOUBLE`; finite, strictly increasing maturities and finite values are required. Lists must be non-empty and equal length. Flat extrapolation uses the nearest endpoint. Large curves use binary lookup; constant curves are validated once per input chunk. |
 | `fin_forward_rate` | `fin_forward_rate(0.9607894391523232, 0.8869204367171575, 1.0, 2.0, 'continuous')` | Compute forward rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_fra_rate` | `fin_fra_rate(0.04, 0.05, 1.0, 2.0)` | Compute fra rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_future_value` | `fin_future_value(100.0, 0.05, 1.0, 'continuous')` | Compute future value for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_interpolate_curve` | `fin_interpolate_curve([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Compute interpolate curve for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_irr` | `fin_irr([-100.0, 60.0, 60.0], 0.1)` | Compute IRR for periodic cash flows. | Uses a 10% default guess; a supplied guess selects among multiple valid roots. |
+| `fin_interpolate_curve` | `fin_interpolate_curve([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Linearly interpolate finite values over strictly increasing maturities. | `DOUBLE`; flat endpoint extrapolation. Invalid curves or non-finite targets return `NULL`. |
+| `fin_irr` | `fin_irr([-100.0, 60.0, 60.0], 0.1)` | Compute IRR for periodic cash flows. | Uses a 10% default guess; a supplied guess selects among multiple valid roots. Cash flows are normalized before solving so their currency scale does not set the convergence tolerance. |
 | `fin_mirr` | `fin_mirr([-100.0, 60.0, 60.0], 0.1, 0.05)` | Compute mirr for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_npv` | `fin_npv([-100.0, 60.0, 60.0], [0.0, 1.0, 2.0], 0.1, 'periodic')` | Compute npv for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_present_value` | `fin_present_value(105.12710963760242, 0.05, 1.0, 'continuous')` | Compute present value for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_rate_from_discount` | `fin_rate_from_discount(0.951229424500714, 1.0, 'continuous')` | Compute rate from discount for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_swap_rate` | `fin_swap_rate([1.0, 2.0], [0.95, 0.90])` | Compute swap rate for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_validate_curve_spec` | `fin_validate_curve_spec(spec)` | Validate input shape or finance-specific invariants and return a boolean or validation struct. | STRUCT. |
-| `fin_xirr` | `fin_xirr([-100.0, 110.0], [DATE '2026-01-01', DATE '2027-01-01'], 0.1)` | Compute IRR for dated cash flows. | Uses a 10% default guess; a supplied guess selects among multiple valid roots. |
+| `fin_validate_curve_spec` | `fin_validate_curve_spec(spec)` | Validate the numerical inputs used by curve interpolation. | `STRUCT(ok, reason)`; requires non-empty, equal-length lists, finite non-null values, and strictly increasing finite maturities. Reports the failed constraint. It does not validate pricing-model metadata. |
+| `fin_xirr` | `fin_xirr([-100.0, 110.0], [DATE '2026-01-01', DATE '2027-01-01'], 0.1)` | Compute IRR for dated cash flows. | Uses a 10% default guess and ACT/365F times; a supplied guess selects among multiple valid roots. Normalizes cash-flow amounts before solving. Infinite dates return `NULL`. |
 | `fin_yearfrac` | `fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', 'ACT/365F')` | Compute yearfrac for SQL finance workflows. | DOUBLE; reversed `ACT/ACT` dates return the negative forward fraction. |
 
 ### Options And Volatility Models
@@ -181,13 +189,13 @@ This document is generated from the extension registration surface in `src/` and
 |---|---|---|---|
 | `fin_asian_geometric_price` | `fin_asian_geometric_price('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute asian geometric price for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_asset_or_nothing_price` | `fin_asset_or_nothing_price('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute asset or nothing price for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_bachelier_greeks` | `fin_bachelier_greeks('call', 100.0, 100.0, 1.0, 0.05, 5.0)` | Compute bachelier greeks for SQL finance workflows. | STRUCT. |
-| `fin_bachelier_implied_vol` | `fin_bachelier_implied_vol('call', fin_bachelier_price('call', 100.0, 100.0, 1.0, 0.05, 5.0), 100.0, 100.0, 1.0, 0.05, 4.0, 1e-8)` | Compute bachelier implied vol for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_bachelier_greeks` | `fin_bachelier_greeks('call', 100.0, 100.0, 1.0, 0.05, 5.0)` | Compute Greeks under the normal forward-price model. | `STRUCT(delta, gamma, vega, theta, rho)`; any NULL input, invalid domain, or non-finite output returns a NULL struct. |
+| `fin_bachelier_implied_vol` | `fin_bachelier_implied_vol('call', fin_bachelier_price('call', 100.0, 100.0, 1.0, 0.05, 5.0), 100.0, 100.0, 1.0, 0.05, 4.0, 1e-8)` | Solve normal volatility in forward-price units per square root year. | `DOUBLE`; omitted guess uses the quote's price, discount factor, and time scale rather than fixed price units. Optional explicit guess and absolute price tolerance (default `1e-8`). Uses bracketed Newton steps with bisection fallback and cached pricing terms. Requires positive time; expands the bracket for large normal volatilities. Returns zero at intrinsic within tolerance, or `NULL` on invalid inputs or failure to converge. |
 | `fin_bachelier_price` | `fin_bachelier_price('call', 100.0, 100.0, 1.0, 0.05, 5.0)` | Compute bachelier price for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_barrier_price` | `fin_barrier_price('call', 'up-out', 100.0, 100.0, 120.0, 3.0, 1.0, 0.05, 0.2, 0.0)` | Price a continuously monitored European single-barrier option with an optional rebate. | Reiner-Rubinstein `DOUBLE`; kinds are `down-in`, `down-out`, `up-in`, and `up-out`; inputs after barrier are `[rebate,] ttm, rate, vol[, dividend_yield]`. |
-| `fin_binomial_price` | `fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'crr')` | Price European or American options with CRR or Jarrow-Rudd trees. | Zero volatility follows the discounted deterministic path, including exercise opportunities; Bermudan exercise is not supported. |
-| `fin_black76_greeks` | `fin_black76_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute black76 greeks for SQL finance workflows. | STRUCT. |
-| `fin_black76_implied_vol` | `fin_black76_implied_vol('call', fin_black76_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 100.0, 100.0, 1.0, 0.05, 0.3, 1e-8)` | Compute black76 implied vol for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_binomial_price` | `fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'crr')` | Price European or American options with CRR or Jarrow-Rudd trees. | Defaults: dividend yield 0, 200 steps, European exercise, CRR tree. European prices use a linear-time terminal distribution; American prices retain backward induction where early exercise matters. Non-dividend CRR calls with non-negative rates use the European path. Zero volatility follows the discounted deterministic path; Bermudan schedules are unsupported. |
+| `fin_black76_greeks` | `fin_black76_greeks('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute Greeks under the lognormal forward-price model. | `STRUCT(delta, gamma, vega, theta, rho)`; any NULL input, invalid domain, or non-finite output returns a NULL struct. |
+| `fin_black76_implied_vol` | `fin_black76_implied_vol('call', fin_black76_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 100.0, 100.0, 1.0, 0.05, 0.3, 1e-8)` | Solve annualized decimal Black-76 volatility. | `DOUBLE`; defaults to guess 0.2 and absolute price tolerance `1e-8`. Uses bracketed Newton steps with bisection fallback and cached pricing terms. Requires positive time and price below the no-arbitrage upper bound. Returns zero at intrinsic within tolerance, or `NULL` on invalid inputs or failure to converge. |
 | `fin_black76_price` | `fin_black76_price('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute black76 price for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_bsm_all` | `fin_bsm_all(fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.2))` | Return Black-Scholes-Merton price, Greeks, d1/d2, intrinsic value, and time value from explicit inputs or an option spec. | STRUCT with `price`, Greek fields, `d1`, `d2`, `intrinsic`, and `time_value`. |
 | `fin_bsm_charm` | `fin_bsm_charm('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute bsm charm for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
@@ -198,7 +206,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_bsm_elasticity` | `fin_bsm_elasticity('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute bsm elasticity for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_bsm_gamma` | `fin_bsm_gamma(fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.2))` | Return Black-Scholes-Merton gamma from explicit inputs or an option spec. | DOUBLE. |
 | `fin_bsm_greeks` | `fin_bsm_greeks(fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.2))` | Return Black-Scholes-Merton delta, gamma, vega, theta, and rho from explicit inputs or an option spec. | STRUCT with `delta`, `gamma`, `vega`, `theta`, and `rho`. |
-| `fin_bsm_implied_vol` | `fin_bsm_implied_vol('call', fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 100.0, 100.0, 1.0, 0.05)` | Compute bsm implied vol for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_bsm_implied_vol` | `fin_bsm_implied_vol('call', fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 100.0, 100.0, 1.0, 0.05)` | Solve annualized decimal BSM volatility. | `DOUBLE`; optional dividend yield, guess (default 0.2), absolute price tolerance (default 1e-8), and iteration limit (default 100). Returns zero at intrinsic within tolerance, or `NULL` for impossible prices, invalid inputs, or failure to converge. Tiny time value can make volatility unidentifiable at the supplied tolerance. |
 | `fin_bsm_price` | `fin_bsm_price(fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.2))` | Price a Black-Scholes-Merton option from explicit inputs or an option spec; `ttm`, rate, volatility, and dividend yield are annual decimal values. | DOUBLE. |
 | `fin_bsm_price_dates` | `fin_bsm_price_dates('call', 100.0, 100.0, DATE '2026-01-01', DATE '2027-01-01', 0.05, 0.2)` | Compute bsm price dates for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_bsm_prob_itm` | `fin_bsm_prob_itm('call', 100.0, 100.0, 1.0, 0.05, 0.2)` | Compute bsm prob itm for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
@@ -275,7 +283,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_rocr` | `fin_rocr(close, period := 10)` | Compute rocr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_rocr100` | `fin_rocr100(close, period := 10)` | Compute rocr100 for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_roll_spread` | `fin_roll_spread(price)` | Compute roll spread for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_rsi` | `fin_rsi(close, period := 14)` | Compute Wilder-smoothed relative strength from the ordered price series. | Order-sensitive aggregate; `period` must be positive and constant within a group. |
+| `fin_rsi` | `fin_rsi(close, period := 14)` | Compute Wilder-smoothed relative strength from the ordered price series. | Default period 14; supply aggregate `ORDER BY` or a window order. Positive period must be constant within a group. Retains at most `period + 1` seed prices and merges the remaining recurrence without retaining its history. Fewer than two observations return `NULL`; short histories seed from available changes. |
 | `fin_sar` | `fin_sar(high, low, acceleration := 0.02, maximum := 0.2)` | Compute sar for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_sarext` | `fin_sarext(high, low, options)` | Compute sarext for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_sma` | `fin_sma(x, period := 20)` | Compute sma for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -307,17 +315,17 @@ This document is generated from the extension registration surface in `src/` and
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
 | `fin_black_litterman_returns` | `fin_black_litterman_returns(market_weights, cov_matrix, views_p, views_q, tau := 0.05, omega := NULL)` | Compute black litterman returns for SQL finance workflows. | LIST. |
-| `fin_component_risk` | `fin_component_risk(weights, cov_matrix)` | Compute component risk for SQL finance workflows. | LIST. |
+| `fin_component_risk` | `fin_component_risk(weights, cov_matrix)` | Compute each weight's contribution to portfolio volatility. | `LIST`; component i is weight i times (covariance times weights) i divided by portfolio volatility. Components sum to portfolio volatility; zero portfolio volatility returns `NULL`. |
 | `fin_corr_matrix` | `fin_corr_matrix(asset, r)` | Compute corr matrix for SQL finance workflows. | LIST. |
 | `fin_cov_matrix` | `fin_cov_matrix(asset, r)` | Compute cov matrix for SQL finance workflows. | LIST. |
-| `fin_curve_discount_factor` | `fin_curve_discount_factor([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Compute curve discount factor for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_curve_discount_factor` | `fin_curve_discount_factor([0.5, 1.0, 2.0], [0.04, 0.045, 0.05], 1.5)` | Discount using linearly interpolated zero rates and continuous compounding. | `DOUBLE`; finite values and strictly increasing maturities are required. Flat extrapolation uses the nearest endpoint rate. |
 | `fin_discount_factor` | `fin_discount_factor(0.05, 1.0, 'continuous')` | Compute discount factor for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_equal_weights` | `fin_equal_weights(n)` | Compute equal weights for SQL finance workflows. | LIST. |
 | `fin_factor_alpha` | `fin_factor_alpha(r, factor_r, risk_free := 0.0, annualization := 252)` | Compute factor alpha for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_factor_ic` | `fin_factor_ic(factor, forward_return, method := 'spearman')` | Compute factor ic for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_factor_ic` | `fin_factor_ic(factor, forward_return, method := 'spearman')` | Compute factor ic for SQL finance workflows. | Experimental Pearson correlation on raw values; method is ignored. |
 | `fin_factor_turnover` | `fin_factor_turnover(factor_rank, period := 1)` | Compute factor turnover for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_inverse_vol_weights` | `fin_inverse_vol_weights(vols)` | Compute inverse vol weights for SQL finance workflows. | LIST. |
-| `fin_marginal_risk` | `fin_marginal_risk(weights, cov_matrix)` | Compute marginal risk for SQL finance workflows. | LIST. |
+| `fin_marginal_risk` | `fin_marginal_risk(weights, cov_matrix)` | Multiply the covariance matrix by portfolio weights. | `LIST`; returns covariance times weights, which is half the variance gradient. Divide by portfolio volatility for the marginal volatility gradient. |
 | `fin_matrix_cholesky` | `fin_matrix_cholesky([[4.0, 2.0], [2.0, 3.0]])` | Compute a Cholesky factor for a symmetric positive semidefinite matrix. | Matrix result; `NULL` when no valid factor exists. |
 | `fin_matrix_is_psd` | `fin_matrix_is_psd([[1.0, 0.2], [0.2, 1.0]])` | Check whether a symmetric matrix is positive semidefinite. | BOOLEAN. |
 | `fin_matrix_mul` | `fin_matrix_mul([[1.0, 2.0]], [[3.0], [4.0]])` | Compute matrix mul for SQL finance workflows. | LIST. |
@@ -338,7 +346,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_portfolio_vol` | `fin_portfolio_vol([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])` | Compute portfolio vol for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_profit_factor` | `fin_profit_factor(r)` | Compute profit factor for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_recovery_factor` | `fin_recovery_factor(r)` | Compute recovery factor for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_risk_contribution` | `fin_risk_contribution(weights, cov_matrix)` | Compute risk contribution for SQL finance workflows. | LIST. |
+| `fin_risk_contribution` | `fin_risk_contribution(weights, cov_matrix)` | Normalize component volatility contributions. | `LIST`; contributions sum to one for nonzero portfolio volatility. Includes weight factors; short positions can produce negative contributions. |
 | `fin_risk_parity_weights` | `fin_risk_parity_weights(cov_matrix, budgets := NULL, tol := 1e-8, max_iter := 1000)` | Compute risk parity weights for SQL finance workflows. | LIST. |
 | `fin_turnover` | `fin_turnover(old_weights, new_weights)` | Compute turnover for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_vector_add` | `fin_vector_add([1.0, 2.0], [3.0, 4.0])` | Compute vector add for SQL finance workflows. | LIST. |
@@ -361,13 +369,13 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_is_rate` | `fin_is_rate(0.05)` | Predicate helper for finance input validation. | BOOLEAN. |
 | `fin_is_regular_session` | `fin_is_regular_session(TIMESTAMP '2026-05-06 10:00:00', 'NYSE')` | Predicate helper for finance input validation. | BOOLEAN. |
 | `fin_is_vol` | `fin_is_vol(0.2)` | Predicate helper for finance input validation. | BOOLEAN. |
-| `fin_next_business_day` | `fin_next_business_day(DATE '2026-05-08', 'weekday', 1)` | Compute next business day for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_next_business_day` | `fin_next_business_day(DATE '2026-05-08', 5)` | Advance by weekday business days, excluding the start for positive offsets. | `DATE`; omitted offset defaults to 1. The two-argument overload accepts a `BIGINT` offset and uses weekdays automatically. The existing `(date, calendar, INTEGER offset)` overload remains available. Skips whole weeks in constant time. Zero returns the input date. NULL, infinite dates, or out-of-range results return `NULL`; negative offsets raise an error. No exchange holiday calendar. |
 | `fin_normalize_currency` | `fin_normalize_currency('usd')` | Compute normalize currency for SQL finance workflows. | VARCHAR. |
 | `fin_optimizer_spec` | `fin_optimizer_spec(objective := 'max_sharpe', risk_free := 0.0, long_only := true, weight_min := 0.0, weight_max := 1.0, target_return := NULL, target_vol := NULL, risk_aversion := 1.0)` | Compute optimizer spec for SQL finance workflows. | STRUCT. |
 | `fin_parse_compounding` | `fin_parse_compounding('continuous')` | Normalize and validate a finance convention string. | VARCHAR. |
 | `fin_parse_day_count` | `fin_parse_day_count('actual/365 fixed')` | Normalize and validate a finance convention string. | VARCHAR. |
 | `fin_parse_exercise_style` | `fin_parse_exercise_style('American')` | Normalize and validate a finance convention string. | VARCHAR. |
-| `fin_prev_business_day` | `fin_prev_business_day(DATE '2026-05-11', 'weekday', 1)` | Compute prev business day for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
+| `fin_prev_business_day` | `fin_prev_business_day(DATE '2026-05-11', 5)` | Move backward by weekday business days. | `DATE`; omitted offset defaults to 1. Accepts `(date, BIGINT offset)` or `(date, calendar, INTEGER offset)`. Uses the same constant-time and validation rules as `fin_next_business_day`. |
 | `fin_rate_spec` | `fin_rate_spec(rate, compounding := 'continuous', frequency := 1, day_count := 'ACT/365F')` | Compute rate spec for SQL finance workflows. | STRUCT. |
 | `fin_risk_spec` | `fin_risk_spec(annualization := 252, risk_free := 0.0, var_confidence := 0.95, tail := 'left', loss_positive := true)` | Compute risk spec for SQL finance workflows. | STRUCT. |
 | `fin_session_date` | `fin_session_date(TIMESTAMP '2026-05-06 10:00:00', 'NYSE')` | Compute session date for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
@@ -381,25 +389,25 @@ This document is generated from the extension registration surface in `src/` and
 
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
-| `fin_bootstrap_curve` | `fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Build a simple bootstrapped curve table from instrument maturities and rates using the requested compounding convention. | Table result. |
+| `fin_bootstrap_curve` | `fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Build a simple bootstrapped curve table from instrument maturities and rates using the requested compounding convention. | Experimental zero-rate projection; quoted instrument rates are not bootstrapped from cash flows. |
 | `fin_calendar` | `fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06')` | Return business-calendar dates for a calendar name and date range. | Table result. |
 | `fin_changes_to_grid` | `fin_changes_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute changes to grid for SQL finance workflows. | Table result. |
 | `fin_curve_bootstrap` | `fin_curve_bootstrap('gold_curve', 'inst', 'maturity', 'rate', 'continuous')` | Alias for curve bootstrapping with the requested compounding convention. | Table result. |
 | `fin_delta_to_grid` | `fin_delta_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute delta to grid for SQL finance workflows. | Table result. |
 | `fin_dollar_bars` | `fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 100000.0)` | Compute dollar bars for SQL finance workflows. | Table result; threshold must be positive and finite. |
-| `fin_efficient_frontier` | `fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])` | Compute efficient frontier for SQL finance workflows. | Table result. |
+| `fin_efficient_frontier` | `fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])` | Compute efficient frontier for SQL finance workflows. | Experimental diagnostic grid; target returns are interpolated while volatility stays at equal-weight volatility. Not an optimized frontier. |
 | `fin_factor_report` | `fin_factor_report('gold_returns', 'd', 'asset', 'factor', 'forward_return', 2)` | Compute factor report for SQL finance workflows. | Table result. |
-| `fin_fama_macbeth` | `fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1)` | Compute fama macbeth for SQL finance workflows. | Table result. |
-| `fin_garch_fit` | `fin_garch_fit('gold_returns', 'r', 1, 1, 'normal')` | Compute garch fit for SQL finance workflows. | Table result. |
-| `fin_hrp_weights` | `fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]], ['AAA', 'BBB'], 'single')` | Compute hrp weights for SQL finance workflows. | Table result. |
+| `fin_fama_macbeth` | `fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1)` | Compute fama macbeth for SQL finance workflows. | Experimental per-date single-factor regressions; uses the first x column without second-stage inference or lag corrections. |
+| `fin_garch_fit` | `fin_garch_fit('gold_returns', 'r', 1, 1, 'normal')` | Compute garch fit for SQL finance workflows. | Experimental fixed parameters; omega, alpha, and beta are not fitted. |
+| `fin_hrp_weights` | `fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]], ['AAA', 'BBB'], 'single')` | Compute hrp weights for SQL finance workflows. | Experimental equal-weight fallback; no hierarchical risk parity allocation. |
 | `fin_imbalance_bars` | `fin_imbalance_bars('gold_prices', 'ts', 'close', 'volume', 'signed')` | Aggregate signed-volume observations into imbalance bars. | Table result; the optional method currently accepts only `signed`. |
 | `fin_last_to_grid` | `fin_last_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute last to grid for SQL finance workflows. | Table result. |
 | `fin_normalize_ohlcv` | `fin_normalize_ohlcv('gold_prices', 'ts', 'open', 'high', 'low', 'close', 'volume')` | Project source OHLCV columns into canonical `ts`, `asset_id`, `open`, `high`, `low`, `close`, and `volume` fields. | Table result with canonical OHLCV columns. |
 | `fin_normalize_option_chain` | `fin_normalize_option_chain('gold_source_options', 'cp', 'underlying_px', 'strike_px', 'expiry_dt', 'valuation_dt', 'zero_rate', 'iv', 'q')` | Project source option columns into canonical option fields and an `option_spec` struct for BSM functions. | Table result with canonical option fields plus `option_spec`. |
 | `fin_normalize_returns` | `fin_normalize_returns('gold_returns', 'd', 'asset', 'r')` | Project source return columns into canonical `date`, `asset_id`, and `return_decimal` fields. | Table result with one row per normalized asset return. |
 | `fin_option_chain` | `fin_option_chain('gold_options', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol', 'dividend_yield')` | Project option input rows and append model-prefixed BSM columns such as `model_price`, `model_delta`, and `model_implied_volatility`. | Table result preserving source columns and adding model-prefixed analytics columns. |
-| `fin_portfolio_optimize` | `fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0)` | Compute portfolio optimize for SQL finance workflows. | Table result. |
-| `fin_portfolio_optimize_table` | `fin_portfolio_optimize_table('gold_current_weights', 'asset', 'weight', 'weight')` | Compute portfolio optimize table for SQL finance workflows. | Table result. |
+| `fin_portfolio_optimize` | `fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0)` | Compute portfolio optimize for SQL finance workflows. | Experimental equal-weight fallback; the objective and constraints are not solved. |
+| `fin_portfolio_optimize_table` | `fin_portfolio_optimize_table('gold_current_weights', 'asset', 'weight', 'weight')` | Compute portfolio optimize table for SQL finance workflows. | Experimental equal-weight fallback; return history is not used to optimize. |
 | `fin_portfolio_return_table` | `fin_portfolio_return_table('gold_weighted_returns', 'asset', 'weight', 'expected_return')` | Compute portfolio return directly from table-shaped asset, weight, and return columns. | One-row table with `portfolio_return`, `weight_sum`, and `asset_count`. |
 | `fin_portfolio_variance_table` | `fin_portfolio_variance_table('gold_weighted_returns', 'asset', 'weight', 'gold_covariance', 'asset_i', 'asset_j', 'covariance')` | Compute portfolio variance and volatility from table-shaped weights and pairwise covariance rows. | One-row table with `portfolio_variance` and `portfolio_volatility`. |
 | `fin_predict_linear_to_grid` | `fin_predict_linear_to_grid( 'gold_prices', 'ts', 'close', TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute' )` | Compute predict linear to grid for SQL finance workflows. | Table result. |
@@ -417,16 +425,16 @@ This document is generated from the extension registration surface in `src/` and
 | Function | Usage | Purpose | Returns / Notes |
 |---|---|---|---|
 | `fin_adf` | `fin_adf(x, max_lag := 1, regression := 'c')` | Compute adf for SQL finance workflows. | NULL placeholder. |
-| `fin_autocorr` | `fin_autocorr(x, lag := 1)` | Compute autocorr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_autocorr` | `fin_autocorr(x, lag := 1)` | Compute autocorr for SQL finance workflows. | Experimental contemporaneous self-correlation; lag is ignored. |
 | `fin_bipower_variation` | `fin_bipower_variation(log_r ORDER BY observation_key)` | Estimate annualized bipower variation from adjacent absolute log-return products. | Order-dependent aggregate; defaults to 252 periods and returns `NULL` with fewer than two non-`NULL` returns. |
 | `fin_cagr` | `fin_cagr(r, annualization := 252)` | Compute cagr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_changes` | `fin_changes(x)` | Compute changes for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_crosscorr` | `fin_crosscorr(x, y, lag := 0)` | Compute crosscorr for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_crosscorr` | `fin_crosscorr(x, y, lag := 0)` | Compute crosscorr for SQL finance workflows. | Experimental contemporaneous Pearson correlation; lag is ignored. |
 | `fin_delta` | `fin_delta(x)` | Compute delta for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_dot` | `fin_dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])` | Compute dot for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
 | `fin_dv01` | `fin_dv01(0.05, 0.04, 5.0, 2, 100.0)` | Compute dv01 for SQL finance workflows. | DOUBLE unless noted by DuckDB overloads. |
-| `fin_ema` | `fin_ema(x, period := 20)` | Compute ema for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_ema_halflife` | `fin_ema_halflife(x, ts, halflife)` | Compute ema halflife for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_ema` | `fin_ema(x, period := 20)` | Compute ema for SQL finance workflows. | Experimental arithmetic-mean alias; does not apply exponential weighting. |
+| `fin_ema_halflife` | `fin_ema_halflife(x, ts, halflife)` | Compute ema halflife for SQL finance workflows. | Experimental arithmetic-mean alias; timestamps and half-life are ignored. |
 | `fin_ewma_vol` | `fin_ewma_vol(r, lambda := 0.94, annualization := 252)` | Compute ewma vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_exp_decay_avg` | `fin_exp_decay_avg(x, ts, halflife)` | Compute exp decay avg for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_exp_decay_count` | `fin_exp_decay_count(ts, halflife)` | Compute exp decay count for SQL finance workflows. | Aggregate or scalar SQL macro result. |
@@ -447,7 +455,7 @@ This document is generated from the extension registration surface in `src/` and
 | `fin_parkinson_vol` | `fin_parkinson_vol(high, low, annualization := 252)` | Compute parkinson vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_pct_change` | `fin_pct_change(x)` | Compute pct change for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_quantile_spread` | `fin_quantile_spread(factor, forward_return, buckets := 5)` | Compute the mean forward-return spread between the top and bottom factor buckets. | `buckets` must be greater than one and constant within each group. |
-| `fin_rank_ic` | `fin_rank_ic(factor, forward_return)` | Compute rank ic for SQL finance workflows. | Aggregate or scalar SQL macro result. |
+| `fin_rank_ic` | `fin_rank_ic(factor, forward_return)` | Compute rank ic for SQL finance workflows. | Experimental Pearson correlation on raw values; no ranking. |
 | `fin_rate` | `fin_rate(x, ts, unit := 'second')` | Compute rate for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_resets` | `fin_resets(x)` | Compute resets for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_rogers_satchell_vol` | `fin_rogers_satchell_vol(open, high, low, close, annualization := 252)` | Compute rogers satchell vol for SQL finance workflows. | Aggregate or scalar SQL macro result. |

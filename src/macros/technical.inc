@@ -49,7 +49,7 @@
     {"fin_obv", "(close, volume) AS CASE WHEN last(close) >= first(close) THEN fsum(volume::DOUBLE) ELSE -fsum(volume::DOUBLE) END"},
     {"fin_ad_line", "(high, low, close, volume) AS fsum(((close - low) - (high - close)) / nullif(high - low, 0) * volume)"},
     {"fin_adosc", "(high, low, close, volume, fast := 3, slow := 10) AS fsum(((close - low) - (high - close)) / nullif(high - low, 0) * volume)"},
-    {"fin_vwap", "(price, volume) AS fsum(price::DOUBLE * volume::DOUBLE) / nullif(fsum(volume::DOUBLE), 0)"},
+    {"fin_vwap", "(price, volume) AS fsum(price::DOUBLE * volume::DOUBLE) / nullif(fsum(volume::DOUBLE) FILTER (WHERE price IS NOT NULL), 0)"},
     {"fin_twap", "(price, ts) AS avg(price)"},
     {"fin_volume_profile", "(price, volume, bins := 10) AS histogram(price)"},
     {"fin_bop", "(open, high, low, close) AS avg((close - open) / nullif(high - low, 0))"},

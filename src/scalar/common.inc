@@ -85,6 +85,10 @@ static string ParseReturnMethod(const string &method) {
 }
 
 static string ParseCompounding(const string &compounding) {
+	if (compounding == "continuous" || compounding == "simple" || compounding == "periodic" ||
+	    compounding == "semiannual" || compounding == "quarterly" || compounding == "monthly" || compounding == "daily") {
+		return compounding;
+	}
 	auto normalized = Normalize(compounding);
 	if (normalized == "continuous" || normalized == "cont" || normalized == "cc") {
 		return "continuous";
@@ -111,6 +115,10 @@ static string ParseCompounding(const string &compounding) {
 }
 
 static string ParseDayCount(const string &day_count) {
+	if (day_count == "ACT/365F" || day_count == "ACT/360" || day_count == "ACT/ACT" ||
+	    day_count == "30/360" || day_count == "30E/360") {
+		return day_count;
+	}
 	auto normalized = Normalize(day_count);
 	normalized = StringUtil::Replace(normalized, " ", "");
 	if (normalized == "act/365f" || normalized == "actual/365fixed" || normalized == "act365f" ||
@@ -388,8 +396,11 @@ static double Chi2Inv(double p, double df) {
 }
 
 static double YearFrac(date_t start, date_t end, const string &convention) {
+	if (!Date::IsFinite(start) || !Date::IsFinite(end)) {
+		throw InvalidInputException("Year fractions require finite dates");
+	}
 	auto day_count = ParseDayCount(convention);
-	const int32_t days = end.days - start.days;
+	const int64_t days = int64_t(end.days) - int64_t(start.days);
 	if (day_count == "ACT/365F") {
 		return double(days) / 365.0;
 	}
@@ -410,9 +421,7 @@ static double YearFrac(date_t start, date_t end, const string &convention) {
 		double result = 0.0;
 		auto start_next_year = Date::FromDate(sy + 1, 1, 1);
 		result += double(start_next_year.days - start.days) / (Date::IsLeapYear(sy) ? 366.0 : 365.0);
-		for (int32_t y = sy + 1; y < ey; y++) {
-			result += 1.0;
-		}
+		result += double(ey) - double(sy) - 1.0;
 		auto end_year_start = Date::FromDate(ey, 1, 1);
 		result += double(end.days - end_year_start.days) / (Date::IsLeapYear(ey) ? 366.0 : 365.0);
 		return result;
@@ -432,7 +441,7 @@ static double YearFrac(date_t start, date_t end, const string &convention) {
 			ed = 30;
 		}
 	}
-	return double((ey - sy) * 360 + (em - sm) * 30 + (ed - sd)) / 360.0;
+	return double((int64_t(ey) - sy) * 360 + (em - sm) * 30 + (ed - sd)) / 360.0;
 }
 
 static double DiscountFactor(double rate, double ttm, const string &compounding, int frequency) {
@@ -460,7 +469,7 @@ static double DiscountFactor(double rate, double ttm, const string &compounding,
 }
 
 static double RateFromDiscount(double df, double ttm, const string &compounding, int frequency) {
-	if (!(df > 0.0) || !(ttm > 0.0)) {
+	if (!IsFinite(df) || !IsFinite(ttm) || !(df > 0.0) || !(ttm > 0.0)) {
 		throw InvalidInputException("fin_rate_from_discount requires df > 0 and ttm > 0");
 	}
 	auto normalized = ParseCompounding(compounding);
@@ -478,7 +487,8 @@ static double RateFromDiscount(double df, double ttm, const string &compounding,
 }
 
 static double ForwardRate(double df1, double df2, double t1, double t2, const string &compounding) {
-	if (!(df1 > 0.0) || !(df2 > 0.0) || !(t2 > t1)) {
+	if (!IsFinite(df1) || !IsFinite(df2) || !IsFinite(t1) || !IsFinite(t2) ||
+	    !(df1 > 0.0) || !(df2 > 0.0) || !(t2 > t1)) {
 		throw InvalidInputException("Invalid forward-rate input");
 	}
 	double forward_df = df2 / df1;
@@ -494,43 +504,49 @@ static double FutureValue(double pv, double rate, double ttm, const string &comp
 	return pv / df;
 }
 
-static double BondPrice(double coupon_rate, double ytm, double maturity_years, int frequency, double face) {
+static int BondPeriods(double coupon_rate, double ytm, double maturity_years, int frequency, double face) {
 	if (!IsFinite(coupon_rate) || !IsFinite(ytm) || !IsFinite(maturity_years) || !IsFinite(face) ||
 	    !(maturity_years > 0.0) || frequency <= 0 || !(face > 0.0) || !(1.0 + ytm / frequency > 0.0)) {
 		throw InvalidInputException("Invalid bond input");
 	}
-	int periods = int(std::round(maturity_years * frequency));
-	if (periods <= 0) {
-		throw InvalidInputException("Bond maturity must include at least one coupon period");
+	double periods = std::round(maturity_years * frequency);
+	if (!IsFinite(periods) || periods < 1.0 || periods >= std::numeric_limits<int>::max()) {
+		throw InvalidInputException("Bond coupon period count is out of range");
 	}
+	return static_cast<int>(periods);
+}
+
+static double BondPrice(double coupon_rate, double ytm, double maturity_years, int frequency, double face) {
+	auto periods = BondPeriods(coupon_rate, ytm, maturity_years, frequency, face);
 	double coupon = face * coupon_rate / frequency;
-	double period_df = 1.0 / (1.0 + ytm / frequency);
-	double discount = period_df;
-	double price = 0.0;
-	for (int i = 1; i <= periods; i++) {
-		price += coupon * discount;
-		discount *= period_df;
+	double period_rate = ytm / frequency;
+	if (period_rate == 0.0) {
+		return face + coupon * periods;
 	}
-	price += face * (discount / period_df);
-	return price;
+	// Sum the geometric coupon series in O(1); expm1 preserves small yields.
+	double log_discount = -periods * std::log1p(period_rate);
+	double redemption = face * std::exp(log_discount);
+	return coupon == 0.0 ? redemption : redemption + coupon * (-std::expm1(log_discount) / period_rate);
 }
 
 static double BondYTM(double price, double coupon_rate, double maturity_years, int frequency, double face) {
-	if (!(price > 0.0)) {
-		throw InvalidInputException("Bond price must be positive");
+	BondPeriods(coupon_rate, 0.0, maturity_years, frequency, face);
+	if (!IsFinite(price) || !(price > 0.0) || coupon_rate < 0.0) {
+		throw InvalidInputException("Bond YTM requires a finite positive price and non-negative coupon");
 	}
-	double lo = -0.9999 * frequency;
+	double lo = std::nextafter(-static_cast<double>(frequency), 0.0);
 	double hi = 1.0;
-	while (BondPrice(coupon_rate, hi, maturity_years, frequency, face) > price) {
+	while (BondPrice(coupon_rate, hi, maturity_years, frequency, face) > price && IsFinite(hi * 2.0)) {
 		hi *= 2.0;
-		if (hi > 100.0) {
-			break;
-		}
+	}
+	if (BondPrice(coupon_rate, lo, maturity_years, frequency, face) < price ||
+	    BondPrice(coupon_rate, hi, maturity_years, frequency, face) > price) {
+		throw InvalidInputException("Could not bracket bond yield");
 	}
 	for (idx_t i = 0; i < 200; i++) {
 		double mid = 0.5 * (lo + hi);
 		double p = BondPrice(coupon_rate, mid, maturity_years, frequency, face);
-		if (std::fabs(p - price) < 1e-12) {
+		if (IsFinite(p) && std::fabs(p - price) <= 1e-12 * price) {
 			return mid;
 		}
 		if (p > price) {
@@ -539,44 +555,70 @@ static double BondYTM(double price, double coupon_rate, double maturity_years, i
 			hi = mid;
 		}
 	}
-	return 0.5 * (lo + hi);
+	throw InvalidInputException("Bond yield did not converge");
+}
+
+struct BondDiscountSums {
+	double discount;
+	double sum;
+	double first;
+	double second;
+	double periods;
+};
+
+static BondDiscountSums AppendBondDiscountSums(const BondDiscountSums &a, const BondDiscountSums &b) {
+	return {a.discount * b.discount, a.sum + a.discount * b.sum,
+	        a.first + a.discount * (b.first + a.periods * b.sum),
+	        a.second + a.discount * (b.second + 2.0 * a.periods * b.first +
+	                                 a.periods * (a.periods + 1.0) * b.sum),
+	        a.periods + b.periods};
+}
+
+static BondDiscountSums SumBondDiscounts(double period_df, int periods) {
+	// Positive geometric moments avoid cancellation near zero yield. Doubling
+	// computes sum(q^i), sum(i*q^i), and sum(i*(i+1)*q^i) in O(log periods).
+	BondDiscountSums result {1.0, 0.0, 0.0, 0.0, 0.0};
+	BondDiscountSums block {period_df, period_df, period_df, 2.0 * period_df, 1.0};
+	while (periods > 0) {
+		if (periods & 1) {
+			result = AppendBondDiscountSums(result, block);
+		}
+		periods >>= 1;
+		if (periods) {
+			block = AppendBondDiscountSums(block, block);
+		}
+	}
+	return result;
 }
 
 static double BondDuration(double coupon_rate, double ytm, double maturity_years, int frequency, double face,
                            const string &kind) {
-	int periods = int(std::round(maturity_years * frequency));
+	auto periods = BondPeriods(coupon_rate, ytm, maturity_years, frequency, face);
 	double coupon = face * coupon_rate / frequency;
 	double price = BondPrice(coupon_rate, ytm, maturity_years, frequency, face);
-	double weighted = 0.0;
 	double period_df = 1.0 / (1.0 + ytm / frequency);
-	double discount = period_df;
-	for (int i = 1; i <= periods; i++) {
-		double cf = coupon + (i == periods ? face : 0.0);
-		double t = double(i) / frequency;
-		weighted += t * cf * discount;
-		discount *= period_df;
-	}
+	auto sums = SumBondDiscounts(period_df, periods);
+	double weighted = (coupon * sums.first + face * double(periods) * sums.discount) / frequency;
 	double macaulay = weighted / price;
 	auto normalized = Normalize(kind);
 	if (normalized == "modified" || normalized == "mod") {
 		return macaulay / (1.0 + ytm / frequency);
 	}
+	if (normalized != "macaulay" && normalized != "mac") {
+		throw InvalidInputException("Unknown bond duration kind '%s'", kind);
+	}
 	return macaulay;
 }
 
 static double BondConvexity(double coupon_rate, double ytm, double maturity_years, int frequency, double face) {
-	int periods = int(std::round(maturity_years * frequency));
+	auto periods = BondPeriods(coupon_rate, ytm, maturity_years, frequency, face);
 	double coupon = face * coupon_rate / frequency;
 	double price = BondPrice(coupon_rate, ytm, maturity_years, frequency, face);
-	double convexity = 0.0;
 	double period_df = 1.0 / (1.0 + ytm / frequency);
-	double discount_i_plus_2 = period_df * period_df * period_df;
-	for (int i = 1; i <= periods; i++) {
-		double cf = coupon + (i == periods ? face : 0.0);
-		convexity += cf * i * (i + 1) * discount_i_plus_2;
-		discount_i_plus_2 *= period_df;
-	}
-	return convexity / (price * frequency * frequency);
+	auto sums = SumBondDiscounts(period_df, periods);
+	double convexity = period_df * period_df *
+	                   (coupon * sums.second + face * double(periods) * (double(periods) + 1.0) * sums.discount);
+	return convexity / (price * double(frequency) * double(frequency));
 }
 
 static double OptionPayoff(bool call, double spot, double strike) {
@@ -587,7 +629,7 @@ static double OptionPayoff(bool call, double spot, double strike) {
 }
 
 static double ForwardPrice(double spot, double ttm, double rate, double dividend_yield) {
-	if (!(spot >= 0.0) || ttm < 0.0 || !IsFinite(rate) || !IsFinite(dividend_yield)) {
+	if (!IsFinite(spot) || !IsFinite(ttm) || !(spot >= 0.0) || ttm < 0.0 || !IsFinite(rate) || !IsFinite(dividend_yield)) {
 		throw InvalidInputException("Invalid forward price input");
 	}
 	return spot * std::exp((rate - dividend_yield) * ttm);
@@ -639,7 +681,7 @@ static double BSMPriceFromKernel(bool call, const BSMKernel &k) {
 }
 
 static double BSMDeltaFromKernel(bool call, const BSMKernel &k) {
-	return call ? k.df_dividend * NormCDF(k.d1) : k.df_dividend * (NormCDF(k.d1) - 1.0);
+	return call ? k.df_dividend * NormCDF(k.d1) : -k.df_dividend * NormCDF(-k.d1);
 }
 
 static double BSMGammaFromKernel(const BSMKernel &k) {
@@ -713,31 +755,44 @@ static double BSMRho(bool call, double spot, double strike, double ttm, double r
 }
 
 static double BSMImpliedVol(bool call, double price, double spot, double strike, double ttm, double rate,
-                            double dividend_yield, double tolerance, int max_iter) {
+	                            double dividend_yield, double guess, double tolerance, int max_iter) {
 	if (!IsFinite(price) || !IsFinite(spot) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) ||
 	    !IsFinite(dividend_yield) || !IsFinite(tolerance) || !(price >= 0.0) || !(spot > 0.0) ||
-	    !(strike > 0.0) || !(ttm > 0.0) || !(tolerance > 0.0) || max_iter <= 0) {
+	    !(strike > 0.0) || !(ttm > 0.0) || !IsFinite(guess) || guess < 0.0 || !(tolerance > 0.0) || max_iter <= 0) {
 		throw InvalidInputException("Invalid implied-vol input");
 	}
-	double intrinsic = BSMPrice(call, spot, strike, ttm, rate, 1e-12, dividend_yield);
-	if (price < intrinsic - 1e-10) {
+	double intrinsic = BSMPrice(call, spot, strike, ttm, rate, 0.0, dividend_yield);
+	if (price < intrinsic - tolerance) {
 		throw InvalidInputException("Option price is below no-arbitrage intrinsic value");
 	}
 	double upper_bound = call ? spot * std::exp(-dividend_yield * ttm) : strike * std::exp(-rate * ttm);
-	if (!(price < upper_bound)) {
+	if (!IsFinite(intrinsic) || !IsFinite(upper_bound) || !(price < upper_bound)) {
 		throw InvalidInputException("Option price must be below the no-arbitrage upper bound");
 	}
-	double lo = 1e-8;
+	if (std::fabs(price - intrinsic) <= tolerance) {
+		return 0.0;
+	}
+	auto kernel = MakeBSMKernel(spot, strike, ttm, rate, 1.0, dividend_yield);
+	auto log_moneyness = std::log(spot / strike) + (rate - dividend_yield) * ttm;
+	auto evaluate = [&](double vol) {
+		kernel.vol = vol;
+		kernel.st = vol * kernel.sqrt_ttm;
+		kernel.d1 = log_moneyness / kernel.st + 0.5 * kernel.st;
+		kernel.d2 = kernel.d1 - kernel.st;
+		kernel.pdf_d1 = NormPDF(kernel.d1);
+		return BSMPriceFromKernel(call, kernel);
+	};
+	double lo = 0.0;
 	double hi = 5.0;
-	while (BSMPrice(call, spot, strike, ttm, rate, hi, dividend_yield) < price && hi < 100.0) {
+	while (evaluate(hi) < price && hi < 100.0) {
 		hi *= 2.0;
 	}
-	if (BSMPrice(call, spot, strike, ttm, rate, hi, dividend_yield) < price) {
+	if (evaluate(hi) < price) {
 		throw InvalidInputException("Could not bracket implied volatility");
 	}
-	double guess = 0.5 * (lo + hi);
+	guess = guess > lo && guess < hi ? guess : 0.5 * (lo + hi);
 	for (int i = 0; i < max_iter; i++) {
-		double value = BSMPrice(call, spot, strike, ttm, rate, guess, dividend_yield);
+		double value = evaluate(guess);
 		if (std::fabs(value - price) < tolerance) {
 			return guess;
 		}
@@ -748,7 +803,7 @@ static double BSMImpliedVol(bool call, double price, double spot, double strike,
 		}
 		double next = 0.5 * (lo + hi);
 		try {
-			double vega = BSMVega(spot, strike, ttm, rate, guess, dividend_yield);
+			double vega = BSMVegaFromKernel(kernel);
 			double newton = guess - (value - price) / vega;
 			if (std::isfinite(newton) && newton > lo && newton < hi) {
 				next = newton;
@@ -757,7 +812,7 @@ static double BSMImpliedVol(bool call, double price, double spot, double strike,
 		}
 		guess = next;
 	}
-	return 0.5 * (lo + hi);
+	throw InvalidInputException("Implied volatility did not converge");
 }
 
 static double Black76Price(bool call, double forward, double strike, double ttm, double rate, double vol) {
@@ -824,11 +879,17 @@ static double BinomialPrice(bool call, double spot, double strike, double ttm, d
 	if (normalized_exercise == "bermudan") {
 		throw InvalidInputException("Binomial pricing does not support Bermudan exercise schedules");
 	}
-	const bool american = normalized_exercise == "american";
+	bool american = normalized_exercise == "american";
 	auto normalized_tree = Normalize(tree);
 	if (normalized_tree != "crr" && normalized_tree != "cox-ross-rubinstein" && normalized_tree != "jr" &&
 	    normalized_tree != "jarrow-rudd") {
 		throw InvalidInputException("Unknown binomial tree '%s'", tree);
+	}
+	if (call && dividend_yield <= 0.0 && rate >= 0.0 &&
+	    (normalized_tree == "crr" || normalized_tree == "cox-ross-rubinstein")) {
+		// Early exercise cannot improve a non-dividend CRR call with
+		// non-negative rates. JR's approximate drift does not share this bound.
+		american = false;
 	}
 	if (ttm == 0.0) {
 		return OptionPayoff(call, spot, strike);
@@ -850,7 +911,7 @@ static double BinomialPrice(bool call, double spot, double strike, double ttm, d
 		d = 1.0 / u;
 		p = (std::exp((rate - dividend_yield) * dt) - d) / (u - d);
 	}
-	if (p < 0.0 || p > 1.0) {
+	if (!IsFinite(p) || p < 0.0 || p > 1.0) {
 		throw InvalidInputException("Invalid binomial risk-neutral probability");
 	}
 	vector<double> values(steps + 1);
@@ -861,21 +922,45 @@ static double BinomialPrice(bool call, double spot, double strike, double ttm, d
 		s *= down_over_up;
 	}
 	double disc = std::exp(-rate * dt);
-	double american_start = american ? spot * std::pow(u, steps - 1) : 0.0;
+	if (!american) {
+		if (p == 0.0 || p == 1.0) {
+			return std::exp(-rate * ttm) * values[p == 0.0 ? steps : 0];
+		}
+		// A European payoff needs only the terminal distribution. Relative
+		// binomial weights expanded from the mode avoid tiny endpoint masses
+		// and reduce backward induction from O(steps^2) to O(steps).
+		auto mode = std::min(steps, int(std::floor((steps + 1.0) * (1.0 - p))));
+		auto scale = *std::max_element(values.begin(), values.end());
+		if (scale == 0.0) {
+			return 0.0;
+		}
+		double weighted = values[mode] / scale;
+		double mass = 1.0;
+		double weight = 1.0;
+		for (int i = mode; i < steps; i++) {
+			weight *= (double(steps - i) / (i + 1)) * ((1.0 - p) / p);
+			weighted += weight * (values[i + 1] / scale);
+			mass += weight;
+		}
+		weight = 1.0;
+		for (int i = mode; i > 0; i--) {
+			weight *= (double(i) / (steps - i + 1)) * (p / (1.0 - p));
+			weighted += weight * (values[i - 1] / scale);
+			mass += weight;
+		}
+		return std::exp(-rate * ttm) * (weighted / mass) * scale;
+	}
+	double american_start = spot * std::pow(u, steps - 1);
+	double up_weight = disc * p;
+	double down_weight = disc * (1.0 - p);
 	for (int step = steps - 1; step >= 0; step--) {
 		double american_spot = american_start;
 		for (int i = 0; i <= step; i++) {
-			double continuation = disc * (p * values[i] + (1.0 - p) * values[i + 1]);
-			if (american) {
-				values[i] = std::max(continuation, OptionPayoff(call, american_spot, strike));
-				american_spot *= down_over_up;
-			} else {
-				values[i] = continuation;
-			}
+			double continuation = up_weight * values[i] + down_weight * values[i + 1];
+			values[i] = std::max(continuation, OptionPayoff(call, american_spot, strike));
+			american_spot *= down_over_up;
 		}
-		if (american) {
-			american_start /= u;
-		}
+		american_start /= u;
 	}
 	return values[0];
 }
@@ -926,11 +1011,17 @@ static double SviTotalVariance(double k, double a, double b, double rho, double 
 }
 
 static bool IsBusinessDay(date_t date) {
+	if (!Date::IsFinite(date)) {
+		throw InvalidInputException("Business days require a finite date");
+	}
 	int32_t iso_day = Date::ExtractISODayOfTheWeek(date);
 	return iso_day >= 1 && iso_day <= 5;
 }
 
 static int64_t BusinessDaysForward(date_t start, date_t end) {
+	if (!Date::IsFinite(start) || !Date::IsFinite(end)) {
+		throw InvalidInputException("Business days require finite dates");
+	}
 	auto days = int64_t(end.days) - int64_t(start.days);
 	auto full_weeks = days / 7;
 	auto remaining_days = days % 7;
@@ -1232,18 +1323,6 @@ static double Dot(const vector<double> &x, const vector<double> &y) {
 	return sum;
 }
 
-static vector<double> MatrixVecMul(const vector<vector<double>> &matrix, const vector<double> &v) {
-	vector<double> result;
-	result.reserve(matrix.size());
-	for (auto &row : matrix) {
-		if (row.size() != v.size()) {
-			throw InvalidInputException("Matrix/vector dimensions do not match");
-		}
-		result.push_back(Dot(row, v));
-	}
-	return result;
-}
-
 static vector<vector<double>> MatrixTranspose(const vector<vector<double>> &matrix) {
 	if (matrix.empty()) {
 		return {};
@@ -1485,6 +1564,15 @@ static double LinearInterpolateList(const double *x, const list_entry_t &x_entry
 	if (x_entry.length == 1 || target <= x[x_offset]) {
 		return y[y_offset];
 	}
+	if (target >= x[x_offset + x_entry.length - 1]) {
+		return y[y_offset + x_entry.length - 1];
+	}
+	if (x_entry.length > 8) {
+		auto begin = x + x_offset;
+		auto upper = idx_t(std::lower_bound(begin, begin + x_entry.length, target) - begin);
+		auto fraction = (target - begin[upper - 1]) / (begin[upper] - begin[upper - 1]);
+		return (1.0 - fraction) * y[y_offset + upper - 1] + fraction * y[y_offset + upper];
+	}
 	for (idx_t i = 1; i < x_entry.length; i++) {
 		if (target <= x[x_offset + i]) {
 			double width = x[x_offset + i] - x[x_offset + i - 1];
@@ -1492,40 +1580,50 @@ static double LinearInterpolateList(const double *x, const list_entry_t &x_entry
 				return y[y_offset + i];
 			}
 			double weight = (target - x[x_offset + i - 1]) / width;
-			return y[y_offset + i - 1] + weight * (y[y_offset + i] - y[y_offset + i - 1]);
+			return (1.0 - weight) * y[y_offset + i - 1] + weight * y[y_offset + i];
 		}
 	}
 	return y[y_offset + x_entry.length - 1];
 }
 
-static double CashflowNPV(double rate, const double *cashflows, const list_entry_t &entry) {
+static double CashflowNPV(double rate, const double *cashflows, const list_entry_t &entry, double scale = 1.0) {
+	if (!IsFinite(rate) || rate <= -1.0) {
+		throw InvalidInputException("Periodic NPV requires a finite rate greater than -1");
+	}
 	double result = 0.0;
 	double discount = 1.0;
 	double period_df = 1.0 / (1.0 + rate);
 	for (idx_t i = 0; i < entry.length; i++) {
-		result += cashflows[entry.offset + i] * discount;
+		result += (cashflows[entry.offset + i] / scale) * discount;
 		discount *= period_df;
 	}
 	return result;
 }
 
-static double CashflowXNPV(double rate, const double *cashflows, const list_entry_t &cashflow_entry,
-                           const date_t *dates, const list_entry_t &date_entry) {
-	if (cashflow_entry.length != date_entry.length || cashflow_entry.length == 0) {
-		throw InvalidInputException("XNPV/XIRR cashflow and date lists must be non-empty and have equal length");
+struct RateEvaluation {
+	double value;
+	double derivative;
+};
+
+static RateEvaluation CashflowNPVEvaluation(double rate, const double *cashflows, const list_entry_t &entry,
+                                             double scale) {
+	double value = 0.0;
+	double derivative = 0.0;
+	double discount = 1.0;
+	double period_df = 1.0 / (1.0 + rate);
+	for (idx_t i = 0; i < entry.length; i++) {
+		auto present_value = (cashflows[entry.offset + i] / scale) * discount;
+		value += present_value;
+		derivative -= double(i) * present_value * period_df;
+		discount *= period_df;
 	}
-	double result = 0.0;
-	auto start = dates[date_entry.offset];
-	for (idx_t i = 0; i < cashflow_entry.length; i++) {
-		double years = double(dates[date_entry.offset + i].days - start.days) / 365.0;
-		result += cashflows[cashflow_entry.offset + i] / std::pow(1.0 + rate, years);
-	}
-	return result;
+	return {value, derivative};
 }
 
-static void ValidateIRRCashflows(const double *cashflows, const list_entry_t &entry) {
+static double ValidateIRRCashflows(const double *cashflows, const list_entry_t &entry) {
 	bool has_positive = false;
 	bool has_negative = false;
+	double scale = 0.0;
 	for (idx_t i = 0; i < entry.length; i++) {
 		double value = cashflows[entry.offset + i];
 		if (!std::isfinite(value)) {
@@ -1533,17 +1631,20 @@ static void ValidateIRRCashflows(const double *cashflows, const list_entry_t &en
 		}
 		has_positive = has_positive || value > 0.0;
 		has_negative = has_negative || value < 0.0;
+		scale = std::max(scale, std::fabs(value));
 	}
 	if (!has_positive || !has_negative) {
 		throw InvalidInputException("IRR requires positive and negative cashflows");
 	}
+	return scale;
 }
 
 static bool RateRootBracketed(double left, double right) {
 	return left == 0.0 || right == 0.0 || std::signbit(left) != std::signbit(right);
 }
 
-static double SolveBracketedRate(const std::function<double(double)> &fn, double lo, double hi, double flo,
+template <class FUNC>
+static double SolveBracketedRate(const FUNC &fn, double lo, double hi, double flo,
 	                             double fhi) {
 	if (flo == 0.0) {
 		return lo;
@@ -1553,11 +1654,11 @@ static double SolveBracketedRate(const std::function<double(double)> &fn, double
 	}
 	for (idx_t i = 0; i < 200; i++) {
 		double mid = 0.5 * (lo + hi);
-		double fmid = fn(mid);
+		double fmid = fn(mid).value;
 		if (!std::isfinite(fmid)) {
 			throw InvalidInputException("Rate root is not finite");
 		}
-		if (std::fabs(fmid) < 1e-10 || hi - lo < 1e-12 * std::max(1.0, std::fabs(mid))) {
+		if (std::fabs(fmid) < 1e-14 || hi - lo < 1e-12 * std::max(1.0, std::fabs(mid))) {
 			return mid;
 		}
 		if (RateRootBracketed(flo, fmid)) {
@@ -1570,7 +1671,8 @@ static double SolveBracketedRate(const std::function<double(double)> &fn, double
 	return 0.5 * (lo + hi);
 }
 
-static double SolveRate(const std::function<double(double)> &fn, double guess) {
+template <class FUNC>
+static double SolveRate(const FUNC &fn, double guess) {
 	constexpr double MIN_RATE = -1.0 + 1e-12;
 	constexpr double MAX_RATE = 1e12;
 	if (!std::isfinite(guess) || guess <= MIN_RATE || guess > MAX_RATE) {
@@ -1581,19 +1683,15 @@ static double SolveRate(const std::function<double(double)> &fn, double guess) {
 	// the selected root follows the documented overload contract.
 	double rate = guess;
 	for (idx_t i = 0; i < 100; i++) {
-		double value = fn(rate);
+		auto evaluated = fn(rate);
+		double value = evaluated.value;
 		if (!std::isfinite(value)) {
 			break;
 		}
-		if (std::fabs(value) < 1e-10) {
+		if (std::fabs(value) < 1e-14) {
 			return rate;
 		}
-		double step = 1e-6 * std::max(1.0, std::fabs(rate));
-		double lower = std::max(MIN_RATE, rate - step);
-		double upper = std::min(MAX_RATE, rate + step);
-		double lower_value = fn(lower);
-		double upper_value = fn(upper);
-		double derivative = (upper_value - lower_value) / (upper - lower);
+		double derivative = evaluated.derivative;
 		if (!std::isfinite(derivative) || std::fabs(derivative) < 1e-14) {
 			break;
 		}
@@ -1607,7 +1705,7 @@ static double SolveRate(const std::function<double(double)> &fn, double guess) {
 	// Fall back to a safeguarded bracket search around the guess. Searching in
 	// log1p(rate) space covers rates close to -1 and large positive rates without
 	// allowing an overflow-prone global bracket to hide an even number of roots.
-	double center_value = fn(guess);
+	double center_value = fn(guess).value;
 	double center = std::log1p(guess);
 	double left_rate = guess;
 	double right_rate = guess;
@@ -1622,7 +1720,7 @@ static double SolveRate(const std::function<double(double)> &fn, double guess) {
 			         std::pow(1.5, static_cast<double>(i - DENSE_SEARCH_STEPS));
 		}
 		double next_left = std::max(MIN_RATE, std::expm1(center - offset));
-		double next_left_value = fn(next_left);
+		double next_left_value = fn(next_left).value;
 		if (std::isfinite(next_left_value) && std::isfinite(left_value) &&
 		    RateRootBracketed(next_left_value, left_value)) {
 			return SolveBracketedRate(fn, next_left, left_rate, next_left_value, left_value);
@@ -1631,7 +1729,7 @@ static double SolveRate(const std::function<double(double)> &fn, double guess) {
 		left_value = next_left_value;
 
 		double next_right = std::min(MAX_RATE, std::expm1(center + offset));
-		double next_right_value = fn(next_right);
+		double next_right_value = fn(next_right).value;
 		if (std::isfinite(right_value) && std::isfinite(next_right_value) &&
 		    RateRootBracketed(right_value, next_right_value)) {
 			return SolveBracketedRate(fn, right_rate, next_right, right_value, next_right_value);

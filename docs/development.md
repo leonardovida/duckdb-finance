@@ -81,7 +81,8 @@ or other runtime-sensitive paths also run the DuckDB-backed gate:
 make ci-duckdb DUCKDB_ROOT=/path/to/duckdb
 ```
 
-Protected-branch, merge-queue, and manual CI runs execute the full path. This
+Source-sensitive pushes to `main`, merge-queue events, and manual runs also
+execute the DuckDB-backed gate. This
 keeps documentation-only checks fast without weakening behavior checks for
 extension changes.
 

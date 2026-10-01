@@ -50,15 +50,19 @@ static void AnnuityPaymentFunction(DataChunk &args, ExpressionState &, Vector &r
 		double pv = input.GetDouble(2, row);
 		double fv = args.ColumnCount() >= 4 ? input.GetDouble(3, row) : 0.0;
 		string when = args.ColumnCount() >= 5 ? Normalize(input.GetString(4, row)) : "end";
-		if (!(nper > 0.0)) {
-			throw InvalidInputException("nper must be positive");
+		if (!IsFinite(rate) || rate <= -1.0 || !IsFinite(nper) || !(nper > 0.0) ||
+		    !IsFinite(pv) || !IsFinite(fv)) {
+			throw InvalidInputException("Annuity inputs must be finite, nper positive, and rate greater than -1");
+		}
+		if (when != "end" && when != "0" && when != "begin" && when != "start" && when != "1") {
+			throw InvalidInputException("Unknown annuity payment timing '%s'", when);
 		}
 		double due = (when == "begin" || when == "start" || when == "1") ? 1.0 : 0.0;
-		if (std::fabs(rate) < 1e-14) {
+		if (rate == 0.0) {
 			return -(pv + fv) / nper;
 		}
-		double factor = std::pow(1.0 + rate, nper);
-		return -(rate * (fv + factor * pv)) / ((1.0 + rate * due) * (factor - 1.0));
+		double growth = std::expm1(nper * std::log1p(rate));
+		return -(rate * (fv + (growth + 1.0) * pv)) / ((1.0 + rate * due) * growth);
 	});
 }
 
@@ -161,13 +165,16 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 			if (name == "npv") {
 				output[row] = CashflowNPV(input.GetDouble(0, row), cashflow_values, cashflow_entry);
 			} else if (name == "irr") {
-				ValidateIRRCashflows(cashflow_values, cashflow_entry);
+				auto scale = ValidateIRRCashflows(cashflow_values, cashflow_entry);
 				double guess = args.ColumnCount() >= 2 ? input.GetDouble(1, row) : 0.1;
 				output[row] = SolveRate(
-				    [&](double rate) { return CashflowNPV(rate, cashflow_values, cashflow_entry); }, guess);
+				    [&](double rate) { return CashflowNPVEvaluation(rate, cashflow_values, cashflow_entry, scale); }, guess);
 			} else if (name == "mirr") {
 				double finance_rate = input.GetDouble(1, row);
 				double reinvest_rate = input.GetDouble(2, row);
+				if (!IsFinite(finance_rate) || !IsFinite(reinvest_rate) || finance_rate <= -1.0 || reinvest_rate <= -1.0) {
+					throw InvalidInputException("MIRR rates must be finite and greater than -1");
+				}
 				double finance_df = 1.0 / (1.0 + finance_rate);
 				double finance_discount = 1.0;
 				double reinvest_growth = 1.0;
@@ -192,14 +199,39 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 				}
 				output[row] = std::pow(-fv_positive / pv_negative, 1.0 / double(n)) - 1.0;
 			} else {
-				ValidateIRRCashflows(cashflow_values, cashflow_entry);
+				auto scale = ValidateIRRCashflows(cashflow_values, cashflow_entry);
 				auto date_idx = input.formats[1].sel->get_index(row);
 				auto date_entry = date_entries[date_idx];
 				ValidateListEntryNoNull(*date_validity, date_entry,
 				                        "Finance date-list functions do not accept NULL list elements");
+				if (cashflow_entry.length != date_entry.length || !Date::IsFinite(date_values[date_entry.offset])) {
+					throw InvalidInputException("XIRR requires equal cashflow/date lengths and finite dates");
+				}
+				vector<double> amounts;
+				vector<double> years;
+				amounts.reserve(cashflow_entry.length);
+				years.reserve(cashflow_entry.length);
+				for (idx_t i = 0; i < cashflow_entry.length; i++) {
+					auto date = date_values[date_entry.offset + i];
+					if (!Date::IsFinite(date)) {
+						throw InvalidInputException("XIRR requires finite dates");
+					}
+					amounts.push_back(cashflow_values[cashflow_entry.offset + i] / scale);
+					years.push_back(double(int64_t(date.days) - int64_t(date_values[date_entry.offset].days)) / 365.0);
+				}
 				double guess = args.ColumnCount() >= 3 ? input.GetDouble(2, row) : 0.1;
 				output[row] = SolveRate(
-				    [&](double rate) { return CashflowXNPV(rate, cashflow_values, cashflow_entry, date_values, date_entry); },
+				    [&](double rate) {
+					    double log_rate = std::log1p(rate);
+					    double value = 0.0;
+					    double derivative = 0.0;
+					    for (idx_t i = 0; i < amounts.size(); i++) {
+						    auto present_value = amounts[i] * std::exp(-years[i] * log_rate);
+						    value += present_value;
+						    derivative -= years[i] * present_value;
+					    }
+					    return RateEvaluation {value, derivative / (1.0 + rate)};
+				    },
 				    guess);
 			}
 			if (!std::isfinite(output[row])) {
@@ -290,6 +322,10 @@ static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result
 	auto &y_validity = FlatVector::Validity(y_child);
 	auto x_values = FlatVector::GetData<double>(x_child);
 	auto y_values = FlatVector::GetData<double>(y_child);
+	bool checked_x = false;
+	bool checked_y = false;
+	auto constant_x = args.data[0].GetVectorType() == VectorType::CONSTANT_VECTOR;
+	auto constant_y = args.data[1].GetVectorType() == VectorType::CONSTANT_VECTOR;
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
@@ -299,9 +335,31 @@ static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result
 		try {
 			auto x_idx = input.formats[0].sel->get_index(row);
 			auto y_idx = input.formats[1].sel->get_index(row);
-			ValidateListEntryNoNull(x_validity, x_entries[x_idx], "Curve list functions do not accept NULL list elements");
-			ValidateListEntryNoNull(y_validity, y_entries[y_idx], "Curve list functions do not accept NULL list elements");
+			if (!checked_x) {
+				auto entry = x_entries[x_idx];
+				ValidateListEntryNoNull(x_validity, entry, "Curve list functions do not accept NULL list elements");
+				for (idx_t i = 0; i < entry.length; i++) {
+					if (!IsFinite(x_values[entry.offset + i]) ||
+					    (i > 0 && !(x_values[entry.offset + i] > x_values[entry.offset + i - 1]))) {
+						throw InvalidInputException("Curve maturities must be finite and strictly increasing");
+					}
+				}
+				checked_x = constant_x;
+			}
+			if (!checked_y) {
+				auto entry = y_entries[y_idx];
+				ValidateListEntryNoNull(y_validity, entry, "Curve list functions do not accept NULL list elements");
+				for (idx_t i = 0; i < entry.length; i++) {
+					if (!IsFinite(y_values[entry.offset + i])) {
+						throw InvalidInputException("Curve values must be finite");
+					}
+				}
+				checked_y = constant_y;
+			}
 			double target = input.GetDouble(2, row);
+			if (!IsFinite(target)) {
+				throw InvalidInputException("Curve target must be finite");
+			}
 			double interpolated = LinearInterpolateList(x_values, x_entries[x_idx], y_values, y_entries[y_idx], target);
 			output[row] = name == "discount" ? std::exp(-interpolated * target) : interpolated;
 			if (!std::isfinite(output[row])) {

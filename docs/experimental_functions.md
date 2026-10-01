@@ -49,6 +49,28 @@ promoted out of this page.
 | `fin_ttest_1samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
 | `fin_ttest_2samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
 | `fin_welch_ttest` | Delegates to two-sample t-test output that does not include a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
+| `fin_portfolio_optimize` | Returns equal weights without solving the supplied objective. | Use an external optimizer and validate its weights in SQL. |
+| `fin_portfolio_optimize_table` | Assigns equal weights to distinct assets without using return history. | Use an external optimizer and validate its weights in SQL. |
+| `fin_hrp_weights` | Returns equal weights without hierarchical clustering or risk allocation. | Use an external HRP implementation and validate risk in SQL. |
+| `fin_efficient_frontier` | Reports interpolated target returns with constant equal-weight volatility. | Solve target-return portfolios externally and compute each portfolio's risk in SQL. |
+| `fin_bootstrap_curve` | Treats quoted rates as zero rates without bootstrapping instrument cash flows. | Bootstrap instrument-specific discount factors externally. |
+| `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters. | Fit GARCH externally before using parameters in SQL forecasts. |
+| `fin_fama_macbeth` | Uses the first factor for per-date regressions, without second-stage inference or lag correction. | Compute reviewed cross-sectional fits and second-stage inference explicitly. |
+| `fin_autocorr` | Correlates values with themselves and ignores lag. | Build lagged pairs with SQL windows, then use `corr`. |
+| `fin_crosscorr` | Ignores lag and computes contemporaneous Pearson correlation. | Build lagged pairs with SQL windows, then use `corr`. |
+| `fin_rank_corr` | Computes Pearson correlation on raw values and ignores method. | Rank observations explicitly before correlating them. |
+| `fin_rank_ic` | Correlates raw values rather than ranks. | Rank factors and returns explicitly before correlating them. |
+| `fin_factor_ic` | Computes Pearson correlation and ignores the requested method. | Use `corr` for Pearson IC or explicitly rank pairs for rank IC. |
+| `fin_iv_percentile` | Computes min-max IV rank rather than an empirical percentile. | Count historical IV values below the current value and divide by their count. |
+| `fin_ema` | Computes an arithmetic mean without exponential weighting. | Compute the exponential recurrence over ordered observations. |
+| `fin_ema_halflife` | Computes an arithmetic mean, ignoring timestamps and half-life. | Compute time-dependent exponential weights explicitly. |
+
+Additional technical indicators retain simplified formulas. The WMA, DEMA,
+TEMA, TRIMA, T3, KAMA, HMA, and regression-level aliases currently use arithmetic
+means. ATR averages high minus low; it has no previous-close true-range or Wilder
+smoothing. ADX/DI, CMO, MFI, TRIX, stochastic RSI, SAR, OBV, and Roll spread also
+use simplified proxies. The exponential-decay family does not apply decay.
+These formulas need independent model validation before production use.
 
 ## Promotion Rule
 
