@@ -1,0 +1,80 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/tmp/finance-performance-baseline/release/finance.duckdb_extension",
+  "scale": 4.0,
+  "threads": 4,
+  "warmups": 2,
+  "repeats": 9,
+  "cases": {
+    "bsm_separate": {
+      "median_seconds": 0.222,
+      "seconds": [
+        0.22,
+        0.239,
+        0.232,
+        0.216,
+        0.18,
+        0.209,
+        0.222,
+        0.224,
+        0.223
+      ],
+      "result": [
+        {
+          "price": 36271137.409391224,
+          "delta": 312932.3044537073,
+          "vega": 142562954.31300175
+        }
+      ],
+      "sql": "SELECT fsum(fin_bsm_price(kind,s,k,t,r,v)) price, fsum(fin_bsm_delta(kind,s,k,t,r,v)) delta, fsum(fin_bsm_vega(kind,s,k,t,r,v)) vega FROM options"
+    },
+    "weighted_mean": {
+      "median_seconds": 0.012,
+      "seconds": [
+        0.013,
+        0.013,
+        0.012,
+        0.013,
+        0.012,
+        0.012,
+        0.012,
+        0.012,
+        0.013
+      ],
+      "result": [
+        {
+          "result": 0.0006000023219914099
+        }
+      ],
+      "sql": "SELECT fin_weighted_mean(r,w) result FROM observations"
+    },
+    "calendar": {
+      "median_seconds": 0.042,
+      "seconds": [
+        0.033,
+        0.033,
+        0.046,
+        0.043,
+        0.052,
+        0.042,
+        0.049,
+        0.041,
+        0.041
+      ],
+      "result": [
+        {
+          "result": "5598290411"
+        }
+      ],
+      "sql": "SELECT sum(date_diff('day',d,fin_next_business_day(d,'weekday',1000))) result FROM calendar_dates"
+    }
+  },
+  "build_context": {
+    "duckdb_version": "v1.5.5",
+    "compiler": "GNU C++ 14.2.0",
+    "configuration": "Release (-O3)",
+    "platform": "linux_amd64",
+    "source_sha256": "939258da08efc89fa3059504aeee950d32806d340797be4f2519bd721e4ccc5f",
+    "stage": "after first repository sweep"
+  }
+}

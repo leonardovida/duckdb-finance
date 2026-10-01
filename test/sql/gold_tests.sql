@@ -16,7 +16,434 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
 SELECT assert_eq('release version', fin_version(), 'finance 0.2.20');
 
+-- Repository sweep regressions: NULLs must never be read as native values.
+SELECT
+  assert_near('irr tiny amounts', fin_irr([-1e-20, 2e-20]), 1.0, 1e-10),
+  assert_near('irr large amounts', fin_irr([-1e200, 2e200]), 1.0, 1e-10),
+  assert_near('xirr tiny amounts', fin_xirr([-1e-20, 2e-20], [DATE '2025-01-01', DATE '2026-01-01']), 1.0, 1e-10),
+  assert_eq('npv invalid periodic base', fin_npv(-2, [-100, 110]), NULL),
+  assert_eq('mirr invalid finance base', fin_mirr([-100, 110], -2, 0.1), NULL),
+  assert_eq('mirr invalid reinvest base', fin_mirr([-100, 110], 0.1, -2), NULL),
+  assert_eq('annuity invalid timing', fin_annuity_payment(0.05, 10, 100, 0, 'typo'), NULL),
+  assert_eq('annuity invalid rate', fin_annuity_payment(-2, 10, 100), NULL),
+  assert_near('annuity tiny rate long term', fin_annuity_payment(1e-15, 1e9, 100), -1.0000005000000838e-7, 1e-19);
+
+SELECT
+  assert_eq('rate rejects infinite discount factor', fin_rate_from_discount('Infinity'::DOUBLE, 1, 'simple'), NULL),
+  assert_eq('rate rejects infinite time', fin_rate_from_discount(0.9, 'Infinity'::DOUBLE), NULL),
+  assert_eq('forward rejects infinite time', fin_forward_price(100, 'Infinity'::DOUBLE, 0.05, 0.1), NULL),
+  assert_eq('business maximum date overflow', fin_next_business_day(DATE '5881580-07-10'), NULL),
+  assert_eq('business minimum date overflow', fin_prev_business_day(DATE '-5877641-06-25'), NULL);
+
+SELECT
+  assert_near('drawdown survives wealth overflow', fin_drawdown(r ORDER BY i), -0.1, 1e-12),
+  assert_near('max drawdown survives wealth overflow', fin_max_drawdown(r ORDER BY i), -0.1, 1e-12),
+  assert_near('large initial nav drawdown', fin_drawdown(r, 1e308 ORDER BY i), -0.1, 1e-12)
+FROM (SELECT i, CASE WHEN i < 1100 THEN 1.0 ELSE -0.1 END AS r FROM range(1101) t(i));
+
+SELECT
+  assert_eq('weighted variance overflow cannot report zero', fin_weighted_var(x, w), NULL),
+  assert_eq('weighted mean overflowing total weight', fin_weighted_mean(x, w), NULL)
+FROM (VALUES (10.0::DOUBLE, 1e308), (20.0::DOUBLE, 1e308)) t(x, w);
+
+SELECT assert_near('weighted mean avoids intermediate overflow', fin_weighted_mean(x, w), 15.0, 1e-12)
+FROM (VALUES (10.0::DOUBLE, 1e307), (20.0::DOUBLE, 1e307)) t(x, w);
+
+SELECT assert_near('weighted singleton finite zero variance', fin_weighted_var(20.0, 1e308), 0.0, 1e-12);
+
+WITH large_weights AS MATERIALIZED (
+  SELECT (i % 2)::DOUBLE AS x, 1e200 AS w FROM range(30000) t(i)
+)
+SELECT assert_near('weighted merge avoids intermediate overflow', fin_weighted_var(x, w), 0.25, 1e-10)
+FROM large_weights;
+
+SELECT
+  assert_eq('vector null scale', fin_vector_scale([1.0, 2.0], NULL), NULL),
+  assert_eq('empty matrix null vector', fin_matrix_vecmul([]::DOUBLE[][], NULL), NULL),
+  assert_eq('vector nonfinite sum', fin_vector_sum([1.0, 'Infinity'::DOUBLE]), NULL),
+  assert_eq('vector nonfinite dot', fin_dot([1.0], ['NaN'::DOUBLE]), NULL),
+  assert_eq('vector scale overflow', fin_vector_scale([1e308], 10.0), NULL),
+  assert_eq('vector add overflow', fin_vector_add([1e308], [1e308]), NULL),
+  assert_eq('black76 null rate', fin_black76_greeks('call', 100, 100, 1, NULL, 0.2), NULL),
+  assert_eq('bachelier null rate', fin_bachelier_greeks('call', 100, 100, 1, NULL, 5), NULL),
+  assert_eq('bsm nonfinite struct', fin_bsm_greeks('call', 100, 100, 1, -1000, 0.2), NULL),
+  assert_eq('bsm all nonfinite struct', fin_bsm_all('call', 100, 100, 1, -1000, 0.2), NULL);
+
+-- Mixed rows cross chunk boundaries and filtered inputs exercise selection vectors.
+WITH rows AS MATERIALIZED (
+  SELECT i, CASE WHEN i % 3 = 0 THEN NULL ELSE 0.05 END AS rate,
+         CASE WHEN i % 3 = 0 THEN NULL ELSE 2.0 END AS scale
+  FROM range(5000) t(i)
+)
+SELECT
+  assert_eq('black76 mixed null rows', count(*) FILTER (WHERE fin_black76_greeks('put', 100, 100, 1, rate, 0.2) IS NULL), 1667::BIGINT),
+  assert_eq('bachelier mixed null rows', count(*) FILTER (WHERE fin_bachelier_greeks('put', 100, 100, 1, rate, 5) IS NULL), 1667::BIGINT),
+  assert_eq('vector mixed null rows', count(*) FILTER (WHERE fin_vector_scale([1.0, 2.0], scale) IS NULL), 1667::BIGINT),
+  assert_near('vector valid rows', fsum(fin_vector_scale([1.0, 2.0], scale)[2]), 13332.0, 1e-12)
+FROM rows;
+
+WITH rows AS MATERIALIZED (
+  SELECT i, CASE WHEN i % 3 = 0 THEN NULL ELSE 0.05 END AS rate FROM range(5000) t(i)
+)
+SELECT assert_eq('greeks filtered selection',
+                count(*) FILTER (WHERE fin_bachelier_greeks('call', 100, 100, 1, rate, 5) IS NULL), 834::BIGINT)
+FROM rows WHERE i % 2 = 0;
+
+-- Pairwise metrics must use the same observations in both numerator and denominator.
+WITH pairs(r, b, volume) AS (VALUES (1.0, 1.0, 1.0), (2.0, 2.0, 1.0), (NULL, 100.0, 100.0), (100.0, NULL, NULL))
+SELECT
+  assert_near('beta complete pairs', fin_beta(r, b), 1.0, 1e-12),
+  assert_near('alpha complete pairs', fin_alpha(r, b, 0, 1), 0.0, 1e-12),
+  assert_near('up capture complete pairs', fin_up_capture(r, b), 1.0, 1e-12),
+  assert_near('vwap complete pairs', fin_vwap(r, volume), 1.5, 1e-12)
+FROM pairs;
+
+WITH observations(r) AS (VALUES (-0.1), (0.1), (NULL))
+SELECT
+  assert_near('downside ignores nulls', fin_downside_deviation(r, 0, 1), sqrt(0.005), 1e-12),
+  assert_near('upside ignores nulls', fin_upside_deviation(r, 0, 1), sqrt(0.005), 1e-12),
+  assert_near('semivariance ignores nulls', fin_semivariance(r), 0.005, 1e-12),
+  assert_near('hit ratio ignores nulls', fin_hit_ratio(r), 0.5, 1e-12),
+  assert_near('win rate ignores nulls', fin_win_rate(r), 0.5, 1e-12),
+  assert_near('loss rate ignores nulls', fin_loss_rate(r), 0.5, 1e-12)
+FROM observations;
+
+SELECT
+  assert_eq('all-null downside', fin_downside_deviation(r), NULL),
+  assert_eq('all-null hit ratio', fin_hit_ratio(r), NULL),
+  assert_eq('all-null total return', fin_total_return(r), NULL)
+FROM (VALUES (NULL::DOUBLE), (NULL::DOUBLE)) t(r);
+
+SELECT
+  assert_near('total loss compounds', fin_total_return(r), -1.0, 1e-12),
+  assert_near('total loss nav', fin_nav(r, 100), 0.0, 1e-12),
+  assert_near('total loss log nav', fin_log_nav(r, 100), 0.0, 1e-12),
+  assert_near('total loss cagr', fin_cagr(r), -1.0, 1e-12)
+FROM (VALUES (0.1), (-1.0), (0.2), (NULL)) t(r);
+
+SELECT assert_eq('return below total loss', fin_total_return(r), NULL)
+FROM (VALUES (0.1), (-1.1)) t(r);
+
+SELECT
+  assert_near('general ddof variance', fin_stable_var(x, 2), 2.5, 1e-12),
+  assert_near('general ddof stddev', fin_stable_stddev(x, 2), sqrt(2.5), 1e-12),
+  assert_eq('negative ddof', fin_stable_var(x, -1), NULL),
+  assert_eq('exhausted ddof', fin_stable_var(x, 4), NULL)
+FROM (VALUES (1.0), (2.0), (3.0), (4.0), (NULL)) t(x);
+
+-- Euler decomposition: component volatility sums to portfolio volatility.
+WITH risk AS (
+  SELECT fin_component_risk([0.25, 0.75], [[0.04, 0.0], [0.0, 0.09]]) AS c,
+         fin_risk_contribution([0.25, 0.75], [[0.04, 0.0], [0.0, 0.09]]) AS rc,
+         sqrt(0.25 * 0.25 * 0.04 + 0.75 * 0.75 * 0.09) AS vol
+)
+SELECT
+  assert_near('component risk first', c[1], 0.0025 / vol, 1e-12),
+  assert_near('component risk second', c[2], 0.050625 / vol, 1e-12),
+  assert_near('component risk sum', fin_vector_sum(c), vol, 1e-12),
+  assert_near('risk contribution first', rc[1], 0.0025 / 0.053125, 1e-12),
+  assert_near('risk contribution sum', fin_vector_sum(rc), 1.0, 1e-12),
+  assert_eq('zero risk components', fin_component_risk([1.0], [[0.0]]), NULL)
+FROM risk;
+
+SELECT
+  assert_near('iv honors supplied guess', fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05, 0, 0.2, 1e-12, 1), 0.2, 1e-12),
+  assert_eq('iv rejects unconverged solve', fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05, 0, 3.0, 1e-12, 1), NULL),
+  assert_near('iv zero volatility', fin_bsm_implied_vol('call', fin_bsm_price('call', 110, 100, 1, 0.05, 0), 110, 100, 1, 0.05), 0.0, 1e-12),
+  assert_eq('iv rejects negative guess', fin_bsm_implied_vol('call', 10.0, 100, 100, 1, 0.05, 0, -1), NULL),
+  assert_eq('black76 iv upper bound', fin_black76_implied_vol('call', 100, 100, 100, 1, 0), NULL),
+  assert_eq('black76 expired iv', fin_black76_implied_vol('call', 0, 100, 100, 0, 0), NULL),
+  assert_eq('bachelier expired iv', fin_bachelier_implied_vol('call', 0, 100, 100, 0, 0), NULL),
+  assert_near('bachelier large normal vol', fin_bachelier_implied_vol('call', 1000e0 * 0.3989422804014327, 100, 100, 1, 0), 1000, 1e-7),
+  assert_true('put delta retains tail', fin_bsm_delta('put', 1000, 100, 1, 0, 0.2) < 0.0);
+
+-- Bond prices reconcile to an explicit cashflow schedule across yield regimes.
+WITH cases(coupon, ytm, maturity, freq, face) AS (
+  VALUES (0.05, 0.04, 5.0, 2, 100.0), (0.05, 0.0, 5.0, 2, 100.0),
+         (0.05, 1e-14, 5.0, 2, 100.0), (0.03, -0.01, 5.0, 4, 1000.0),
+         (0.0, 0.04, 10.0, 1, 100.0), (0.0, -0.04, 10.0, 1, 100.0)
+), reconciled AS (
+  SELECT *, (SELECT fsum((face * coupon / freq + CASE WHEN i = round(maturity * freq) THEN face ELSE 0 END) *
+                        pow(1.0 + ytm / freq, -i)) FROM range(1, round(maturity * freq)::BIGINT + 1) t(i)) AS reference
+  FROM cases
+)
+SELECT
+  assert_near('bond explicit cashflow price', fin_bond_price(coupon, ytm, maturity, freq, face), reference, 1e-9),
+  assert_near('bond ytm price roundtrip', fin_bond_price(coupon, fin_bond_ytm(reference, coupon, maturity, freq, face), maturity, freq, face), reference, 1e-9)
+FROM reconciled;
+
+SELECT
+  assert_near('bond high yield', fin_bond_ytm(0.01, 0, 1, 1, 100), 9999.0, 1e-7),
+  assert_eq('bond out of range periods', fin_bond_price(0.05, 0.04, 1e30, 2), NULL),
+  assert_eq('bond duration invalid frequency', fin_bond_duration(0.05, 0.04, 5, 0), NULL),
+  assert_eq('bond unknown duration kind', fin_bond_duration(0.05, 0.04, 5, 2, 100, 'typo'), NULL),
+  assert_eq('bond convexity out of range periods', fin_bond_convexity(0.05, 0.04, 1e30, 2), NULL),
+  assert_near('bond convexity large period count', fin_bond_convexity(0, 0, 25000, 2), 50000.0 * 50001.0 / 4.0, 1e-6),
+  assert_near('bond convexity large frequency', fin_bond_convexity(0, 0, 0.00002, 50000), 2.0 / 2500000000.0, 1e-18);
+
+SELECT
+  assert_eq('business null offset', fin_next_business_day(DATE '2026-05-08', 'weekday', NULL), NULL),
+  assert_eq('business infinite date', fin_next_business_day(DATE 'infinity'), NULL),
+  assert_eq('business huge offset', fin_next_business_day(DATE '2026-05-08', 'weekday', 2147483647), NULL),
+  assert_eq('business next five', fin_next_business_day(DATE '2026-05-09', 'weekday', 5), DATE '2026-05-15'),
+  assert_eq('business previous five', fin_prev_business_day(DATE '2026-05-10', 'weekday', 5), DATE '2026-05-04'),
+  assert_eq('business zero offset', fin_next_business_day(DATE '2026-05-09', 'weekday', 0), DATE '2026-05-09'),
+  assert_eq('business infinite interval', fin_business_days_between(DATE '2026-01-01', DATE 'infinity'), NULL),
+  assert_eq('yearfrac infinite date', fin_yearfrac(DATE '2026-01-01', DATE 'infinity'), NULL),
+  assert_near('yearfrac long actact', fin_yearfrac(DATE '1000-01-01', DATE '1000000-01-01', 'ACT/ACT'), 999000.0, 1e-9),
+  assert_near('yearfrac wide dates', fin_yearfrac(DATE '-3999999-01-01', DATE '4000000-01-01', 'ACT/365F'),
+              date_diff('day', DATE '-3999999-01-01', DATE '4000000-01-01')::DOUBLE / 365, 1e-9);
+
 -- Numerical helpers and scalar edge cases.
+-- Performance changes preserve explicit cashflow and distribution references.
+WITH cases AS (
+  SELECT .01 + (i % 5)::DOUBLE / 100 AS coupon,
+         CASE i % 4 WHEN 0 THEN 0.0 WHEN 1 THEN 1e-14 WHEN 2 THEN -.025 ELSE .04 END AS ytm,
+         1 + i % 40 AS maturity, (1 << (i % 3))::INTEGER AS freq
+  FROM range(200) t(i)
+), cashflows AS (
+  SELECT *, (100 * coupon / freq + CASE WHEN j = maturity * freq THEN 100 ELSE 0 END)
+    * pow(1 + ytm / freq, -j) AS pv
+  FROM cases, LATERAL range(1, maturity * freq + 1) t(j)
+), refs AS (
+  SELECT coupon, ytm, maturity, freq,
+    fsum(pv * j / freq) / fsum(pv) AS duration,
+    fsum(pv * j * (j + 1) / pow(1 + ytm / freq, 2)) / (fsum(pv) * freq * freq) AS convexity
+  FROM cashflows GROUP BY coupon, ytm, maturity, freq
+)
+SELECT
+  assert_true('bond fast duration cashflow oracle', bool_and(coalesce(abs(fin_bond_duration(coupon, ytm, maturity, freq) - duration) < 1e-9, false))),
+  assert_true('bond fast convexity cashflow oracle', bool_and(coalesce(abs(fin_bond_convexity(coupon, ytm, maturity, freq) - convexity) < 1e-7, false)))
+FROM refs;
+
+SELECT
+  assert_near('billion period duration', fin_bond_duration(0, 0, 500000000), 500000000.0, 1e-5),
+  assert_near('billion period convexity', fin_bond_convexity(0, 0, 500000000), 1e9 * (1e9 + 1) / 4, 100.0),
+  assert_near('bond duration default', fin_bond_duration(.05, .04, 5), fin_bond_duration(.05, .04, 5, 2, 100, 'macaulay'), 1e-12),
+  assert_near('bond convexity default', fin_bond_convexity(.05, .04, 5), fin_bond_convexity(.05, .04, 5, 2, 100), 1e-12),
+  assert_near('binomial defaults', fin_binomial_price('call', 100, 100, 1, .05, .2), fin_binomial_price('call', 100, 100, 1, .05, .2, 0, 200, 'european', 'crr'), 1e-12);
+
+-- Enumerate all eight-step paths independently of binomial recurrence weights.
+WITH cases AS (
+  SELECT CASE i % 2 WHEN 0 THEN 'call' ELSE 'put' END AS kind,
+    90 + (i % 5)::DOUBLE * 5 AS s, .01 + (i % 3)::DOUBLE / 100 AS r,
+    .1 + (i % 7)::DOUBLE / 10 AS v, (i % 4)::DOUBLE / 100 AS q,
+    CASE WHEN i % 3 = 0 THEN 'jr' ELSE 'crr' END AS tree
+  FROM range(30) t(i)
+), trees AS (
+  SELECT *, exp(CASE WHEN tree = 'jr' THEN (r-q-.5*v*v)/8 ELSE 0 END + v/sqrt(8)) AS u,
+            exp(CASE WHEN tree = 'jr' THEN (r-q-.5*v*v)/8 ELSE 0 END - v/sqrt(8)) AS d
+  FROM cases
+), probabilities AS (
+  SELECT *, CASE WHEN tree = 'jr' THEN .5 ELSE (exp((r-q)/8)-d)/(u-d) END AS p FROM trees
+), refs AS (
+  SELECT kind, s, r, v, q, tree,
+    exp(-r) * fsum(pow(p, bit_count(path)) * pow(1-p, 8-bit_count(path)) *
+      greatest(CASE WHEN kind = 'call' THEN s*pow(u,bit_count(path))*pow(d,8-bit_count(path))-100
+               ELSE 100-s*pow(u,bit_count(path))*pow(d,8-bit_count(path)) END, 0)) AS price
+  FROM probabilities, range(256) t(path) GROUP BY kind, s, r, v, q, tree
+)
+SELECT assert_true('european binomial path oracle', bool_and(coalesce(abs(fin_binomial_price(kind, s, 100, 1, r, v, q, 8, 'european', tree) - price) < 1e-10, false)))
+FROM refs;
+
+SELECT
+  assert_near('american no-dividend crr call', fin_binomial_price('call', 100, 80, 1, .05, .2, 0, 200, 'american'), fin_binomial_price('call', 100, 80, 1, .05, .2), 1e-10),
+  assert_true('american dividend early exercise retained', fin_binomial_price('call', 150, 100, 1, .02, .2, .2, 200, 'american') > fin_binomial_price('call', 150, 100, 1, .02, .2, .2)),
+  assert_true('american put early exercise retained', fin_binomial_price('put', 80, 100, 1, .1, .2, 0, 200, 'american') > fin_binomial_price('put', 80, 100, 1, .1, .2));
+
+WITH cases AS (
+  SELECT .01 + (i % 31)::DOUBLE / 100 AS rate,
+    CASE i % 3 WHEN 0 THEN 1e-20 WHEN 1 THEN 1.0 ELSE 1e200 END AS scale,
+    90 + (i % 1000)::INTEGER AS days
+  FROM range(200) t(i)
+)
+SELECT
+  assert_true('analytic irr known roots', bool_and(coalesce(abs(fin_irr([-100*scale, 50*(1+rate)*scale, 50*pow(1+rate,2)*scale]) - rate) < 1e-10, false))),
+  assert_true('analytic xirr known roots', bool_and(coalesce(abs(fin_xirr([-100*scale, 100*pow(1+rate,days/365.0)*scale], [DATE '2026-01-01', DATE '2026-01-01'+days]) - rate) < 1e-10, false)))
+FROM cases;
+
+WITH cases AS (
+  SELECT CASE i % 2 WHEN 0 THEN 'call' ELSE 'put' END AS kind,
+    80 + (i % 41)::DOUBLE AS f, .1 + (i % 20)::DOUBLE / 10 AS t,
+    .01 + (i % 9)::DOUBLE / 100 AS r, .1 + (i % 23)::DOUBLE / 100 AS v
+  FROM range(300) t(i)
+), prices AS (
+  SELECT *, fin_black76_price(kind, f, 100, t, r, v) AS black,
+            fin_bachelier_price(kind, f-100, 0, t, r, v*100) AS normal FROM cases
+)
+SELECT
+  assert_true('black76 safeguarded default solver', bool_and(coalesce(abs(fin_black76_price(kind, f, 100, t, r, fin_black76_implied_vol(kind, black, f, 100, t, r)) - black) < 1e-7, false))),
+  assert_true('normal automatic default solver', bool_and(coalesce(abs(fin_bachelier_price(kind, f-100, 0, t, r, fin_bachelier_implied_vol(kind, normal, f-100, 0, t, r)) - normal) < 1e-7, false)))
+FROM prices;
+
+SELECT
+  assert_near('normal default small price units', fin_bachelier_implied_vol('call', .0002*0.3989422804014327, .01, .01, 1, 0), .0002, 1e-12),
+  assert_near('normal default large price units', fin_bachelier_implied_vol('call', 2000e0*0.3989422804014327, 10000, 10000, 1, 0), 2000, 1e-8),
+  assert_eq('fast matrix ragged rows', fin_matrix_vecmul([[1,2],[3]], [1,2]), NULL),
+  assert_eq('fast matrix null row', fin_matrix_vecmul([[1.0],NULL], [1.0]), NULL),
+  assert_eq('fast matrix null element', fin_matrix_vecmul([[NULL::DOUBLE]], [1.0]), NULL),
+  assert_eq('fast matrix overflow', fin_matrix_vecmul([[1e308]], [2.0]), NULL),
+  assert_eq('fast empty matrix', fin_matrix_vecmul([]::DOUBLE[][], [1.0]), []::DOUBLE[]);
+
+WITH inputs AS (
+  SELECT i % 7 AS g, sin(i::DOUBLE)*100 + (i%3)::DOUBLE AS x FROM range(1500) t(i)
+), cuts AS (
+  SELECT g, quantile_cont(x,.05) lo, quantile_cont(x,.95) hi FROM inputs GROUP BY g
+), expected AS (
+  SELECT g, avg(x) FILTER (WHERE x >= lo AND x <= hi) trimmed,
+    avg(greatest(lo,least(x,hi))) winsorized, -avg(x) FILTER (WHERE x <= lo) cvar
+  FROM inputs JOIN cuts USING(g) GROUP BY g
+), actual AS (
+  SELECT g, fin_trimmed_mean(x) trimmed, fin_winsorized_mean(x) winsorized, fin_cvar(x) cvar
+  FROM inputs GROUP BY g
+)
+SELECT assert_true('selection statistics sorted-quantile oracle', bool_and(
+  abs(a.trimmed-e.trimmed)<1e-10 AND abs(a.winsorized-e.winsorized)<1e-10 AND abs(a.cvar-e.cvar)<1e-10))
+FROM actual a JOIN expected e USING(g);
+
+SELECT
+  assert_near('robust finite large mean', fin_winsorized_mean(x), 1e308, 1e294),
+  assert_near('robust finite large trimmed mean', fin_trimmed_mean(x), 1e308, 1e294)
+FROM (VALUES (1e308), (1e308), (1e308)) t(x);
+
+-- A recursive Wilder recurrence independently checks seed and tail handling.
+WITH RECURSIVE prices AS (
+  SELECT period, i, 100+sin(i::DOUBLE)*5 AS px
+  FROM (VALUES (1),(2),(14),(200)) p(period), range(120) t(i)
+), changes AS (
+  SELECT *, px-lag(px) OVER (PARTITION BY period ORDER BY i) AS diff FROM prices
+), recurrence(period,i,gain,loss) AS (
+  SELECT period, least(period,119)::BIGINT, avg(greatest(diff,0)), avg(greatest(-diff,0))
+  FROM changes WHERE i>0 AND i<=period GROUP BY period
+  UNION ALL
+  SELECT w.period,c.i,(w.gain*(w.period-1)+greatest(c.diff,0))/w.period,
+    (w.loss*(w.period-1)+greatest(-c.diff,0))/w.period
+  FROM recurrence w JOIN changes c ON c.period=w.period AND c.i=w.i+1
+), native AS (
+  SELECT period,fin_rsi(px,period ORDER BY i) AS rsi FROM prices GROUP BY period
+)
+SELECT assert_true('bounded rsi Wilder oracle', bool_and(coalesce(abs(n.rsi-
+  CASE WHEN w.loss=0 THEN 100 ELSE 100-100/(1+w.gain/w.loss) END)<1e-10,false)))
+FROM native n JOIN recurrence w USING(period) WHERE w.i=119;
+
+SELECT assert_near('rsi default period', fin_rsi(px ORDER BY i), fin_rsi(px,14 ORDER BY i), 1e-12)
+FROM (SELECT i,100+sin(i::DOUBLE)*5 px FROM range(10000) t(i));
+
+-- Moving windows combine both partially seeded states and affine tails.
+WITH prices AS (
+  SELECT i,100+sin(i::DOUBLE)*5 AS px FROM range(4096) t(i)
+), changes AS (
+  SELECT *,px-lag(px) OVER (ORDER BY i) AS diff FROM prices
+), native AS (
+  SELECT i,fin_rsi(px) OVER (ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS rsi FROM prices
+), refs AS (
+  SELECT n.i,n.rsi,
+    (fsum(greatest(c.diff,0)) FILTER (WHERE c.i<=greatest(n.i-30,0)+least(14,n.i)) / least(14,n.i)) *
+      pow(13.0/14,greatest(least(n.i,30)-14,0)) +
+    coalesce(fsum(greatest(c.diff,0)/14 * pow(13.0/14,n.i-c.i)) FILTER (WHERE c.i>greatest(n.i-30,0)+14),0) AS gain,
+    (fsum(greatest(-c.diff,0)) FILTER (WHERE c.i<=greatest(n.i-30,0)+least(14,n.i)) / least(14,n.i)) *
+      pow(13.0/14,greatest(least(n.i,30)-14,0)) +
+    coalesce(fsum(greatest(-c.diff,0)/14 * pow(13.0/14,n.i-c.i)) FILTER (WHERE c.i>greatest(n.i-30,0)+14),0) AS loss
+  FROM native n JOIN changes c ON c.i>greatest(n.i-30,0) AND c.i<=n.i GROUP BY n.i,n.rsi
+)
+SELECT assert_true('rsi affine window oracle', bool_and(coalesce(abs(rsi-
+  CASE WHEN loss=0 THEN 100 ELSE 100-100/(1+gain/loss) END)<1e-10,false))) FROM refs;
+
+WITH results AS (
+  SELECT i, least(i+1,10)::DOUBLE AS n,
+    fin_drawdown(-.01) OVER frame AS current_dd,
+    fin_max_drawdown(-.01) OVER frame AS max_dd,
+    fin_avg_drawdown(-.01) OVER frame AS avg_dd,
+    fin_drawdown_duration(-.01) OVER frame AS duration
+  FROM range(4096) t(i)
+  WINDOW frame AS (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('drawdown merge current window', bool_and(abs(current_dd-(pow(.99,n)-1))<1e-12)),
+  assert_true('drawdown merge maximum window', bool_and(abs(max_dd-(pow(.99,n)-1))<1e-12)),
+  assert_true('drawdown merge average window', bool_and(abs(avg_dd-(.99*(1-pow(.99,n))/.01/n-1))<1e-12)),
+  assert_true('drawdown merge duration window', bool_and(duration=n))
+FROM results;
+
+WITH targets AS (SELECT ((i%260)-1)::DOUBLE*.05 AS t FROM range(5000) z(i))
+SELECT assert_true('large constant curve binary oracle', bool_and(coalesce(abs(
+  fin_curve_zero_rate(list_transform(range(1,129),lambda x: x/10.0),
+    list_transform(range(1,129),lambda x: .03+.001*x),t) - (.03+.01*greatest(.1,least(12.8,t))))<1e-12,false)))
+FROM targets;
+
+SELECT
+  assert_eq('curve unordered knots', fin_curve_zero_rate([1.0,.5,2.0],[.03,.04,.05],1.5), NULL),
+  assert_eq('curve duplicate knots', fin_curve_zero_rate([1.0,1.0,2.0],[.03,.04,.05],1.5), NULL),
+  assert_eq('curve infinite knots', fin_curve_zero_rate([1.0,'Infinity'::DOUBLE],[.03,.04],1.5), NULL),
+  assert_eq('curve infinite values', fin_curve_zero_rate([1.0,2.0],[.03,'Infinity'::DOUBLE],1.5), NULL),
+  assert_eq('curve nan target', fin_curve_zero_rate([1.0,2.0],[.03,.04],'NaN'::DOUBLE), NULL),
+  assert_near('curve stable interpolation', fin_interpolate_curve([1.0,2.0],[-1e308,1e308],1.5),0.0,1e-12),
+  assert_near('discount default continuous', fin_discount_factor(.05,2),exp(-.1),1e-12),
+  assert_near('discount convention alias', fin_discount_factor(.05,2,' Semi '),pow(1+.05/2,-4),1e-12),
+  assert_near('yearfrac default act365f', fin_yearfrac(DATE '2026-01-01',DATE '2026-07-01'),181.0/365,1e-12),
+  assert_near('yearfrac convention alias', fin_yearfrac(DATE '2026-01-01',DATE '2026-07-01',' actual/360 '),181.0/360,1e-12);
+
+SELECT
+  assert_eq('weekday offset convenience', fin_next_business_day(DATE '2026-05-08',5), DATE '2026-05-15'),
+  assert_eq('weekday reverse offset convenience', fin_prev_business_day(DATE '2026-05-11',5::BIGINT), DATE '2026-05-04'),
+  assert_eq('weekday offset null default', fin_next_business_day(DATE '2026-05-08',NULL), NULL),
+  assert_eq('weekday bigint overflow guard', fin_next_business_day(DATE '2026-05-08',9223372036854775807::BIGINT), NULL),
+  assert_eq('weekday reverse bigint overflow guard', fin_prev_business_day(DATE '2026-05-08',9223372036854775807::BIGINT), NULL),
+  assert_eq('weekday bigint full date range', fin_business_days_between(DATE '-5877641-06-25',fin_next_business_day(DATE '-5877641-06-25',2500000000::BIGINT)),2500000000::BIGINT);
+
+SELECT
+  assert_eq('curve validator rejects duplicates', fin_validate_curve_spec(fin_curve_spec([1.0,1.0],[.03,.04])).ok,false),
+  assert_eq('curve validator rejects null elements', fin_validate_curve_spec(fin_curve_spec([1.0,2.0],[.03,NULL])).ok,false),
+  assert_eq('curve validator rejects nonfinite values', fin_validate_curve_spec(fin_curve_spec([1.0,2.0],[.03,'Infinity'::DOUBLE])).ok,false),
+  assert_eq('curve validator empty reason', fin_validate_curve_spec(fin_curve_spec([]::DOUBLE[],[]::DOUBLE[])).reason,'curve cannot be empty'),
+  assert_eq('curve validator length reason', fin_validate_curve_spec(fin_curve_spec([1.0,2.0],[.03])).reason,'maturity/value length mismatch');
+
+-- Deterministic property sweeps: derivatives, parity, round trips, and calendars.
+WITH cases AS (
+  SELECT CASE WHEN i % 2 = 0 THEN 'call' ELSE 'put' END AS kind,
+         80.0 + (i % 41)::DOUBLE AS s, 85.0 + (i % 31)::DOUBLE AS k,
+         0.2 + (i % 19)::DOUBLE / 10 AS t, 0.01 + (i % 7)::DOUBLE / 100 AS r,
+         0.10 + (i % 23)::DOUBLE / 100 AS v, (i % 5)::DOUBLE / 100 AS q
+  FROM range(400) x(i)
+), priced AS (
+  SELECT *, fin_bsm_all(kind, s, k, t, r, v, q) AS a FROM cases
+)
+SELECT
+  assert_true('bsm swept parity', bool_and(abs(fin_bsm_price('call', s, k, t, r, v, q) -
+    fin_bsm_price('put', s, k, t, r, v, q) - s * exp(-q*t) + k * exp(-r*t)) < 1e-10)),
+  assert_true('bsm swept delta derivative', bool_and(abs(a.delta -
+    (fin_bsm_price(kind, s+0.001, k, t, r, v, q) - fin_bsm_price(kind, s-0.001, k, t, r, v, q))/0.002) < 1e-8)),
+  assert_true('bsm swept gamma derivative', bool_and(abs(a.gamma -
+    (fin_bsm_delta(kind, s+0.001, k, t, r, v, q) - fin_bsm_delta(kind, s-0.001, k, t, r, v, q))/0.002) < 1e-8)),
+  assert_true('bsm swept vega derivative', bool_and(abs(a.vega -
+    (fin_bsm_price(kind, s, k, t, r, v+1e-5, q) - fin_bsm_price(kind, s, k, t, r, v-1e-5, q))/2e-5) < 1e-6)),
+  assert_true('bsm swept iv price roundtrip', bool_and(coalesce(abs(a.price -
+    fin_bsm_price(kind, s, k, t, r, fin_bsm_implied_vol(kind, a.price, s, k, t, r, q), q)) < 1e-7, false))),
+  assert_true('black76 swept model equivalence', bool_and(abs(fin_black76_price(kind, s, k, t, r, v) -
+    fin_bsm_price(kind, s, k, t, r, v, r)) < 1e-10)),
+  assert_true('bachelier swept parity', bool_and(abs(fin_bachelier_price('call', s-100, k-100, t, r, v*100) -
+    fin_bachelier_price('put', s-100, k-100, t, r, v*100) - (s-k)*exp(-r*t)) < 1e-10))
+FROM priced;
+
+WITH cases AS (
+  SELECT DATE '2024-01-01' + i::INTEGER AS d, n::INTEGER AS n
+  FROM range(70) starts(i), range(41) offsets(n)
+), oracle AS (
+  SELECT *, CASE WHEN n = 0 THEN d ELSE (
+    SELECT d + j::INTEGER FROM range(1, 65) days(j) WHERE isodow(d + j::INTEGER) <= 5
+    QUALIFY row_number() OVER (ORDER BY j) = n
+  ) END AS next_d,
+  CASE WHEN n = 0 THEN d ELSE (
+    SELECT d - j::INTEGER FROM range(1, 65) days(j) WHERE isodow(d - j::INTEGER) <= 5
+    QUALIFY row_number() OVER (ORDER BY j) = n
+  ) END AS prev_d
+  FROM cases
+)
+SELECT
+  assert_true('next business day swept oracle', bool_and(fin_next_business_day(d, 'weekday', n) IS NOT DISTINCT FROM next_d)),
+  assert_true('previous business day swept oracle', bool_and(fin_prev_business_day(d, 'weekday', n) IS NOT DISTINCT FROM prev_d))
+FROM oracle;
+
 SELECT
   assert_near('normal pdf', fin_norm_pdf(0.0), 0.3989422804014327, 1e-12),
   assert_near('normal cdf', fin_norm_cdf(0.0), 0.5, 1e-12),

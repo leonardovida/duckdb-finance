@@ -1,0 +1,348 @@
+{
+  "duckdb": "/workspace/duckdb/build/release/duckdb",
+  "extension": "/workspace/duckdb/build/release/extension/finance/finance.duckdb_extension",
+  "scale": 1.0,
+  "threads": 4,
+  "warmups": 1,
+  "repeats": 7,
+  "cases": {
+    "bsm_separate": {
+      "median_seconds": 0.063,
+      "seconds": [
+        0.065,
+        0.063,
+        0.06,
+        0.063,
+        0.063,
+        0.063,
+        0.052
+      ],
+      "result": [
+        {
+          "price": 9067767.211890943,
+          "delta": 78233.98546971126,
+          "vega": 35640741.35982985
+        }
+      ],
+      "sql": "SELECT fsum(fin_bsm_price(kind,s,k,t,r,v)) price, fsum(fin_bsm_delta(kind,s,k,t,r,v)) delta, fsum(fin_bsm_vega(kind,s,k,t,r,v)) vega FROM options",
+      "profile": "/tmp/finance-performance-profiles/bsm_separate.json",
+      "speedup": 0.7619047619047619
+    },
+    "bsm_all": {
+      "median_seconds": 0.038,
+      "seconds": [
+        0.04,
+        0.031,
+        0.03,
+        0.041,
+        0.038,
+        0.034,
+        0.042
+      ],
+      "result": [
+        {
+          "price": 9067767.211890943,
+          "delta": 78233.98546971126,
+          "vega": 35640741.35982984
+        }
+      ],
+      "sql": "SELECT fsum(a.price) price, fsum(a.delta) delta, fsum(a.vega) vega FROM (SELECT fin_bsm_all(kind,s,k,t,r,v) a FROM options)",
+      "profile": "/tmp/finance-performance-profiles/bsm_all.json",
+      "speedup": 1.0526315789473684
+    },
+    "bsm_iv": {
+      "median_seconds": 0.015,
+      "seconds": [
+        0.016,
+        0.016,
+        0.015,
+        0.015,
+        0.016,
+        0.015,
+        0.015
+      ],
+      "result": [
+        {
+          "result": 11499.790000214301
+        }
+      ],
+      "sql": "SELECT fsum(fin_bsm_implied_vol(kind,bsm,s,k,t,r)) result FROM quotes",
+      "profile": "/tmp/finance-performance-profiles/bsm_iv.json",
+      "speedup": 1.2666666666666666
+    },
+    "black76_iv": {
+      "median_seconds": 0.014,
+      "seconds": [
+        0.014,
+        0.014,
+        0.014,
+        0.016,
+        0.014,
+        0.016,
+        0.015
+      ],
+      "result": [
+        {
+          "result": 11499.790000225183
+        }
+      ],
+      "sql": "SELECT fsum(fin_black76_implied_vol(kind,black,s,k,t,r)) result FROM quotes",
+      "profile": "/tmp/finance-performance-profiles/black76_iv.json",
+      "speedup": 5.0
+    },
+    "bachelier_iv": {
+      "median_seconds": 0.012,
+      "seconds": [
+        0.011,
+        0.012,
+        0.012,
+        0.012,
+        0.011,
+        0.012,
+        0.011
+      ],
+      "result": [
+        {
+          "result": 1149979.00005651
+        }
+      ],
+      "sql": "SELECT fsum(fin_bachelier_implied_vol(kind,normal,s-100,k-100,t,r)) result FROM quotes",
+      "profile": "/tmp/finance-performance-profiles/bachelier_iv.json",
+      "speedup": 4.416666666666666
+    },
+    "binomial_default": {
+      "median_seconds": 0.005,
+      "seconds": [
+        0.005,
+        0.005,
+        0.006,
+        0.005,
+        0.005,
+        0.006,
+        0.004
+      ],
+      "result": [
+        {
+          "result": 18138.24450981917
+        }
+      ],
+      "sql": "SELECT fsum(fin_binomial_price(kind,s,k,t,r,v)) result FROM (SELECT * FROM options LIMIT 2000)",
+      "profile": "/tmp/finance-performance-profiles/binomial_default.json",
+      "speedup": 8.2
+    },
+    "bond_risk_600_periods": {
+      "median_seconds": 0.07,
+      "seconds": [
+        0.066,
+        0.07,
+        0.068,
+        0.073,
+        0.073,
+        0.071,
+        0.07
+      ],
+      "result": [
+        {
+          "duration": 41028008.152372204,
+          "convexity": 3300769436.229949
+        }
+      ],
+      "sql": "SELECT fsum(fin_bond_duration(coupon,ytm,300)) duration, fsum(fin_bond_convexity(coupon,ytm,300)) convexity FROM bonds",
+      "profile": "/tmp/finance-performance-profiles/bond_risk_600_periods.json",
+      "speedup": 6.885714285714285
+    },
+    "irr": {
+      "median_seconds": 0.015,
+      "seconds": [
+        0.012,
+        0.016,
+        0.019,
+        0.016,
+        0.013,
+        0.015,
+        0.011
+      ],
+      "result": [
+        {
+          "result": 8980.392697132842
+        }
+      ],
+      "sql": "SELECT fsum(fin_irr(cf)) result FROM flows",
+      "profile": "/tmp/finance-performance-profiles/irr.json",
+      "speedup": 1.0666666666666667
+    },
+    "xirr": {
+      "median_seconds": 0.04,
+      "seconds": [
+        0.037,
+        0.034,
+        0.051,
+        0.04,
+        0.031,
+        0.041,
+        0.041
+      ],
+      "result": [
+        {
+          "result": 47087.42060407264
+        }
+      ],
+      "sql": "SELECT fsum(fin_xirr(cf,dates)) result FROM flows",
+      "profile": "/tmp/finance-performance-profiles/xirr.json",
+      "speedup": 2.1
+    },
+    "matrix_vecmul": {
+      "median_seconds": 0.097,
+      "seconds": [
+        0.097,
+        0.098,
+        0.119,
+        0.091,
+        0.097,
+        0.095,
+        0.096
+      ],
+      "result": [
+        {
+          "result": 60225.0
+        }
+      ],
+      "sql": "SELECT fsum(fin_vector_sum(fin_matrix_vecmul(cov,w))) result FROM vectors",
+      "profile": "/tmp/finance-performance-profiles/matrix_vecmul.json",
+      "speedup": 1.0103092783505154
+    },
+    "portfolio_risk": {
+      "median_seconds": 0.182,
+      "seconds": [
+        0.179,
+        0.216,
+        0.199,
+        0.192,
+        0.163,
+        0.182,
+        0.179
+      ],
+      "result": [
+        {
+          "vol": 122937.18816704465,
+          "components": 122937.18816704465
+        }
+      ],
+      "sql": "SELECT fsum(fin_portfolio_vol(w,cov)) vol, fsum(fin_vector_sum(fin_component_risk(w,cov))) components FROM vectors",
+      "profile": "/tmp/finance-performance-profiles/portfolio_risk.json",
+      "speedup": 1.120879120879121
+    },
+    "robust_means_cvar": {
+      "median_seconds": 0.054,
+      "seconds": [
+        0.046,
+        0.055,
+        0.063,
+        0.052,
+        0.054,
+        0.052,
+        0.054
+      ],
+      "result": [
+        {
+          "trimmed": 0.000600002079055998,
+          "winsorized": 0.0006000004239355371,
+          "cvar": 0.009583784327558006
+        }
+      ],
+      "sql": "SELECT fin_trimmed_mean(r) trimmed, fin_winsorized_mean(r) winsorized, fin_cvar(r) cvar FROM observations",
+      "profile": "/tmp/finance-performance-profiles/robust_means_cvar.json",
+      "speedup": 5.055555555555556
+    },
+    "weighted_mean": {
+      "median_seconds": 0.003,
+      "seconds": [
+        0.003,
+        0.004,
+        0.003,
+        0.003,
+        0.004,
+        0.003,
+        0.003
+      ],
+      "result": [
+        {
+          "result": 0.0006000006118202071
+        }
+      ],
+      "sql": "SELECT fin_weighted_mean(r,w) result FROM observations",
+      "profile": "/tmp/finance-performance-profiles/weighted_mean.json",
+      "speedup": 1.0
+    },
+    "ordered_risk": {
+      "median_seconds": 0.186,
+      "seconds": [
+        0.194,
+        0.177,
+        0.197,
+        0.178,
+        0.177,
+        0.186,
+        0.197
+      ],
+      "result": [
+        {
+          "rsi": 44.01884837523992,
+          "ewma": 0.11617830436215007,
+          "drawdown": -0.02037321257812641
+        }
+      ],
+      "sql": "SELECT fin_rsi(px ORDER BY i) rsi, fin_ewma_vol(r ORDER BY i) ewma, fin_max_drawdown(r ORDER BY i) drawdown FROM observations",
+      "profile": "/tmp/finance-performance-profiles/ordered_risk.json",
+      "speedup": 1.0053763440860215
+    },
+    "calendar": {
+      "median_seconds": 0.013,
+      "seconds": [
+        0.014,
+        0.013,
+        0.013,
+        0.013,
+        0.014,
+        0.013,
+        0.013
+      ],
+      "result": [
+        {
+          "result": "1399572602"
+        }
+      ],
+      "sql": "SELECT sum(date_diff('day',d,fin_next_business_day(d,'weekday',1000))) result FROM calendar_dates",
+      "profile": "/tmp/finance-performance-profiles/calendar.json",
+      "speedup": 0.9230769230769231
+    },
+    "curve_128_knots": {
+      "median_seconds": 0.009,
+      "seconds": [
+        0.008,
+        0.009,
+        0.01,
+        0.01,
+        0.011,
+        0.008,
+        0.008
+      ],
+      "result": [
+        {
+          "result": 94744.97499999999
+        }
+      ],
+      "sql": "SELECT fsum(fin_curve_zero_rate(list_transform(range(1,129),lambda x: x/10.0),list_transform(range(1,129),lambda x: .03+.001*x),.1+(i%256)::DOUBLE*.05)) result FROM observations",
+      "profile": "/tmp/finance-performance-profiles/curve_128_knots.json",
+      "speedup": 3.3333333333333335
+    }
+  },
+  "build_context": {
+    "duckdb_version": "v1.5.5",
+    "compiler": "GNU C++ 14.2.0",
+    "configuration": "Release (-O3)",
+    "platform": "linux_amd64",
+    "source_sha256": "48de1ded2f80e293c926001e6b549d37d32f752715393001c30f8dc630dc7c5b",
+    "stage": "after performance improvements"
+  }
+}

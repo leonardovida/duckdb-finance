@@ -156,6 +156,13 @@ struct GreeksOutput {
 	double *rho;
 };
 
+static void ValidateGreeksOutput(const GreeksOutput &out, idx_t row) {
+	if (!IsFinite(out.delta[row]) || !IsFinite(out.gamma[row]) || !IsFinite(out.vega[row]) ||
+	    !IsFinite(out.theta[row]) || !IsFinite(out.rho[row])) {
+		throw InvalidInputException("Option Greeks must be finite");
+	}
+}
+
 static GreeksOutput GetGreeksOutput(Vector &result) {
 	auto &children = StructVector::GetEntries(result);
 	return {FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[0])),
@@ -171,6 +178,7 @@ static void WriteBSMGreeks(const GreeksOutput &out, idx_t row, bool call, const 
 	out.vega[row] = BSMVegaFromKernel(k);
 	out.theta[row] = BSMThetaFromKernel(call, k);
 	out.rho[row] = BSMRhoFromKernel(call, k);
+	ValidateGreeksOutput(out, row);
 }
 
 struct BSMAllOutput {
@@ -199,6 +207,11 @@ static void WriteBSMAll(const BSMAllOutput &out, idx_t row, bool call, const BSM
 	out.values[7][row] = k.d2;
 	out.values[8][row] = intrinsic;
 	out.values[9][row] = price - intrinsic;
+	for (auto value : out.values) {
+		if (!IsFinite(value[row])) {
+			throw InvalidInputException("BSM analytics must be finite");
+		}
+	}
 }
 
 static OptionSpecData PrepareOptionSpecData(DataChunk &args) {
@@ -383,10 +396,11 @@ static void BSMAllSpecFunction(DataChunk &args, ExpressionState &, Vector &resul
 static void BSMImpliedVolFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
 		double q = args.ColumnCount() >= 7 ? input.GetDouble(6, row) : 0.0;
+		double guess = args.ColumnCount() >= 8 ? input.GetDouble(7, row) : 0.2;
 		double tol = args.ColumnCount() >= 9 ? input.GetDouble(8, row) : 1e-8;
 		int max_iter = args.ColumnCount() >= 10 ? input.GetInt32(9, row) : 100;
 		return BSMImpliedVol(IsCallKind(input.GetString(0, row)), input.GetDouble(1, row), input.GetDouble(2, row),
-		                     input.GetDouble(3, row), input.GetDouble(4, row), input.GetDouble(5, row), q, tol,
+		                     input.GetDouble(3, row), input.GetDouble(4, row), input.GetDouble(5, row), q, guess, tol,
 		                     max_iter);
 	});
 }
@@ -485,30 +499,36 @@ static void BSMPriceDatesFunction(DataChunk &args, ExpressionState &, Vector &re
 	});
 }
 
-static double ImpliedVolBisection(const std::function<double(double)> &price_fn, double target, double tolerance,
+template <class FUNC>
+static double ImpliedVolSolve(const FUNC &price_fn, double target, double guess, double tolerance,
                                   int max_iter) {
-	if (!IsFinite(target) || !IsFinite(tolerance) || target < 0.0 || !(tolerance > 0.0) || max_iter <= 0) {
+	if (!IsFinite(target) || !IsFinite(guess) || guess < 0.0 || !IsFinite(tolerance) || target < 0.0 ||
+	    !(tolerance > 0.0) || max_iter <= 0) {
 		throw InvalidInputException("Invalid implied-vol input");
 	}
-	double lo = 1e-10;
-	double hi = 5.0;
-	double low_price = price_fn(lo);
+	double lo = 0.0;
+	double hi = std::max(5.0, guess);
+	double low_price = price_fn(lo).value;
+	if (!IsFinite(low_price)) {
+		throw InvalidInputException("Implied-vol intrinsic price must be finite");
+	}
 	if (target < low_price - tolerance) {
 		throw InvalidInputException("Option price is below no-arbitrage intrinsic value");
 	}
 	if (std::fabs(target - low_price) <= tolerance) {
 		return 0.0;
 	}
-	while (price_fn(hi) < target && hi < 100.0) {
+	while (price_fn(hi).value < target && IsFinite(hi * 2.0)) {
 		hi *= 2.0;
 	}
-	if (price_fn(hi) < target) {
+	if (price_fn(hi).value < target) {
 		throw InvalidInputException("Could not bracket implied volatility");
 	}
+	double mid = guess > lo && guess < hi ? guess : lo + 0.5 * (hi - lo);
 	for (int i = 0; i < max_iter; i++) {
-		double mid = 0.5 * (lo + hi);
-		double value = price_fn(mid);
-		if (std::fabs(value - target) <= tolerance) {
+		auto evaluated = price_fn(mid);
+		double value = evaluated.value;
+		if (IsFinite(value) && std::fabs(value - target) <= tolerance) {
 			return mid;
 		}
 		if (value < target) {
@@ -516,8 +536,10 @@ static double ImpliedVolBisection(const std::function<double(double)> &price_fn,
 		} else {
 			hi = mid;
 		}
+		double next = mid - (value - target) / evaluated.derivative;
+		mid = IsFinite(next) && next > lo && next < hi ? next : lo + 0.5 * (hi - lo);
 	}
-	return 0.5 * (lo + hi);
+	throw InvalidInputException("Implied volatility did not converge");
 }
 
 static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &result) {
@@ -527,6 +549,10 @@ static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &re
 	auto out = GetGreeksOutput(result);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
+		if (input.HasNull(row)) {
+			SetResultNull(result, row, args.size(), constant);
+			continue;
+		}
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
 			double forward = input.GetDouble(1, row);
@@ -547,6 +573,7 @@ static void Black76GreeksFunction(DataChunk &args, ExpressionState &, Vector &re
 			double price = Black76Price(call, forward, strike, ttm, rate, vol);
 			out.theta[row] = -forward * df * NormPDF(d1) * vol / (2.0 * std::sqrt(ttm)) + rate * price;
 			out.rho[row] = -ttm * price;
+			ValidateGreeksOutput(out, row);
 			(void)d2;
 		} catch (const std::exception &) {
 			SetResultNull(result, row, args.size(), constant);
@@ -562,10 +589,28 @@ static void Black76ImpliedVolFunction(DataChunk &args, ExpressionState &, Vector
 		double strike = input.GetDouble(3, row);
 		double ttm = input.GetDouble(4, row);
 		double rate = input.GetDouble(5, row);
+		double guess = args.ColumnCount() >= 7 ? input.GetDouble(6, row) : 0.2;
 		double tol = args.ColumnCount() >= 8 ? input.GetDouble(7, row) : 1e-8;
 		int max_iter = 100;
-		return ImpliedVolBisection([&](double vol) { return Black76Price(call, forward, strike, ttm, rate, vol); },
-		                           price, tol, max_iter);
+		double df = std::exp(-rate * ttm);
+		double upper_bound = (call ? forward : strike) * df;
+		if (!IsFinite(forward) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) ||
+		    !(forward > 0.0) || !(strike > 0.0) || !(ttm > 0.0) || !IsFinite(upper_bound) || !(price < upper_bound)) {
+			throw InvalidInputException("Black-76 IV requires ttm > 0 and price below its upper bound");
+		}
+		double root_time = std::sqrt(ttm);
+		double log_moneyness = std::log(forward / strike);
+		return ImpliedVolSolve([&](double vol) {
+			if (vol == 0.0) {
+				return RateEvaluation {df * OptionPayoff(call, forward, strike), 0.0};
+			}
+			double st = vol * root_time;
+			double d1 = log_moneyness / st + 0.5 * st;
+			double d2 = d1 - st;
+			double value = call ? df * (forward * NormCDF(d1) - strike * NormCDF(d2))
+			                    : df * (strike * NormCDF(-d2) - forward * NormCDF(-d1));
+			return RateEvaluation {value, df * forward * root_time * NormPDF(d1)};
+		}, price, guess, tol, max_iter);
 	});
 }
 
@@ -576,6 +621,10 @@ static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &
 	auto out = GetGreeksOutput(result);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
+		if (input.HasNull(row)) {
+			SetResultNull(result, row, args.size(), constant);
+			continue;
+		}
 		try {
 			bool call = IsCallKind(input.GetString(0, row));
 			double forward = input.GetDouble(1, row);
@@ -596,6 +645,7 @@ static void BachelierGreeksFunction(DataChunk &args, ExpressionState &, Vector &
 			out.vega[row] = df * std::sqrt(ttm) * NormPDF(d);
 			out.theta[row] = -0.5 * df * normal_vol * NormPDF(d) / std::sqrt(ttm) + rate * price;
 			out.rho[row] = -ttm * price;
+			ValidateGreeksOutput(out, row);
 		} catch (const std::exception &) {
 			SetResultNull(result, row, args.size(), constant);
 		}
@@ -612,8 +662,26 @@ static void BachelierImpliedVolFunction(DataChunk &args, ExpressionState &, Vect
 		double rate = input.GetDouble(5, row);
 		double tol = args.ColumnCount() >= 8 ? input.GetDouble(7, row) : 1e-8;
 		int max_iter = 100;
-		return ImpliedVolBisection([&](double vol) { return BachelierPrice(call, forward, strike, ttm, rate, vol); },
-		                           price, tol, max_iter);
+		if (!IsFinite(forward) || !IsFinite(strike) || !IsFinite(ttm) || !IsFinite(rate) || !(ttm > 0.0)) {
+			throw InvalidInputException("Bachelier IV requires ttm > 0");
+		}
+		double df = std::exp(-rate * ttm);
+		double root_time = std::sqrt(ttm);
+		double difference = forward - strike;
+		double guess = args.ColumnCount() >= 7 ? input.GetDouble(6, row) : price / (df * root_time * INV_SQRT_2PI);
+		if (args.ColumnCount() < 7 && (!IsFinite(guess) || guess < 0.0)) {
+			guess = 5.0;
+		}
+		return ImpliedVolSolve([&](double vol) {
+			if (vol == 0.0) {
+				return RateEvaluation {df * OptionPayoff(call, forward, strike), 0.0};
+			}
+			double st = vol * root_time;
+			double d = difference / st;
+			double pdf = NormPDF(d);
+			double value = df * (call ? difference * NormCDF(d) + st * pdf : -difference * NormCDF(-d) + st * pdf);
+			return RateEvaluation {value, df * root_time * pdf};
+		}, price, guess, tol, max_iter);
 	});
 }
 

@@ -486,6 +486,8 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 
 	auto double_list = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));
 	auto matrix_type = LogicalType::LIST(double_list);
+	AddScalar(loader, "finance_vector_multiply_internal", {double_list, double_list}, double_list,
+	          [](DataChunk &args, ExpressionState &state, Vector &result) { BinaryListFunction(args, state, result, "multiply"); });
 	AddScalar(loader, "fin_dot", {double_list, double_list}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { BinaryListFunction(args, state, result, "dot"); });
 	AddScalar(loader, "fin_vector_sum", {double_list}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -515,7 +517,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddScalar(loader, "fin_matrix_transpose", {matrix_type}, matrix_type,
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { MatrixNestedFunction(args, state, result, "transpose"); });
 	AddScalar(loader, "fin_matrix_vecmul", {matrix_type, double_list}, double_list,
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MatrixFunction(args, state, result, "vecmul"); });
+	          MatrixVecMulFunction);
 	AddScalar(loader, "fin_matrix_mul", {matrix_type, matrix_type}, matrix_type, MatrixMulFunction);
 	AddScalar(loader, "fin_matrix_cholesky", {matrix_type}, matrix_type,
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { MatrixNestedFunction(args, state, result, "cholesky"); });
@@ -581,11 +583,15 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	ScalarFunctionSet next_bd(FinanceFunctionName("fin_next_business_day"));
 	AddOverload(next_bd, {FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, 1); });
+	AddOverload(next_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::BIGINT)}, FinanceLogicalType(LogicalTypeId::DATE),
+	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, 1); });
 	AddOverload(next_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::INTEGER)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, 1); });
 	loader.RegisterFunction(std::move(next_bd));
 	ScalarFunctionSet prev_bd(FinanceFunctionName("fin_prev_business_day"));
 	AddOverload(prev_bd, {FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::DATE),
+	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, -1); });
+	AddOverload(prev_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::BIGINT)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, -1); });
 	AddOverload(prev_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::INTEGER)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, -1); });

@@ -38,13 +38,12 @@ struct DrawdownOperationBase : public UnaryDoubleUpdateOperation<DrawdownOperati
 		}
 		if (!state.isset) {
 			state.isset = true;
-			state.nav = initial_nav;
-			state.peak = initial_nav;
 		}
 		state.values->push_back(value);
-		state.nav *= 1.0 + value;
-		state.peak = std::max(state.peak, state.nav);
-		state.current_drawdown = state.peak == 0.0 ? 0.0 : state.nav / state.peak - 1.0;
+		// NAV relative to its running peak stays in [0, 1]. Absolute wealth
+		// can overflow on long gain series even when every drawdown is finite.
+		state.nav = std::min(1.0, state.nav * (1.0 + value));
+		state.current_drawdown = state.nav - 1.0;
 		state.min_drawdown = std::min(state.min_drawdown, state.current_drawdown);
 		state.sum_drawdown += state.current_drawdown;
 		state.sum_drawdown_sq += state.current_drawdown * state.current_drawdown;
@@ -63,9 +62,10 @@ struct DrawdownOperationBase : public UnaryDoubleUpdateOperation<DrawdownOperati
 			return;
 		}
 		if (!target.isset) {
-			for (auto value : *source.values) {
-				UpdateValue(target, value);
-			}
+			auto values = target.values;
+			target = source;
+			target.values = values;
+			*target.values = *source.values;
 			return;
 		}
 		// Drawdowns in the right-hand state depend on the peak reached by the

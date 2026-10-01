@@ -38,10 +38,10 @@
     {"fin_is_decimal_return", "(x) AS fin_validate_return(x)"},
     {"fin_validate_option_spec", "(spec) AS struct_pack(ok := spec.spot > 0 AND spec.strike > 0 AND spec.ttm >= 0 AND spec.vol >= 0, reason := CASE WHEN spec.spot > 0 AND spec.strike > 0 AND spec.ttm >= 0 AND spec.vol >= 0 THEN 'ok' ELSE 'invalid option spec' END)"},
     {"fin_validate_rate_spec", "(spec) AS struct_pack(ok := fin_is_rate(spec.rate), reason := CASE WHEN fin_is_rate(spec.rate) THEN 'ok' ELSE 'invalid rate spec' END)"},
-    {"fin_validate_curve_spec", "(spec) AS struct_pack(ok := len(spec.maturities) = len(spec.values), reason := CASE WHEN len(spec.maturities) = len(spec.values) THEN 'ok' ELSE 'maturity/value length mismatch' END)"},
+    {"fin_validate_curve_spec", "(spec) AS struct_pack(ok := fin_curve_zero_rate(spec.maturities, spec.values, 0.0) IS NOT NULL, reason := CASE WHEN spec.maturities IS NULL OR spec.values IS NULL THEN 'null curve input' WHEN len(spec.maturities) <> len(spec.values) THEN 'maturity/value length mismatch' WHEN len(spec.maturities) = 0 THEN 'curve cannot be empty' WHEN fin_curve_zero_rate(spec.maturities, spec.values, 0.0) IS NULL THEN 'maturities must be finite and strictly increasing; values must be finite and non-null' ELSE 'ok' END)"},
 
     {"fin_marginal_risk", "(weights, cov_matrix) AS fin_matrix_vecmul(cov_matrix, weights)"},
-    {"fin_component_risk", "(weights, cov_matrix) AS fin_vector_scale(fin_matrix_vecmul(cov_matrix, weights), 1.0 / nullif(fin_portfolio_vol(weights, cov_matrix), 0))"},
+    {"fin_component_risk", "(weights, cov_matrix) AS fin_vector_scale(finance_vector_multiply_internal(weights, fin_matrix_vecmul(cov_matrix, weights)), 1.0 / nullif(fin_portfolio_vol(weights, cov_matrix), 0))"},
     {"fin_risk_contribution", "(weights, cov_matrix) AS fin_vector_normalize_sum(fin_component_risk(weights, cov_matrix))"},
     {"fin_turnover", "(old_weights, new_weights) AS fin_turnover(old_weights, new_weights)"},
     {"fin_equal_weights", "(n) AS fin_equal_weights(n)"},

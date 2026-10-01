@@ -149,6 +149,81 @@
       "name": "fin_welch_ttest",
       "reason": "delegates to two-sample t-test output that does not include a p-value",
       "replacement": "use the statistic as a diagnostic only or compute p-values externally"
+    },
+    {
+      "name": "fin_portfolio_optimize",
+      "reason": "returns equal weights without solving the supplied optimization objective",
+      "replacement": "use an external optimizer and validate the resulting weights in SQL"
+    },
+    {
+      "name": "fin_portfolio_optimize_table",
+      "reason": "assigns equal weights to distinct assets without using their return history",
+      "replacement": "use an external optimizer and validate the resulting weights in SQL"
+    },
+    {
+      "name": "fin_hrp_weights",
+      "reason": "returns equal weights without hierarchical clustering or risk allocation",
+      "replacement": "use an external HRP implementation and validate its portfolio risk in SQL"
+    },
+    {
+      "name": "fin_efficient_frontier",
+      "reason": "pairs interpolated target returns with constant equal-weight volatility instead of optimized portfolios",
+      "replacement": "solve each target-return portfolio externally and compute its risk in SQL"
+    },
+    {
+      "name": "fin_bootstrap_curve",
+      "reason": "treats every quoted rate as a zero rate instead of bootstrapping instrument cash flows",
+      "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
+    },
+    {
+      "name": "fin_garch_fit",
+      "reason": "returns fixed omega alpha and beta rather than fitting a GARCH model",
+      "replacement": "fit GARCH parameters externally before forecasting in SQL"
+    },
+    {
+      "name": "fin_fama_macbeth",
+      "reason": "runs per-date regressions on the first factor only without second-stage inference or lag corrections",
+      "replacement": "compute reviewed cross-sectional regressions and second-stage inference explicitly"
+    },
+    {
+      "name": "fin_autocorr",
+      "reason": "correlates each value with itself and ignores the requested lag",
+      "replacement": "create lagged pairs with a window function and use corr"
+    },
+    {
+      "name": "fin_crosscorr",
+      "reason": "uses contemporaneous Pearson correlation and ignores the requested lag",
+      "replacement": "create lagged pairs with a window function and use corr"
+    },
+    {
+      "name": "fin_rank_corr",
+      "reason": "uses Pearson correlation on raw values instead of the selected rank correlation",
+      "replacement": "rank observations explicitly before computing the correlation"
+    },
+    {
+      "name": "fin_rank_ic",
+      "reason": "uses Pearson correlation on raw values instead of ranks",
+      "replacement": "rank factor and return observations explicitly before computing the correlation"
+    },
+    {
+      "name": "fin_factor_ic",
+      "reason": "uses Pearson correlation on raw values and ignores the requested method",
+      "replacement": "use corr for Pearson IC or rank observations explicitly for rank IC"
+    },
+    {
+      "name": "fin_iv_percentile",
+      "reason": "returns min-max IV rank rather than an empirical percentile",
+      "replacement": "count historical observations below the current IV and divide by the observation count"
+    },
+    {
+      "name": "fin_ema",
+      "reason": "returns the arithmetic mean without exponential weighting",
+      "replacement": "compute the exponential recurrence explicitly over ordered observations"
+    },
+    {
+      "name": "fin_ema_halflife",
+      "reason": "returns the arithmetic mean and ignores timestamps and half-life",
+      "replacement": "compute time-dependent exponential weights explicitly"
     }
   ]
 }

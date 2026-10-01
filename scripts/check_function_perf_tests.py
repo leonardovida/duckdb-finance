@@ -9,7 +9,8 @@ def main() -> int:
     if not re.search(r"^perf:", makefile, re.M):
         print("Missing Makefile perf target.")
         return 1
-    if "PRAGMA enable_profiling" not in makefile or "$(GOLD_TEST_SQL)" not in makefile:
+    runner = read(ROOT / "scripts" / "run_sql_with_trace.py")
+    if "--profile-output" not in makefile or "PRAGMA enable_profiling" not in runner or "$(GOLD_TEST_SQL)" not in makefile:
         print("The perf target must profile the gold test corpus.")
         return 1
 
@@ -24,7 +25,7 @@ def main() -> int:
             print(f"  {function}")
         return 1
 
-    print(f"Performance tests profile {len(registered_functions())} registered functions through make perf.")
+    print(f"Performance SQL corpus references {len(registered_functions())} public functions; make perf retains available statement profiles.")
     return 0
 
 
