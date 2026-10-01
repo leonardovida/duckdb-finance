@@ -121,6 +121,22 @@ jobs:
           commit_url="https://github.com/${GITHUB_REPOSITORY}/commit/${RELEASE_SHA}"
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
+          notes_file=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [[ -f "$notes_file" ]]; then
+            cat "$notes_file" > release-notes.md
+            cat >> release-notes.md <<EOF
+
+          ## Build and verification
+
+          - Built release artifacts for DuckDB ${DUCKDB_VERSION} with extension-ci-tools ${EXTENSION_CI_TOOLS_VERSION}. ${run_url}
+          - Included a community extension manifest pinned to the release commit ${RELEASE_SHA}. ${commit_url}
+          - Release metadata validation and the extension distribution build completed in GitHub Actions. Matrix tests use the existing skip policy; source behavior is checked before tagging. ${run_url}
+
+          **Full diff:** ${full_diff}
+          EOF
+            exit 0
+          fi
+
           cat > release-notes.md <<EOF
           ## Highlights
 
