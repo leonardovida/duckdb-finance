@@ -9,26 +9,34 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	                         "fin_option_chain expects table_name, kind_col, spot_col, strike_col, ttm_col, rate_col, "
 	                         "vol_col[, dividend_yield_col]");
 	auto table = SqlTableName(input.inputs[0]);
-	auto kind = SqlColumn(input.inputs[1]);
-	auto spot = SqlColumn(input.inputs[2]);
-	auto strike = SqlColumn(input.inputs[3]);
-	auto ttm = SqlColumn(input.inputs[4]);
-	auto rate = SqlColumn(input.inputs[5]);
-	auto vol = SqlColumn(input.inputs[6]);
-	auto q = input.inputs.size() == 8 ? SqlColumn(input.inputs[7]) : "0.0";
+	auto kind = "__finance_source." + SqlColumn(input.inputs[1]);
+	auto spot = "__finance_source." + SqlColumn(input.inputs[2]);
+	auto strike = "__finance_source." + SqlColumn(input.inputs[3]);
+	auto ttm = "__finance_source." + SqlColumn(input.inputs[4]);
+	auto rate = "__finance_source." + SqlColumn(input.inputs[5]);
+	auto vol = "__finance_source." + SqlColumn(input.inputs[6]);
+	auto q = input.inputs.size() == 8 ? "__finance_source." + SqlColumn(input.inputs[7]) : "0.0";
 	auto args = BSMArguments(kind, spot, strike, ttm, rate, vol, q);
+	auto input_column = [&](idx_t column) {
+		return SqlIdentifier("__finance_source_" + input.inputs[column].GetValue<string>());
+	};
+	auto model_q = input.inputs.size() == 8 ? input_column(7) : "0.0";
+	// Prefix every source name, then restore it on output. This keeps the
+	// calculated struct separate without packing rows or adding a join.
 	auto query = StringUtil::Format(
-	    "WITH priced AS (SELECT *, fin_bsm_all(%s) AS __finance_bsm_all FROM %s) "
-	    "SELECT * EXCLUDE (__finance_bsm_all), "
-	    "__finance_bsm_all.price AS model_price, "
-	    "__finance_bsm_all.delta AS model_delta, "
-	    "__finance_bsm_all.gamma AS model_gamma, "
-	    "__finance_bsm_all.vega AS model_vega, "
-	    "__finance_bsm_all.theta AS model_theta, "
-	    "__finance_bsm_all.rho AS model_rho, "
-	    "fin_bsm_implied_vol(%s, __finance_bsm_all.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
+	    "WITH priced AS (SELECT COLUMNS(__finance_source.*) AS \"__finance_source_\\0\", "
+	    "fin_bsm_all(%s) AS bsm FROM %s AS __finance_source) "
+	    "SELECT COLUMNS('(?s)^__finance_source_(.*)$') AS \"\\1\", "
+	    "bsm.price AS model_price, "
+	    "bsm.delta AS model_delta, "
+	    "bsm.gamma AS model_gamma, "
+	    "bsm.vega AS model_vega, "
+	    "bsm.theta AS model_theta, "
+	    "bsm.rho AS model_rho, "
+	    "fin_bsm_implied_vol(%s, bsm.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
 	    "%s::DOUBLE) AS model_implied_volatility "
 	    "FROM priced",
-	    args, table, kind, spot, strike, ttm, rate, q, vol);
+	    args, table, input_column(1), input_column(2), input_column(3), input_column(4), input_column(5), model_q,
+	    input_column(6));
 	return ParseSubquery(context, query);
 }

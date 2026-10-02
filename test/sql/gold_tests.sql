@@ -1748,6 +1748,80 @@ SELECT assert_near('option chain model price column', model_price, 10.4505835721
 FROM fin_option_chain('gold_options', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol', 'dividend_yield')
 WHERE kind = 'call';
 
+-- User columns must not shadow option-chain calculations or disappear.
+CREATE TEMP TABLE gold_chain_collision AS
+SELECT *, 'source marker' AS __finance_bsm_all, -123.0 AS bsm,
+       struct_pack(bsm := struct_pack(price := -456.0)) AS __finance_model,
+       struct_pack(spot := -789.0) AS __finance_source,
+       'prefix marker' AS __finance_source_bsm,
+       ['kept', NULL] AS "source\1", from_hex('00FF') AS "source ""blob""",
+       'multiline marker' AS "line
+name"
+FROM gold_options;
+
+SELECT
+  assert_eq('option chain preserves helper-named scalar', __finance_bsm_all, 'source marker'),
+  assert_eq('option chain preserves calculation-named column', bsm, -123.0),
+  assert_eq('option chain preserves model-named struct', __finance_model.bsm.price, -456.0),
+  assert_eq('option chain preserves source-named struct', __finance_source.spot, -789.0),
+  assert_eq('option chain restores internal-prefix source name', __finance_source_bsm, 'prefix marker'),
+  assert_eq('option chain preserves backslash name and list type', "source\1", ['kept', NULL]),
+  assert_eq('option chain preserves quoted name and blob type', "source ""blob""", from_hex('00FF')),
+  assert_eq('option chain preserves multiline source name', "line
+name", 'multiline marker'),
+  assert_near('option chain collision price', model_price,
+    fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 1e-10),
+  assert_near('option chain collision delta', model_delta,
+    fin_bsm_delta(kind, spot, strike, ttm, rate, vol, dividend_yield), 1e-10)
+FROM fin_option_chain('gold_chain_collision', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol', 'dividend_yield');
+
+CREATE TEMP TABLE gold_chain_struct_collision AS
+SELECT * EXCLUDE (dividend_yield),
+       struct_pack(price := 999.0, delta := -9.0, gamma := -9.0,
+                   vega := -9.0, theta := -9.0, rho := -9.0) AS __finance_bsm_all
+FROM gold_options;
+
+SELECT
+  assert_eq('option chain preserves helper-named struct', __finance_bsm_all.price, 999.0),
+  assert_near('option chain struct collision price', model_price,
+    fin_bsm_price(kind, spot, strike, ttm, rate, vol), 1e-10),
+  assert_near('option chain struct collision delta', model_delta,
+    fin_bsm_delta(kind, spot, strike, ttm, rate, vol), 1e-10),
+  assert_near('option chain struct collision gamma', model_gamma,
+    fin_bsm_gamma(spot, strike, ttm, rate, vol), 1e-10),
+  assert_near('option chain struct collision vega', model_vega,
+    fin_bsm_vega(kind, spot, strike, ttm, rate, vol), 1e-10),
+  assert_near('option chain struct collision theta', model_theta,
+    fin_bsm_theta(kind, spot, strike, ttm, rate, vol), 1e-10),
+  assert_near('option chain struct collision rho', model_rho,
+    fin_bsm_rho(kind, spot, strike, ttm, rate, vol), 1e-10),
+  assert_near('option chain struct collision implied vol', model_implied_volatility, vol, 1e-10)
+FROM fin_option_chain('gold_chain_struct_collision', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol');
+
+CREATE TEMP TABLE gold_chain_named_inputs AS
+SELECT kind AS __finance_model, spot AS __finance_source, vol AS bsm,
+       strike AS "strike with space", ttm, rate, dividend_yield
+FROM gold_options;
+
+SELECT
+  assert_near('option chain qualified input price', model_price,
+    fin_bsm_price(__finance_model, __finance_source, "strike with space", ttm, rate, bsm, dividend_yield), 1e-10),
+  assert_near('option chain qualified input implied vol', model_implied_volatility, bsm, 1e-10)
+FROM fin_option_chain('gold_chain_named_inputs', '__finance_model', '__finance_source', 'strike with space',
+                      'ttm', 'rate', 'bsm', 'dividend_yield');
+
+CREATE TEMP TABLE gold_chain_nulls AS
+SELECT i, 'call' AS kind, 100.0 AS spot, 100.0 AS strike, 1.0 AS ttm, 0.05 AS rate,
+       CASE WHEN i % 3 = 0 THEN NULL::DOUBLE ELSE 0.2 END AS vol
+FROM range(4096) r(i);
+
+SELECT
+  assert_eq('option chain preserves repeated inputs across vectors', count(*), 4096::BIGINT),
+  assert_eq('option chain preserves null-price rows', count(*) FILTER (WHERE model_price IS NULL), 1366::BIGINT),
+  assert_eq('option chain null-price agreement', count(*) FILTER (
+    WHERE model_price IS DISTINCT FROM fin_bsm_price(kind, spot, strike, ttm, rate, vol)), 0::BIGINT)
+FROM fin_option_chain('gold_chain_nulls', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol');
+
 SELECT assert_eq('bootstrap curve rows', count(*), 3::BIGINT)
 FROM fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous');
 
