@@ -21,11 +21,9 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 		return SqlIdentifier("__finance_source_" + input.inputs[column].GetValue<string>());
 	};
 	auto model_q = input.inputs.size() == 8 ? input_column(7) : "0.0";
-	// Prefix every source name, then restore it on output. This keeps the
-	// calculated struct separate without packing rows or adding a join.
+	// Keep source fields flat and separate from helpers. Only old model
+	// outputs are removed after their inputs have been used for repricing.
 	auto query = StringUtil::Format(
-	    "WITH priced AS (SELECT COLUMNS(__finance_source.*) AS \"__finance_source_\\0\", "
-	    "fin_bsm_all(%s) AS bsm FROM %s AS __finance_source) "
 	    "SELECT COLUMNS('(?s)^__finance_source_(.*)$') AS \"\\1\", "
 	    "bsm.price AS model_price, "
 	    "bsm.delta AS model_delta, "
@@ -33,10 +31,14 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	    "bsm.vega AS model_vega, "
 	    "bsm.theta AS model_theta, "
 	    "bsm.rho AS model_rho, "
-	    "fin_bsm_implied_vol(%s, bsm.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
-	    "%s::DOUBLE) AS model_implied_volatility "
-	    "FROM priced",
-	    args, table, input_column(1), input_column(2), input_column(3), input_column(4), input_column(5), model_q,
-	    input_column(6));
+	    "__finance_iv AS model_implied_volatility "
+	    "FROM (SELECT COLUMNS(lambda c: NOT regexp_matches(c, "
+	    "'(?i)^__finance_source_model_(price|delta|gamma|vega|theta|rho|implied_volatility)$')) "
+	    "FROM (SELECT *, fin_bsm_implied_vol(%s, bsm.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
+	    "%s::DOUBLE, %s::DOUBLE) AS __finance_iv "
+	    "FROM (SELECT COLUMNS(__finance_source.*) AS \"__finance_source_\\0\", "
+	    "fin_bsm_all(%s) AS bsm FROM %s AS __finance_source) AS priced) AS calculated) AS filtered",
+	    input_column(1), input_column(2), input_column(3), input_column(4), input_column(5), model_q, input_column(6),
+	    args, table);
 	return ParseSubquery(context, query);
 }

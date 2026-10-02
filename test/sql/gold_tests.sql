@@ -1822,6 +1822,44 @@ SELECT
     WHERE model_price IS DISTINCT FROM fin_bsm_price(kind, spot, strike, ttm, rate, vol)), 0::BIGINT)
 FROM fin_option_chain('gold_chain_nulls', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol');
 
+CREATE TEMP TABLE gold_chain_reprice AS
+SELECT *, 999.0 AS model_price, -9.0 AS "MODEL_DELTA", -9.0 AS model_gamma,
+       -9.0 AS model_vega, -9.0 AS model_theta, -9.0 AS model_rho,
+       -9.0 AS model_implied_volatility, 'custom marker' AS model_discount,
+       'prefix marker' AS __finance_source_model_price
+FROM gold_options;
+
+CREATE TEMP VIEW gold_chain_repriced AS
+SELECT * FROM fin_option_chain('gold_chain_reprice', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol', 'dividend_yield');
+
+WITH expected AS (
+  SELECT *, fin_bsm_all(kind, spot, strike, ttm, rate, vol, dividend_yield) AS reference
+  FROM gold_chain_repriced
+)
+SELECT
+  assert_near('repricing replaces price', model_price, reference.price, 1e-10),
+  assert_near('repricing replaces case-insensitive delta', model_delta, reference.delta, 1e-10),
+  assert_near('repricing replaces gamma', model_gamma, reference.gamma, 1e-10),
+  assert_near('repricing replaces vega', model_vega, reference.vega, 1e-10),
+  assert_near('repricing replaces theta', model_theta, reference.theta, 1e-10),
+  assert_near('repricing replaces rho', model_rho, reference.rho, 1e-10),
+  assert_near('repricing replaces implied vol', model_implied_volatility, vol, 1e-10),
+  assert_eq('repricing preserves other model names', model_discount, 'custom marker'),
+  assert_eq('repricing preserves prefixed source name', __finance_source_model_price, 'prefix marker')
+FROM expected;
+
+SELECT assert_eq('repricing has one price column', count(*), 1::BIGINT)
+FROM pragma_table_info('gold_chain_repriced') WHERE name LIKE 'model_price%';
+
+SELECT assert_eq('repricing leaves source table unchanged', min(model_price), 999.0)
+FROM gold_chain_reprice;
+
+CREATE TEMP TABLE gold_chain_model_input AS
+SELECT * EXCLUDE (vol), vol AS model_price, vol AS expected_vol FROM gold_options;
+
+SELECT assert_near('repricing uses conflicting input before replacement', model_implied_volatility, expected_vol, 1e-10)
+FROM fin_option_chain('gold_chain_model_input', 'kind', 'spot', 'strike', 'ttm', 'rate', 'model_price');
+
 SELECT assert_eq('bootstrap curve rows', count(*), 3::BIGINT)
 FROM fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous');
 

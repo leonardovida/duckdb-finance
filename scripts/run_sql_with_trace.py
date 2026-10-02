@@ -12,10 +12,12 @@ def split_statements(sql: str) -> list[str]:
     statements: list[str] = []
     start = 0
     in_string = False
+    escape_string = False
     in_identifier = False
     in_line_comment = False
     block_comment_depth = 0
     dollar_quote: str | None = None
+    continuation_whitespace = re.compile(r"(?:[ \t\f\r\n]|--[^\r\n]*)*")
     i = 0
 
     while i < len(sql):
@@ -43,10 +45,25 @@ def split_statements(sql: str) -> list[str]:
                 i += 1
             continue
         if in_string:
+            if escape_string and current == "\\" and i + 1 < len(sql):
+                i += 2
+                continue
             if current == "'" and i + 1 < len(sql) and sql[i + 1] == "'":
                 i += 2
                 continue
             if current == "'":
+                if escape_string:
+                    # DuckDB retains E-string escapes in newline-concatenated
+                    # literal fragments, including intervening line comments.
+                    whitespace = continuation_whitespace.match(sql, i + 1)
+                    assert whitespace is not None
+                    next_quote = whitespace.end()
+                    if (
+                        ("\n" in whitespace.group() or "\r" in whitespace.group())
+                        and sql[next_quote:next_quote + 1] == "'"
+                    ):
+                        i = next_quote + 1
+                        continue
                 in_string = False
             i += 1
             continue
@@ -68,6 +85,14 @@ def split_statements(sql: str) -> list[str]:
             continue
         if current == "'":
             in_string = True
+            escape_string = (
+                i > 0
+                and sql[i - 1] in "eE"
+                and (
+                    i == 1
+                    or not (sql[i - 2].isalnum() or sql[i - 2] in "_$" or ord(sql[i - 2]) >= 128)
+                )
+            )
         elif current == '"':
             in_identifier = True
         elif current == "$":
