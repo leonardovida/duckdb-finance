@@ -18,17 +18,18 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	auto q = input.inputs.size() == 8 ? "__finance_source." + SqlColumn(input.inputs[7]) : "0.0";
 	auto args = BSMArguments(kind, spot, strike, ttm, rate, vol, q);
 	auto query = StringUtil::Format(
+	    "WITH priced AS (SELECT struct_pack(*COLUMNS(__finance_source.*)) AS __finance_source, "
+	    "fin_bsm_all(%s) AS bsm FROM %s AS __finance_source) "
 	    "SELECT __finance_source.*, "
-	    "__finance_model.bsm.price AS model_price, "
-	    "__finance_model.bsm.delta AS model_delta, "
-	    "__finance_model.bsm.gamma AS model_gamma, "
-	    "__finance_model.bsm.vega AS model_vega, "
-	    "__finance_model.bsm.theta AS model_theta, "
-	    "__finance_model.bsm.rho AS model_rho, "
-	    "fin_bsm_implied_vol(%s, __finance_model.bsm.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
+	    "bsm.price AS model_price, "
+	    "bsm.delta AS model_delta, "
+	    "bsm.gamma AS model_gamma, "
+	    "bsm.vega AS model_vega, "
+	    "bsm.theta AS model_theta, "
+	    "bsm.rho AS model_rho, "
+	    "fin_bsm_implied_vol(%s, bsm.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
 	    "%s::DOUBLE) AS model_implied_volatility "
-	    "FROM %s AS __finance_source "
-	    "CROSS JOIN LATERAL (SELECT fin_bsm_all(%s) AS bsm) AS __finance_model",
-	    kind, spot, strike, ttm, rate, q, vol, table, args);
+	    "FROM priced",
+	    args, table, kind, spot, strike, ttm, rate, q, vol);
 	return ParseSubquery(context, query);
 }
