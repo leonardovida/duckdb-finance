@@ -17,10 +17,16 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	auto vol = "__finance_source." + SqlColumn(input.inputs[6]);
 	auto q = input.inputs.size() == 8 ? "__finance_source." + SqlColumn(input.inputs[7]) : "0.0";
 	auto args = BSMArguments(kind, spot, strike, ttm, rate, vol, q);
+	auto input_column = [&](idx_t column) {
+		return SqlIdentifier("__finance_source_" + input.inputs[column].GetValue<string>());
+	};
+	auto model_q = input.inputs.size() == 8 ? input_column(7) : "0.0";
+	// Prefix every source name, then restore it on output. This keeps the
+	// calculated struct separate without packing rows or adding a join.
 	auto query = StringUtil::Format(
-	    "WITH priced AS (SELECT struct_pack(*COLUMNS(__finance_source.*)) AS __finance_source, "
+	    "WITH priced AS (SELECT COLUMNS(__finance_source.*) AS \"__finance_source_\\0\", "
 	    "fin_bsm_all(%s) AS bsm FROM %s AS __finance_source) "
-	    "SELECT __finance_source.*, "
+	    "SELECT COLUMNS('(?s)^__finance_source_(.*)$') AS \"\\1\", "
 	    "bsm.price AS model_price, "
 	    "bsm.delta AS model_delta, "
 	    "bsm.gamma AS model_gamma, "
@@ -30,6 +36,7 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	    "fin_bsm_implied_vol(%s, bsm.price, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, %s::DOUBLE, "
 	    "%s::DOUBLE) AS model_implied_volatility "
 	    "FROM priced",
-	    args, table, kind, spot, strike, ttm, rate, q, vol);
+	    args, table, input_column(1), input_column(2), input_column(3), input_column(4), input_column(5), model_q,
+	    input_column(6));
 	return ParseSubquery(context, query);
 }

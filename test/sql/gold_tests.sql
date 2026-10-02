@@ -1752,7 +1752,11 @@ WHERE kind = 'call';
 CREATE TEMP TABLE gold_chain_collision AS
 SELECT *, 'source marker' AS __finance_bsm_all, -123.0 AS bsm,
        struct_pack(bsm := struct_pack(price := -456.0)) AS __finance_model,
-       struct_pack(spot := -789.0) AS __finance_source
+       struct_pack(spot := -789.0) AS __finance_source,
+       'prefix marker' AS __finance_source_bsm,
+       ['kept', NULL] AS "source\1", from_hex('00FF') AS "source ""blob""",
+       'multiline marker' AS "line
+name"
 FROM gold_options;
 
 SELECT
@@ -1760,6 +1764,11 @@ SELECT
   assert_eq('option chain preserves calculation-named column', bsm, -123.0),
   assert_eq('option chain preserves model-named struct', __finance_model.bsm.price, -456.0),
   assert_eq('option chain preserves source-named struct', __finance_source.spot, -789.0),
+  assert_eq('option chain restores internal-prefix source name', __finance_source_bsm, 'prefix marker'),
+  assert_eq('option chain preserves backslash name and list type', "source\1", ['kept', NULL]),
+  assert_eq('option chain preserves quoted name and blob type', "source ""blob""", from_hex('00FF')),
+  assert_eq('option chain preserves multiline source name', "line
+name", 'multiline marker'),
   assert_near('option chain collision price', model_price,
     fin_bsm_price(kind, spot, strike, ttm, rate, vol, dividend_yield), 1e-10),
   assert_near('option chain collision delta', model_delta,
