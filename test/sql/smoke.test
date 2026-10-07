@@ -43,3 +43,14 @@ SELECT fin_weighted_var(x, w, ddof)
 FROM (VALUES (1.0, 1.0, 0.0), (999.0, 0.0, 1.0)) AS t(x, w, ddof)
 ----
 Weighted variance ddof must be constant within a group
+
+statement error
+SELECT fin_outlier_count('NaN'::DOUBLE, 0.0)
+----
+Outlier threshold must be positive and finite
+
+statement error
+SELECT fin_outlier_count(x, threshold ORDER BY seq)
+FROM (VALUES (1, 0.0, 1.0), (2, 'NaN'::DOUBLE, 2.0)) AS t(seq, x, threshold)
+----
+Outlier threshold must be constant within a group

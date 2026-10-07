@@ -1132,6 +1132,34 @@ SELECT assert_eq('outlier non-finite chunk cannot append twice', fin_outlier_cou
 FROM (VALUES (0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(0.0),(10.0),
              ('NaN'::DOUBLE)) t(x);
 
+-- Non-finite observations validate thresholds but do not fix the group's
+-- threshold until a finite observation arrives. NULL arguments skip the row.
+WITH observations(seq, x, threshold) AS (
+  VALUES (1, 'NaN'::DOUBLE, 7.0), (2, 'Infinity'::DOUBLE, 4.0),
+         (3, NULL, -1.0), (4, 999.0, NULL),
+         (5, 0.0, 1.0), (6, 0.0, 1.0), (7, 10.0, 1.0)
+)
+SELECT
+  assert_eq('outlier ignored prefix does not fix threshold',
+    fin_outlier_count(x, threshold ORDER BY seq), 1::BIGINT),
+  assert_eq('outlier ignored prefix with method overload',
+    fin_outlier_count(x, 'ZSCORE', threshold ORDER BY seq), 1::BIGINT)
+FROM observations;
+
+SELECT assert_eq('outlier all non-finite thresholds may differ',
+  fin_outlier_count(x, threshold ORDER BY seq), 0::BIGINT)
+FROM (VALUES (1, 'NaN'::DOUBLE, 1.0), (2, 'Infinity'::DOUBLE, 2.0)) t(seq, x, threshold);
+
+CREATE TEMP TABLE outlier_threshold_batches AS
+SELECT i, CASE WHEN i = 4095 THEN 10.0 ELSE 0.0 END AS x, 2.0::DOUBLE AS threshold
+FROM range(4096) t(i);
+SELECT
+  assert_eq('outlier flat threshold across chunks', fin_outlier_count(x, 2.0), 1::BIGINT),
+  assert_eq('outlier row threshold across chunks', fin_outlier_count(x, threshold), 1::BIGINT),
+  assert_eq('outlier method threshold across chunks', fin_outlier_count(x, 'zscore', threshold), 1::BIGINT)
+FROM outlier_threshold_batches;
+DROP TABLE outlier_threshold_batches;
+
 WITH samples(factor, r) AS (VALUES (0.0,0.0),(0.0,6.0),(0.0,12.0),(1.0,20.0),(2.0,40.0))
 SELECT
   assert_near('quantile spread proportional boundary ties', fin_quantile_spread(factor,r,2), 16.0, 1e-12),
