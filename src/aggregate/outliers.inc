@@ -13,6 +13,22 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 	}
 
 	template <class STATE>
+	static void CheckThresholdConsistency(const STATE &state, double threshold) {
+		// Only a retained finite observation fixes the group's threshold.
+		if (state.values && !state.values->empty() && state.threshold != threshold) {
+			throw InvalidInputException("Outlier threshold must be constant within a group");
+		}
+	}
+
+	template <class STATE>
+	static void ValidateThreshold(const STATE &state, double threshold) {
+		if (threshold <= 0.0 || !std::isfinite(threshold)) {
+			throw InvalidInputException("Outlier threshold must be positive and finite");
+		}
+		CheckThresholdConsistency(state, threshold);
+	}
+
+	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
 		if (std::isfinite(value)) {
 			state.values->push_back(value);
@@ -25,9 +41,7 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 		if (!source.values || source.values->empty()) {
 			return;
 		}
-		if (target.values && !target.values->empty() && target.threshold != source.threshold) {
-			throw InvalidInputException("Outlier threshold must be constant within a group");
-		}
+		CheckThresholdConsistency(target, source.threshold);
 		target.threshold = source.threshold;
 		target.scale = std::max(target.scale, source.scale);
 		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
@@ -84,12 +98,7 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 struct OutlierCountWithThresholdOperation : public OutlierCountOperation {
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double threshold) {
-		if (threshold <= 0.0 || !std::isfinite(threshold)) {
-			throw InvalidInputException("Outlier threshold must be positive and finite");
-		}
-		if (state.values && !state.values->empty() && state.threshold != threshold) {
-			throw InvalidInputException("Outlier threshold must be constant within a group");
-		}
+		ValidateThreshold(state, threshold);
 		state.threshold = threshold;
 		OutlierCountOperation::UpdateValue(state, value);
 	}
@@ -157,12 +166,7 @@ static void OutlierCountSimpleUpdate(Vector inputs[], AggregateInputData &input_
 		           !ConstantVector::IsNull(inputs[1]);
 		if (eligible) {
 			threshold = ConstantVector::GetData<double>(inputs[1])[0];
-			if (!(threshold > 0.0) || !std::isfinite(threshold)) {
-				throw InvalidInputException("Outlier threshold must be positive and finite");
-			}
-			if (!state.values->empty() && state.threshold != threshold) {
-				throw InvalidInputException("Outlier threshold must be constant within a group");
-			}
+			OutlierCountOperation::ValidateThreshold(state, threshold);
 		}
 	}
 	if (eligible && AppendFlatOutliers(inputs[0], state, count)) {
