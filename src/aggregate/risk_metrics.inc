@@ -704,3 +704,105 @@ struct YangZhangOperation : public FinOperationDefaults {
 	static void Destroy(STATE &, AggregateInputData &) {
 	}
 };
+
+//===--------------------------------------------------------------------===//
+// Stability of returns (empyrical stability_of_timeseries)
+//===--------------------------------------------------------------------===//
+// R^2 of the OLS fit of cumulative log returns y_t = sum_{s<=t} log1p(r_s) on
+// the observation index t = 1..n. Ordered blocks merge exactly: the later block
+// shifts its index mean by n_left and its level mean by the left block's total
+// log return, which leaves its centered co-moments unchanged.
+struct StabilityState {
+	double count;
+	double mean_t;
+	double mean_y;
+	double m2t;
+	double m2y;
+	double cty;
+	FinSum total;
+	bool invalid;
+};
+
+struct StabilityOperation : public FinOperationDefaults {
+	static constexpr idx_t REQUIRED_ARGS = 1;
+	static constexpr bool ORDER_DEPENDENT = true;
+	static constexpr bool WINDOW_INCREMENTAL = true;
+
+	template <class STATE>
+	static void Initialize(STATE &state) {
+		state.count = state.mean_t = state.mean_y = state.m2t = state.m2y = state.cty = 0.0;
+		state.total.Reset();
+		state.invalid = false;
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
+		Initialize(state);
+	}
+
+	template <class STATE>
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t) {
+		auto value = row.v[0];
+		if (!std::isfinite(value) || value <= -1.0) {
+			state.invalid = true;
+			return;
+		}
+		state.total.Add(std::log1p(value));
+		auto t = state.count + 1.0;
+		auto y = state.total.Value();
+		state.count = t;
+		auto dt = t - state.mean_t;
+		auto dy = y - state.mean_y;
+		state.mean_t += dt / t;
+		state.mean_y += dy / t;
+		state.m2t += dt * (t - state.mean_t);
+		state.m2y += dy * (y - state.mean_y);
+		state.cty += dt * (y - state.mean_y);
+	}
+
+	template <class STATE, class OP>
+	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.invalid = target.invalid || source.invalid;
+		if (source.count == 0.0) {
+			return;
+		}
+		if (target.count == 0.0) {
+			auto invalid = target.invalid;
+			target = source;
+			target.invalid = invalid;
+			return;
+		}
+		// target precedes source in the ordering.
+		auto source_mean_t = source.mean_t + target.count;
+		auto source_mean_y = source.mean_y + target.total.Value();
+		auto total = target.count + source.count;
+		auto dt = source_mean_t - target.mean_t;
+		auto dy = source_mean_y - target.mean_y;
+		auto weight = target.count * source.count / total;
+		target.m2t += source.m2t + dt * dt * weight;
+		target.m2y += source.m2y + dy * dy * weight;
+		target.cty += source.cty + dt * dy * weight;
+		target.mean_t += dt * (source.count / total);
+		target.mean_y += dy * (source.count / total);
+		target.count = total;
+		target.total.Merge(source.total);
+	}
+
+	template <class T, class STATE>
+	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
+		if (state.invalid || state.count < 2.0 || !(state.m2t > 0.0) || !(state.m2y > 0.0)) {
+			finalize_data.ReturnNull();
+			return;
+		}
+		auto result = state.cty * state.cty / (state.m2t * state.m2y);
+		if (!std::isfinite(result)) {
+			finalize_data.ReturnNull();
+			return;
+		}
+		target = std::min(1.0, result);
+	}
+
+	template <class STATE>
+	static void Destroy(STATE &, AggregateInputData &) {
+	}
+};

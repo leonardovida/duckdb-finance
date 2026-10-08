@@ -573,7 +573,21 @@ SELECT
   assert_near('to log return', fin_to_log_return(0.02), 0.01980262729617973, 1e-12),
   assert_near('from log return', fin_from_log_return(ln(1.02)), 0.02, 1e-12),
   assert_near('price from simple return', fin_price_from_return(100.0, 0.02, 'simple'), 102.0, 1e-12),
-  assert_near('price from log return', fin_price_from_return(100.0, ln(1.02), 'log'), 102.0, 1e-12);
+  assert_near('price from log return', fin_price_from_return(100.0, ln(1.02), 'log'), 102.0, 1e-12),
+  -- log1p/expm1 precision: ln(1 + 1e-17) and exp(1e-17) - 1 both round to 0 in DOUBLE.
+  assert_eq('to log return tiny', fin_to_log_return(1e-17), 1e-17),
+  assert_eq('from log return tiny', fin_from_log_return(1e-17), 1e-17),
+  assert_near('to log return small relative', fin_to_log_return(1e-10) / 9.9999999995e-11, 1.0, 1e-15);
+
+-- Long gain series compound in log space instead of overflowing DOUBLE wealth:
+-- 2000 returns of +100% and one -50% give log wealth 1999 ln 2 (wealth > 1e600).
+SELECT
+  assert_near('cagr survives wealth overflow', fin_cagr(r, 252) / (pow(2.0, 252.0 * 1999 / 2001) - 1), 1.0, 1e-12),
+  assert_near('geometric return survives wealth overflow', fin_geometric_return(r), pow(2.0, 1999.0 / 2001) - 1, 1e-12),
+  assert_near('log nav survives wealth overflow', fin_log_nav(r, 1.0), 1999 * ln(2), 1e-9),
+  assert_near('calmar survives wealth overflow', fin_calmar(r, i, 252) / ((pow(2.0, 252.0 * 1999 / 2001) - 1) / 0.5), 1.0, 1e-12),
+  assert_eq('total return overflow is NULL', fin_total_return(r), NULL)
+FROM (SELECT i, CASE WHEN i = 1000 THEN -0.5 ELSE 1.0 END AS r FROM range(2001) t(i));
 
 -- Aggregate return and risk metrics over the gold return series.
 SELECT
@@ -738,7 +752,9 @@ SELECT
   assert_near('semivariance', fin_semivariance(r), 0.000085, 1e-12),
   assert_near('omega ratio', fin_omega_ratio(r), 2.2, 1e-12),
   assert_near('tail ratio', fin_tail_ratio(r), 1.5882352941176467, 1e-12),
-  assert_near('stability placeholder', fin_stability(r), 0.0, 1e-12),
+  -- empyrical stability_of_timeseries: linregress(arange(n), cumsum(log1p(r))).rvalue**2
+  assert_near('stability', fin_stability(r ORDER BY seq), 0.5541954553876519, 1e-12),
+  assert_near('stability reversed order', fin_stability(r ORDER BY seq DESC), 0.5121894176470182, 1e-12),
   assert_not_null('information ratio', fin_information_ratio(r, benchmark_r)),
   assert_near('active return', fin_active_return(r, benchmark_r), -0.20160000000000017, 1e-12),
   assert_not_null('alpha', fin_alpha(r, benchmark_r)),
@@ -971,6 +987,36 @@ SELECT
   assert_near('historical expected shortfall', fin_expected_shortfall(r, 0.5), 7.5, 1e-12),
   assert_near('historical cvar return sign', fin_cvar(r, 0.5, 'historical', false), -7.5, 1e-12)
 FROM (VALUES (-10.0), (-5.0), (0.0), (5.0)) AS tail_returns(r);
+
+-- 1 - 0.9 = 0.09999999999999998 must still select the order statistic it
+-- names: with 11 observations the 10% quantile is exactly the second smallest.
+SELECT
+  assert_near('var snaps fp quantile position', fin_var(r, 0.9), 9.0, 1e-12),
+  assert_near('cvar includes var observation', fin_cvar(r, 0.9), 9.5, 1e-12),
+  assert_near('cvar 80 includes var observation', fin_cvar(r, 0.8), 9.0, 1e-12)
+FROM (SELECT -i::DOUBLE AS r FROM range(11) t(i));
+
+-- Treynor uses the same complete pairs as beta in its numerator.
+WITH pairs(r, b) AS (VALUES (0.01, 0.02), (0.03, 0.01), (-0.02, -0.01), (0.5, NULL))
+SELECT assert_near('treynor complete pairs', fin_treynor_ratio(r, b, 0.0, 1), (0.02 / 3) / (17.0 / 14.0), 1e-12)
+FROM pairs;
+
+-- Invalid OHLC bars make range estimators NULL instead of NaN or an error.
+SELECT
+  assert_eq('garman klass invalid bar', fin_garman_klass_vol(o, h, l, c), NULL),
+  assert_eq('rogers satchell invalid bar', fin_rogers_satchell_vol(o, h, l, c), NULL),
+  assert_eq('parkinson invalid bar', fin_parkinson_vol(h, l), NULL),
+  assert_eq('yang zhang invalid bar', fin_yang_zhang_vol(o, h, l, c ORDER BY i), NULL)
+FROM (VALUES (1, 100.0, 101.0, 99.0, 100.5), (2, 100.0, 99.0, 101.0, 100.0), (3, 100.0, 102.0, 99.0, 101.0)) t(i, o, h, l, c);
+
+SELECT
+  assert_eq('empty outlier count', fin_outlier_count(x), 0::BIGINT),
+  assert_eq('empty outlier count threshold', fin_outlier_count(x, 2.0), 0::BIGINT),
+  assert_eq('empty outlier count method', fin_outlier_count(x, 'zscore', 2.0), 0::BIGINT),
+  assert_eq('empty data quality outliers', (fin_data_quality_report(x)).outliers, 0::BIGINT),
+  assert_eq('empty volatility', fin_volatility(x), NULL),
+  assert_eq('empty var', fin_var(x), NULL)
+FROM (SELECT 1.0::DOUBLE AS x WHERE false);
 
 SELECT
   assert_near('delta aggregate', fin_delta(close), 3.0, 1e-12),

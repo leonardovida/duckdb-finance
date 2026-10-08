@@ -80,6 +80,8 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	               {FinAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(4)),
 	                FinAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(5)),
 	                FinAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(6))});
+	FinRegisterSet(loader, "fin_stability",
+	               {FinAggregate<StabilityState, StabilityOperation>("fin_stability", FinDoubles(1))});
 	FinRegisterSet(loader, "fin_yang_zhang_vol",
 	               {FinAggregate<YangZhangState, YangZhangOperation>("fin_yang_zhang_vol", FinDoubles(4)),
 	                FinAggregate<YangZhangState, YangZhangOperation>("fin_yang_zhang_vol", FinDoubles(5))});
