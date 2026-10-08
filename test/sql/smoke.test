@@ -55,6 +55,53 @@ FROM (VALUES (1, 0.0, 1.0), (2, 'NaN'::DOUBLE, 2.0)) AS t(seq, x, threshold)
 ----
 fin_outlier_count: threshold must be constant within a group
 
+# Technical indicators validate their parameters at bind (or per group for
+# column parameters) and name the function in the error.
+statement error
+SELECT fin_sma(1.0, 0)
+----
+fin_sma: period must be an integer between 1 and 100000
+
+statement error
+SELECT fin_rsi(1.0, NULL)
+----
+fin_rsi: period must not be NULL
+
+statement error
+SELECT fin_ppo(1.0, 12, 26, 'wma')
+----
+fin_ppo: unknown ma_type 'wma' (expected 'sma' or 'ema')
+
+statement error
+SELECT fin_bbands(1.0, 5, 2.0, 5)
+----
+fin_bbands: ddof must be smaller than period
+
+statement error
+SELECT fin_t3(1.0, 5, 1.5)
+----
+fin_t3: vfactor must be between 0 and 1
+
+statement error
+SELECT fin_macd(x, f) FROM (VALUES (1.0, 2), (2.0, 3)) AS t(x, f)
+----
+fin_macd: parameters must be constant within a group or window partition
+
+statement error
+SELECT fin_sma(1.0, period := 3)
+----
+fin_sma: named argument 'period := ...' is not supported
+
+query R
+SELECT fin_sma(x, 2 ORDER BY i) FROM (VALUES (1, 1.0), (2, 3.0), (3, 5.0)) AS t(i, x)
+----
+4.0
+
+query RR
+SELECT round((fin_macd(x, 2, 3, 2 ORDER BY i)).macd, 9), round(fin_rsi(x, 2 ORDER BY i), 9) FROM (VALUES (1, 1.0), (2, 2.0), (3, 4.0), (4, 3.0), (5, 5.0)) AS t(i, x)
+----
+0.5	84.615384615
+
 statement error
 SELECT fin_sortino(r, annualization := 12.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
 ----

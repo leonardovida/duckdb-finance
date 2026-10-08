@@ -135,10 +135,32 @@ WITH prices(ts, close, high, low, volume) AS (
     (TIMESTAMP '2026-01-01 09:32:00', 100.5, 101.5, 100.0,  900.0)
 )
 SELECT
-  fin_sma(close) AS sma,
-  fin_rsi(close) AS rsi,
+  fin_sma(close, 3 ORDER BY ts) AS sma,
+  fin_rsi(close, 2 ORDER BY ts) AS rsi,
   fin_vwap(close, volume) AS vwap
 FROM prices;
+```
+
+Technical indicators are order-dependent aggregates: put `ORDER BY` inside the
+call to get the value at the latest row, or use a running window to get the
+TA-Lib series for every row (`NULL` until the indicator's lookback is filled):
+
+```sql
+WITH prices(ts, close) AS (
+  VALUES
+    (TIMESTAMP '2026-01-01 09:30:00', 100.0),
+    (TIMESTAMP '2026-01-01 09:31:00', 101.0),
+    (TIMESTAMP '2026-01-01 09:32:00', 100.5),
+    (TIMESTAMP '2026-01-01 09:33:00', 102.0)
+)
+SELECT
+  ts,
+  close,
+  fin_sma(close, 3) OVER running AS sma,
+  fin_rsi(close, 2) OVER running AS rsi,
+  fin_bbands(close, 3, 2.0) OVER running AS bands
+FROM prices
+WINDOW running AS (ORDER BY ts ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW);
 ```
 
 For tick-derived bars, load ticks into a table and use
