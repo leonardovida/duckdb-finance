@@ -20,17 +20,32 @@ For exact signatures, overloads, and return notes, use the
 Turn prices or returns into common performance metrics:
 
 ```sql
-WITH returns(r) AS (
-  VALUES (0.01), (-0.02), (0.03), (0.015), (-0.005)
+WITH returns(d, r) AS (
+  VALUES (DATE '2026-01-02', 0.01), (DATE '2026-01-05', -0.02), (DATE '2026-01-06', 0.03),
+         (DATE '2026-01-07', 0.015), (DATE '2026-01-08', -0.005)
 )
 SELECT
   fin_total_return(r) AS total_return,
   fin_volatility(r) AS annualized_volatility,
   fin_sharpe(r, 0.0, 252) AS sharpe,
   fin_sortino(r, 0.0, 252) AS sortino,
-  fin_max_drawdown(r) AS max_drawdown
+  fin_max_drawdown(r ORDER BY d) AS max_drawdown,
+  fin_calmar(r, d, 252) AS calmar
 FROM returns;
 ```
+
+Native aggregates such as `fin_sharpe`, `fin_volatility`, `fin_beta`,
+`fin_var`, `fin_cvar` and `fin_max_drawdown` also run as window functions,
+for example a 252-row rolling Sharpe ratio:
+
+```sql
+SELECT d, fin_sharpe(r, 0.0, 252) OVER (ORDER BY d ROWS BETWEEN 251 PRECEDING AND CURRENT ROW) AS rolling_sharpe
+FROM (VALUES (DATE '2026-01-02', 0.01), (DATE '2026-01-05', -0.02), (DATE '2026-01-06', 0.03)) AS t(d, r);
+```
+
+Pass native aggregate arguments by position; `name := value` is only
+supported by SQL macros. Order-dependent aggregates (drawdowns, GARCH,
+Yang-Zhang, IV rank) need `ORDER BY` inside the call or a window `ORDER BY`.
 
 Use `fin_simple_return(price, previous_price)` or
 `fin_log_return(price, previous_price)` when starting from prices.

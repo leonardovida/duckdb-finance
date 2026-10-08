@@ -10,7 +10,7 @@
     {"fin_exp_decay_avg", "(x, ts, halflife) AS avg(x)"},
     {"fin_exp_decay_count", "(ts, halflife) AS count(ts)"},
     {"fin_exp_decay_max", "(x, ts, halflife) AS max(x)"},
-    {"fin_rolling_zscore", "(x) AS fin_zscore_last(x)"},
+    {"fin_rolling_zscore", "(x, ts) AS fin_zscore_last(x, ts)"},
     {"fin_autocorr", "(x, lag := 1) AS corr(x, x)"},
     {"fin_crosscorr", "(x, y, lag := 0) AS corr(x, y)"},
     {"fin_hurst", "(x) AS 0.5"},

@@ -7,10 +7,15 @@ struct EWMAState {
 	double scale;
 	double decay_product;
 	idx_t count;
+	bool invalid;
 };
 
 template <bool RETURN_VOL>
 struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VOL>> {
+	static const char *Name() {
+		return RETURN_VOL ? "fin_ewma_vol" : "fin_ewma_variance";
+	}
+
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
@@ -21,12 +26,15 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 		state.scale = 0.0;
 		state.decay_product = 1.0;
 		state.count = 0;
+		state.invalid = false;
 	}
 
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
 		if (!std::isfinite(value)) {
-			throw InvalidInputException("EWMA returns must be finite");
+			// A non-finite return makes the group's EWMA undefined.
+			state.invalid = true;
+			return;
 		}
 		auto scale = std::abs(value);
 		if (scale >= 1e-100 && scale <= 1.0) {
@@ -64,15 +72,18 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.invalid = target.invalid || source.invalid;
 		if (!source.isset) {
 			return;
 		}
 		if (!target.isset) {
+			auto invalid = target.invalid;
 			target = source;
+			target.invalid = invalid;
 			return;
 		}
 		if (target.lambda != source.lambda || target.annualization != source.annualization) {
-			throw InvalidInputException("EWMA lambda and annualization must be constant within a group");
+			throw InvalidInputException("%s: lambda and annualization must be constant within a group", EWMAOperation<RETURN_VOL>::Name());
 		}
 		auto scale = std::max(source.scale, target.scale);
 		auto left = scale > 0.0 ? target.scale / scale : 0.0;
@@ -102,7 +113,7 @@ struct EWMAOperation : public UnaryDoubleUpdateOperation<EWMAOperation<RETURN_VO
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (!state.isset) {
+		if (state.invalid || !state.isset) {
 			finalize_data.ReturnNull();
 			return;
 		}
@@ -124,10 +135,10 @@ struct EWMAWithLambdaOperation : public EWMAOperation<RETURN_VOL> {
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double lambda) {
 		if (lambda <= 0.0 || lambda >= 1.0 || !std::isfinite(lambda)) {
-			throw InvalidInputException("EWMA lambda must be finite and in (0, 1)");
+			throw InvalidInputException("%s: lambda must be finite and in (0, 1)", EWMAOperation<RETURN_VOL>::Name());
 		}
 		if (state.isset && state.lambda != lambda) {
-			throw InvalidInputException("EWMA lambda must be constant within a group");
+			throw InvalidInputException("%s: lambda must be constant within a group", EWMAOperation<RETURN_VOL>::Name());
 		}
 		state.lambda = lambda;
 		EWMAOperation<RETURN_VOL>::UpdateValue(state, value);
@@ -152,13 +163,13 @@ struct EWMAWithLambdaAnnualizationOperation : public EWMAOperation<RETURN_VOL> {
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double lambda, double annualization) {
 		if (lambda <= 0.0 || lambda >= 1.0 || !std::isfinite(lambda)) {
-			throw InvalidInputException("EWMA lambda must be finite and in (0, 1)");
+			throw InvalidInputException("%s: lambda must be finite and in (0, 1)", EWMAOperation<RETURN_VOL>::Name());
 		}
 		if (annualization <= 0.0 || !std::isfinite(annualization)) {
-			throw InvalidInputException("EWMA annualization must be positive and finite");
+			throw InvalidInputException("%s: annualization must be positive and finite", EWMAOperation<RETURN_VOL>::Name());
 		}
 		if (state.isset && (state.lambda != lambda || state.annualization != annualization)) {
-			throw InvalidInputException("EWMA lambda and annualization must be constant within a group");
+			throw InvalidInputException("%s: lambda and annualization must be constant within a group", EWMAOperation<RETURN_VOL>::Name());
 		}
 		state.lambda = lambda;
 		state.annualization = annualization;

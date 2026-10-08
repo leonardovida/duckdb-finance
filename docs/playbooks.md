@@ -181,7 +181,7 @@ SELECT
   fin_total_return(r) AS total_return,
   fin_volatility(r) AS volatility,
   fin_sharpe(r) AS sharpe,
-  fin_max_drawdown(r) AS max_drawdown
+  fin_max_drawdown(r ORDER BY d) AS max_drawdown
 FROM research_returns;
 
 SELECT *

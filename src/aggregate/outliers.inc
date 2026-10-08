@@ -1,5 +1,6 @@
 struct OutlierCountState {
 	vector<double> *values;
+	FinWindowAux *window;
 	double threshold;
 	double scale;
 };
@@ -8,6 +9,7 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.values = new vector<double>();
+		state.window = nullptr;
 		state.threshold = 3.0;
 		state.scale = 0.0;
 	}
@@ -16,14 +18,14 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 	static void CheckThresholdConsistency(const STATE &state, double threshold) {
 		// Only a retained finite observation fixes the group's threshold.
 		if (state.values && !state.values->empty() && state.threshold != threshold) {
-			throw InvalidInputException("Outlier threshold must be constant within a group");
+			throw InvalidInputException("fin_outlier_count: threshold must be constant within a group");
 		}
 	}
 
 	template <class STATE>
 	static void ValidateThreshold(const STATE &state, double threshold) {
 		if (threshold <= 0.0 || !std::isfinite(threshold)) {
-			throw InvalidInputException("Outlier threshold must be positive and finite");
+			throw InvalidInputException("fin_outlier_count: threshold must be positive and finite");
 		}
 		CheckThresholdConsistency(state, threshold);
 	}
@@ -88,6 +90,8 @@ struct OutlierCountOperation : public UnaryDoubleUpdateOperation<OutlierCountOpe
 	static void Destroy(STATE &state, AggregateInputData &) {
 		delete state.values;
 		state.values = nullptr;
+		delete state.window;
+		state.window = nullptr;
 	}
 
 	static bool IgnoreNull() {
@@ -110,13 +114,58 @@ struct OutlierCountWithThresholdOperation : public OutlierCountOperation {
 	}
 };
 
-struct OutlierCountWithMethodOperation : public OutlierCountOperation {
-	template <class STATE>
-	static void UpdateValue(STATE &state, double value, const string &method, double threshold) {
-		if (StringUtil::Lower(method) != "zscore") {
-			throw InvalidInputException("fin_outlier_count currently supports method='zscore'");
+// Row-level adapter used by the window evaluator and the (x, method, threshold)
+// overload. The method is parsed once per distinct string.
+struct OutlierCountRowOperation : public OutlierCountOperation {
+	static constexpr bool VALUE_REPLAY = false;
+	static constexpr idx_t REQUIRED_ARGS = 1;
+	static bool NullableArgument(idx_t) {
+		return false;
+	}
+	static constexpr bool ORDER_DEPENDENT = false;
+	static constexpr bool WINDOW_INCREMENTAL = true;
+
+	static double ParseText(idx_t, string_t text) {
+		if (!FinTextEquals(text, "zscore")) {
+			throw InvalidInputException("fin_outlier_count: unknown method '%s'; only 'zscore' is supported",
+			                            text.GetString());
 		}
-		OutlierCountWithThresholdOperation::UpdateValue(state, value, threshold);
+		return 1.0;
+	}
+
+	static void ValidateParameter(idx_t column, double value, bool valid) {
+		if (!valid) {
+			throw InvalidInputException("fin_outlier_count: %s must not be NULL", column == 1 ? "method" : "threshold");
+		}
+		if (column == 2 && (value <= 0.0 || !std::isfinite(value))) {
+			throw InvalidInputException("fin_outlier_count: threshold must be positive and finite");
+		}
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
+		state.values->clear();
+		state.threshold = 3.0;
+		state.scale = 0.0;
+	}
+
+	template <class STATE>
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t input_count) {
+		if (input_count == 2) {
+			if (!row.valid[1]) {
+				return;
+			}
+			OutlierCountWithThresholdOperation::UpdateValue(state, row.v[0], row.v[1]);
+			return;
+		}
+		if (input_count == 3) {
+			if (!row.valid[1] || !row.valid[2]) {
+				return;
+			}
+			OutlierCountWithThresholdOperation::UpdateValue(state, row.v[0], row.v[2]);
+			return;
+		}
+		OutlierCountOperation::UpdateValue(state, row.v[0]);
 	}
 };
 

@@ -217,16 +217,10 @@ def main():
         ("SELECT fin_ema(1,'Infinity'::DOUBLE)", "EMA period"),
         ("SELECT fin_ema('NaN'::DOUBLE)", "EMA observations"),
         ("SELECT fin_ema(x,p) FROM (VALUES (1,2),(2,3))t(x,p)", "EMA period must be constant"),
-        ("SELECT fin_iv_rank(-.1)", "IV observations"),
-        ("SELECT fin_iv_percentile('Infinity'::DOUBLE)", "IV observations"),
-        ("SELECT fin_sortino('NaN'::DOUBLE)", "Sortino excess returns"),
-        ("SELECT fin_sortino(1,'Infinity'::DOUBLE)", "Sortino returns and MAR"),
-        ("SELECT fin_ewma_vol('NaN'::DOUBLE)", "EWMA returns"),
-        ("SELECT fin_ewma_vol(1,1)", "EWMA lambda"),
-        ("SELECT fin_ewma_variance(1,.94,0)", "EWMA annualization"),
-        ("SELECT fin_weighted_quantile(1,-1,.5)", "weights must be non-negative"),
+        ("SELECT fin_ewma_vol(1,1)", "fin_ewma_vol: lambda"),
+        ("SELECT fin_ewma_variance(1,.94,0)", "fin_ewma_variance: annualization"),
         ("SELECT fin_weighted_quantile(1,1,2)", "in [0, 1]"),
-        ("SELECT fin_weighted_quantile(1,1,.5,'typo')", "Unknown weighted quantile"),
+        ("SELECT fin_weighted_quantile(1,1,.5,'typo')", "fin_weighted_quantile: unknown method"),
         ("SELECT fin_weighted_quantile(1,1,q) FROM (VALUES (.2),(.3))t(q)", "must be constant"),
         ("SELECT fin_weighted_quantile(1,1,.5,m) FROM (VALUES ('linear'),('lower'))t(m)", "must be constant"),
         ("SELECT fin_quantile_spread(1,2,1)", "buckets must be greater"),
@@ -237,7 +231,25 @@ def main():
         process = run(args.duckdb, args.extension, sql + ";\n")
         if process.returncode == 0 or message not in process.stderr:
             raise AssertionError(f"Expected controlled rejection ({message}): {process.stderr}")
-    print(f"Aggregate numerical verification passed: {checks} reference comparisons, {len(invalid)} invalid-input checks.")
+    # Non-finite or out-of-domain observations are data, not configuration: the
+    # group returns NULL instead of aborting the query.
+    null_groups = [
+        "SELECT fin_iv_rank(-.1) AS v",
+        "SELECT fin_iv_percentile('Infinity'::DOUBLE) AS v",
+        "SELECT fin_sortino('NaN'::DOUBLE) AS v",
+        "SELECT fin_sortino(1,'Infinity'::DOUBLE) AS v",
+        "SELECT fin_ewma_vol('NaN'::DOUBLE) AS v",
+        "SELECT fin_weighted_quantile(1,-1,.5) AS v",
+    ]
+    for sql in null_groups:
+        process = run(args.duckdb, args.extension, sql + ";\n")
+        if process.returncode:
+            raise AssertionError(f"Expected NULL group for {sql}: {process.stderr}")
+        _, results = decode_output(process.stdout)
+        if results[0][0]["v"] is not None:
+            raise AssertionError(f"Expected NULL group for {sql}: {results[0][0]['v']}")
+    print(f"Aggregate numerical verification passed: {checks} reference comparisons, {len(invalid)} invalid-input checks, "
+          f"{len(null_groups)} NULL-group checks.")
 
 
 if __name__ == "__main__":

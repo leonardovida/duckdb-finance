@@ -117,7 +117,7 @@ FROM (VALUES (NULL::DOUBLE), (NULL::DOUBLE)) t(r);
 SELECT
   assert_near('total loss compounds', fin_total_return(r), -1.0, 1e-12),
   assert_near('total loss nav', fin_nav(r, 100), 0.0, 1e-12),
-  assert_near('total loss log nav', fin_log_nav(r, 100), 0.0, 1e-12),
+  assert_eq('total loss log nav is undefined', fin_log_nav(r, 100), NULL),
   assert_near('total loss cagr', fin_cagr(r), -1.0, 1e-12)
 FROM (VALUES (0.1), (-1.0), (0.2), (NULL)) t(r);
 
@@ -364,6 +364,98 @@ SELECT
   assert_true('drawdown merge duration window', bool_and(duration=n))
 FROM results;
 
+-- Returns/risk window frames: every framed value must equal the grouped
+-- aggregate over the same rows (running, sliding and EXCLUDE frames).
+CREATE OR REPLACE TEMP TABLE rr_window_input AS
+  SELECT i, i % 3 AS g, sin(i * 0.7) * 0.02 + 0.0005 AS r, cos(i * 0.3) * 0.01 AS b FROM range(1, 1200) t(i);
+WITH framed AS (
+  SELECT i, g,
+    fin_max_drawdown(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run_mdd,
+    fin_max_drawdown(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 20 PRECEDING AND CURRENT ROW) AS slide_mdd,
+    fin_ulcer_index(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 20 PRECEDING AND CURRENT ROW) AS slide_ulcer,
+    fin_cvar(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 50 PRECEDING AND CURRENT ROW) AS slide_cvar,
+    fin_var(r, 0.9, 'cornish_fisher') OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_var,
+    fin_trimmed_mean(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND 5 FOLLOWING EXCLUDE CURRENT ROW) AS excl_trim,
+    fin_iv_percentile(abs(r)) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_ivp,
+    fin_drawdown_at_risk(r, 0.9) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_dar,
+    fin_weighted_quantile(r, 1 + abs(b), 0.3) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_wq,
+    fin_outlier_count(r, 'zscore', 1.5) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_oc,
+    fin_sharpe(r, 0.02, 252) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_sharpe,
+    fin_beta(r, b) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_beta,
+    fin_total_return(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_tr
+  FROM rr_window_input
+), grouped AS (
+  SELECT a.i, a.g,
+    (SELECT fin_max_drawdown(x.r ORDER BY x.i) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_mdd,
+    (SELECT fin_max_drawdown(x.r ORDER BY x.i) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 63) AS slide_mdd,
+    (SELECT fin_ulcer_index(x.r ORDER BY x.i) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 63) AS slide_ulcer,
+    (SELECT fin_cvar(x.r) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 153) AS slide_cvar,
+    (SELECT fin_var(x.r, 0.9, 'cornish_fisher') FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_var,
+    (SELECT fin_trimmed_mean(x.r) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i + 15 AND x.i > a.i - 93 AND x.i <> a.i) AS excl_trim,
+    (SELECT fin_iv_percentile(abs(x.r) ORDER BY x.i) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_ivp,
+    (SELECT fin_drawdown_at_risk(x.r, 0.9 ORDER BY x.i) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_dar,
+    (SELECT fin_weighted_quantile(x.r, 1 + abs(x.b), 0.3) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_wq,
+    (SELECT fin_outlier_count(x.r, 'zscore', 1.5) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_oc,
+    (SELECT fin_sharpe(x.r, 0.02, 252) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_sharpe,
+    (SELECT fin_beta(x.r, x.b) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_beta,
+    (SELECT fin_total_return(x.r) FROM rr_window_input x WHERE x.g = a.g AND x.i <= a.i AND x.i > a.i - 93) AS slide_tr
+  FROM rr_window_input a WHERE a.i % 29 = 0
+)
+SELECT
+  assert_true('returns risk window frames match grouped aggregates', bool_and(
+    abs(f.run_mdd - e.run_mdd) < 1e-12 AND abs(f.slide_mdd - e.slide_mdd) < 1e-12 AND
+    abs(f.slide_ulcer - e.slide_ulcer) < 1e-12 AND abs(f.slide_cvar - e.slide_cvar) < 1e-12 AND
+    abs(f.slide_var - e.slide_var) < 1e-12 AND abs(f.excl_trim - e.excl_trim) < 1e-12 AND
+    abs(f.slide_ivp - e.slide_ivp) < 1e-12 AND abs(f.slide_dar - e.slide_dar) < 1e-12 AND
+    abs(f.slide_wq - e.slide_wq) < 1e-12 AND f.slide_oc = e.slide_oc AND
+    abs(f.slide_sharpe - e.slide_sharpe) < 1e-9 AND abs(f.slide_beta - e.slide_beta) < 1e-9 AND
+    abs(f.slide_tr - e.slide_tr) < 1e-12)),
+  assert_eq('returns risk window frame rows', count(*), 41::BIGINT)
+FROM framed f JOIN grouped e USING (i, g);
+
+-- Order-dependent returns/risk aggregates must not depend on thread count or
+-- physical row order.
+CREATE OR REPLACE TEMP TABLE rr_order_input AS
+  SELECT i % 97 AS g, i // 97 AS ts, sin(i * 1.3) * 0.03 AS r,
+         100 + sin(i * 0.11) * 5 AS c, 0.2 + abs(sin(i * 0.5)) * 0.1 AS iv
+  FROM range(40000) t(i) ORDER BY hash(i);
+CREATE OR REPLACE MACRO rr_order_metrics() AS TABLE
+  SELECT g, fin_drawdown(r ORDER BY ts) AS a, fin_max_drawdown(r ORDER BY ts) AS b, fin_avg_drawdown(r ORDER BY ts) AS c1,
+    fin_drawdown_duration(r ORDER BY ts) AS d, fin_ulcer_index(r ORDER BY ts) AS e,
+    fin_drawdown_at_risk(r, 0.9 ORDER BY ts) AS f, fin_conditional_drawdown_at_risk(r, 0.9 ORDER BY ts) AS h,
+    fin_garch11_forecast(r, 0.000001, 0.05, 0.9 ORDER BY ts) AS k,
+    fin_yang_zhang_vol(c, c * 1.01, c * 0.99, c * (1 + r / 10) ORDER BY ts) AS l,
+    fin_calmar(r, ts) AS m, fin_recovery_factor(r, ts) AS n, fin_zscore_last(r, ts) AS o,
+    fin_iv_rank(iv ORDER BY ts) AS p, fin_iv_percentile(iv ORDER BY ts) AS q,
+    fin_ewma_vol(r ORDER BY ts) AS s, fin_bipower_variation(r ORDER BY ts) AS u
+  FROM rr_order_input GROUP BY g;
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE rr_order_one AS SELECT * FROM rr_order_metrics();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE rr_order_eight AS SELECT * FROM rr_order_metrics();
+RESET threads;
+SELECT assert_eq('returns risk order-dependent results are thread invariant', count(*), 0::BIGINT)
+FROM (SELECT * FROM rr_order_one EXCEPT SELECT * FROM rr_order_eight);
+SELECT assert_eq('returns risk order-dependent results are populated', count(*), 97::BIGINT)
+FROM rr_order_one WHERE a IS NOT NULL AND k IS NOT NULL AND l IS NOT NULL AND m IS NOT NULL AND q IS NOT NULL;
+
+-- Non-finite observations make only their own group NULL (no query abort).
+WITH observations(g, i, r, b) AS (
+  VALUES (1, 1, 0.01, 0.02), (1, 2, 'NaN'::DOUBLE, 0.01), (1, 3, -0.02, 0.0),
+         (2, 1, 0.01, 0.01), (2, 2, 0.02, -0.01), (2, 3, -0.01, 0.02)
+), metrics AS (
+  SELECT g, [fin_volatility(r), fin_sharpe(r), fin_sortino(r), fin_total_return(r), fin_beta(r, b), fin_var(r),
+    fin_cvar(r), fin_max_drawdown(r ORDER BY i), fin_downside_deviation(r), fin_hit_ratio(r), fin_ewma_vol(r ORDER BY i),
+    fin_trimmed_mean(r), fin_garch11_forecast(r, 0.000001, 0.05, 0.9 ORDER BY i), fin_calmar(r, i), fin_cagr(r),
+    fin_omega_ratio(r), fin_drawdown_at_risk(r ORDER BY i), fin_weighted_quantile(r, 1.0, 0.5), fin_win_rate(r),
+    fin_upside_deviation(r), fin_semivariance(r), fin_gain_to_pain(r), fin_tail_ratio(r)] AS m
+  FROM observations GROUP BY g
+)
+SELECT
+  assert_true('non-finite group is NULL', bool_and(list_bool_and(list_transform(m, lambda x: x IS NULL))) FILTER (WHERE g = 1)),
+  assert_true('finite group unaffected', bool_and(list_bool_and(list_transform(m, lambda x: x IS NOT NULL))) FILTER (WHERE g = 2))
+FROM metrics;
+
 WITH targets AS (SELECT ((i%260)-1)::DOUBLE*.05 AS t FROM range(5000) z(i))
 SELECT assert_true('large constant curve binary oracle', bool_and(coalesce(abs(
   fin_curve_zero_rate(list_transform(range(1,129),lambda x: x/10.0),
@@ -483,7 +575,21 @@ SELECT
   assert_near('to log return', fin_to_log_return(0.02), 0.01980262729617973, 1e-12),
   assert_near('from log return', fin_from_log_return(ln(1.02)), 0.02, 1e-12),
   assert_near('price from simple return', fin_price_from_return(100.0, 0.02, 'simple'), 102.0, 1e-12),
-  assert_near('price from log return', fin_price_from_return(100.0, ln(1.02), 'log'), 102.0, 1e-12);
+  assert_near('price from log return', fin_price_from_return(100.0, ln(1.02), 'log'), 102.0, 1e-12),
+  -- log1p/expm1 precision: ln(1 + 1e-17) and exp(1e-17) - 1 both round to 0 in DOUBLE.
+  assert_eq('to log return tiny', fin_to_log_return(1e-17), 1e-17),
+  assert_eq('from log return tiny', fin_from_log_return(1e-17), 1e-17),
+  assert_near('to log return small relative', fin_to_log_return(1e-10) / 9.9999999995e-11, 1.0, 1e-15);
+
+-- Long gain series compound in log space instead of overflowing DOUBLE wealth:
+-- 2000 returns of +100% and one -50% give log wealth 1999 ln 2 (wealth > 1e600).
+SELECT
+  assert_near('cagr survives wealth overflow', fin_cagr(r, 252) / (pow(2.0, 252.0 * 1999 / 2001) - 1), 1.0, 1e-12),
+  assert_near('geometric return survives wealth overflow', fin_geometric_return(r), pow(2.0, 1999.0 / 2001) - 1, 1e-12),
+  assert_near('log nav survives wealth overflow', fin_log_nav(r, 1.0), 1999 * ln(2), 1e-9),
+  assert_near('calmar survives wealth overflow', fin_calmar(r, i, 252) / ((pow(2.0, 252.0 * 1999 / 2001) - 1) / 0.5), 1.0, 1e-12),
+  assert_eq('total return overflow is NULL', fin_total_return(r), NULL)
+FROM (SELECT i, CASE WHEN i = 1000 THEN -0.5 ELSE 1.0 END AS r FROM range(2001) t(i));
 
 -- Aggregate return and risk metrics over the gold return series.
 SELECT
@@ -493,13 +599,22 @@ SELECT
   assert_near('arithmetic return', fin_arithmetic_return(r), 0.006, 1e-12),
   assert_near('geometric return', fin_geometric_return(r), 0.005853564836320935, 1e-12),
   assert_near('volatility', fin_volatility(r), 0.3043189116699782, 1e-12),
-  assert_near('calmar', fin_calmar(r), 167.63532182610227, 1e-10),
+  assert_near('calmar', fin_calmar(r, seq), 167.63532182610447, 1e-10),
   assert_near('sortino', fin_sortino(r), 10.330992777303926, 1e-12),
-  assert_near('sortino optional args', fin_sortino(r, 0.01, 365.0), 12.35665863411524, 1e-12),
-  assert_near('max drawdown', fin_max_drawdown(r), -0.02, 1e-12),
-  assert_near('avg drawdown', fin_avg_drawdown(r), -0.005, 1e-12),
-  assert_eq('drawdown duration', fin_drawdown_duration(r), 1::BIGINT),
-  assert_near('ulcer index', fin_ulcer_index(r), 0.009219544457292884, 1e-12),
+  -- numpy: e = r - ((1.01)**(1/365) - 1); mean(e) / sqrt(mean(min(e, 0)**2)) * sqrt(365)
+  assert_near('sortino optional args', fin_sortino(r, 0.01, 365.0), 12.357037941940932, 1e-10),
+  -- numpy: r.mean() / r.std(ddof=1) * sqrt(252), and with a 5% annual rate de-annualized geometrically
+  assert_near('sharpe', fin_sharpe(r), 4.96847202726495, 1e-10),
+  assert_near('sharpe annual risk free', fin_sharpe(r, 0.05, 252), 4.808130734700137, 1e-10),
+  assert_near('downside deviation annual mar', fin_downside_deviation(r, 0.05, 252), 0.14802610630566393, 1e-12),
+  assert_near('upside deviation annual threshold', fin_upside_deviation(r, 0.05, 252), 0.24631723727544436, 1e-12),
+  assert_near('semivariance annual threshold', fin_semivariance(r, 0.05, 252), 8.695130217466553e-05, 1e-15),
+  assert_near('omega annual required return', fin_omega_ratio(r, 0.05, 252), 2.143559655857057, 1e-10),
+  assert_near('hit ratio annual threshold', fin_hit_ratio(r, 2.0, 252), 0.6, 1e-12),
+  assert_near('max drawdown', fin_max_drawdown(r ORDER BY seq), -0.02, 1e-12),
+  assert_near('avg drawdown', fin_avg_drawdown(r ORDER BY seq), -0.005, 1e-12),
+  assert_eq('drawdown duration', fin_drawdown_duration(r ORDER BY seq), 1::BIGINT),
+  assert_near('ulcer index', fin_ulcer_index(r ORDER BY seq), 0.009219544457292884, 1e-12),
   assert_near('beta', fin_beta(r, benchmark_r), 1.6964285714285716, 1e-12),
   assert_near('tracking error', fin_tracking_error(r, benchmark_r), 0.13535287215275485, 1e-12),
   assert_near('quantile spread', fin_quantile_spread(factor, forward_return, 2), 0.009, 1e-12)
@@ -629,22 +744,26 @@ FROM (
 SELECT
   assert_near('cum return', fin_cum_return(r), 0.02961247795, 1e-12),
   assert_near('nav', fin_nav(r, 100.0), 102.961247795, 1e-9),
-  assert_near('log nav', fin_log_nav(r, 100.0), 102.961247795, 1e-9),
-  assert_near('recovery factor', fin_recovery_factor(r), 1.4806238975, 1e-10),
-  assert_near('gain to pain', fin_gain_to_pain(r), 2.2, 1e-12),
-  assert_near('aggregate return', fin_aggregate_return(r, d), 0.02961247795, 1e-12),
+  assert_near('log nav', fin_log_nav(r, 100.0), 4.634352682435491, 1e-12),
+  assert_near('recovery factor', fin_recovery_factor(r, seq), 1.4806238974999983, 1e-10),
+  -- Bacon: sum(r) / |sum(r | r < 0)| = 0.03 / 0.025.
+  assert_near('gain to pain', fin_gain_to_pain(r), 1.2, 1e-12),
+  assert_near('aggregate return', fin_aggregate_return(r), 0.02961247795, 1e-12),
   assert_near('downside deviation', fin_downside_deviation(r), 0.14635573101180563, 1e-12),
   assert_near('upside deviation', fin_upside_deviation(r), 0.24847535089018388, 1e-12),
   assert_near('semivariance', fin_semivariance(r), 0.000085, 1e-12),
-  assert_not_null('sharpe', fin_sharpe(r)),
   assert_near('omega ratio', fin_omega_ratio(r), 2.2, 1e-12),
-  assert_not_null('tail ratio', fin_tail_ratio(r)),
-  assert_near('stability placeholder', fin_stability(r), 0.0, 1e-12),
+  assert_near('tail ratio', fin_tail_ratio(r), 1.5882352941176467, 1e-12),
+  -- empyrical stability_of_timeseries: linregress(arange(n), cumsum(log1p(r))).rvalue**2
+  assert_near('stability', fin_stability(r ORDER BY seq), 0.5541954553876519, 1e-12),
+  assert_near('stability reversed order', fin_stability(r ORDER BY seq DESC), 0.5121894176470182, 1e-12),
   assert_not_null('information ratio', fin_information_ratio(r, benchmark_r)),
   assert_near('active return', fin_active_return(r, benchmark_r), -0.20160000000000017, 1e-12),
   assert_not_null('alpha', fin_alpha(r, benchmark_r)),
+  assert_near('alpha annual risk free', fin_alpha(r, benchmark_r, 0.05, 252), -1.3610178461015328, 1e-10),
   assert_near('alpha beta beta', (fin_alpha_beta(r, benchmark_r)).beta, 1.6964285714285716, 1e-12),
-  assert_not_null('treynor', fin_treynor_ratio(r, benchmark_r)),
+  assert_near('treynor', fin_treynor_ratio(r, benchmark_r), 0.8912842105263157, 1e-12),
+  assert_near('treynor annual risk free', fin_treynor_ratio(r, benchmark_r, 0.05, 252), 0.862520908333173, 1e-10),
   assert_not_null('jensen', fin_jensen_alpha(r, benchmark_r)),
   assert_not_null('up capture', fin_up_capture(r, benchmark_r)),
   assert_not_null('down capture', fin_down_capture(r, benchmark_r)),
@@ -654,14 +773,26 @@ SELECT
   assert_near('payoff ratio', fin_payoff_ratio(r), 1.4666666666666666, 1e-12),
   assert_near('profit factor', fin_profit_factor(r), 2.2, 1e-12),
   assert_near('expectancy', fin_expectancy(r), 0.006, 1e-12),
-  assert_not_null('var', fin_var(r)),
-  assert_not_null('cvar alias', fin_cvar(r)),
+  -- numpy/scipy references: quantile(r, .05) linear; normal and Cornish-Fisher with sample sd
+  -- and population skewness/excess kurtosis.
+  assert_near('var', fin_var(r), 0.017, 1e-12),
+  assert_near('var parametric', fin_var(r, 0.95, 'parametric'), 0.025532320234642823, 1e-10),
+  assert_near('var cornish fisher', fin_var(r, 0.95, 'cornish_fisher'), 0.02688471727971002, 1e-10),
+  assert_near('var signed return', fin_var(r, 0.95, 'historical', false), -0.017, 1e-12),
+  assert_near('cvar alias', fin_cvar(r), 0.02, 1e-12),
+  assert_near('cvar parametric', fin_cvar(r, 0.95, 'parametric'), 0.033542801701432, 1e-10),
   assert_not_null('expected shortfall alias', fin_expected_shortfall(r)),
   assert_near('drawdown direct', fin_drawdown(r), -0.005, 1e-12),
-  assert_not_null('drawdown at risk', fin_drawdown_at_risk(r)),
-  assert_not_null('conditional drawdown at risk', fin_conditional_drawdown_at_risk(r)),
-  assert_not_null('parametric var', fin_parametric_var(0.0, 0.2, 0.95)),
-  assert_not_null('parametric cvar', fin_parametric_cvar(0.0, 0.2, 0.95))
+  -- Drawdown magnitudes 1 - NAV/peak = [0, .02, 0, 0, .005]; numpy quantile(D, c).
+  assert_near('drawdown at risk', fin_drawdown_at_risk(r ORDER BY seq), 0.017, 1e-12),
+  assert_near('drawdown at risk 80', fin_drawdown_at_risk(r, 0.8 ORDER BY seq), 0.008, 1e-12),
+  assert_near('conditional drawdown at risk', fin_conditional_drawdown_at_risk(r ORDER BY seq), 0.02, 1e-12),
+  assert_near('conditional drawdown at risk 80', fin_conditional_drawdown_at_risk(r, 0.8 ORDER BY seq), 0.02, 1e-12),
+  assert_near('parametric var', fin_parametric_var(0.0, 0.2, 0.95), 0.3289707253902946, 1e-10),
+  assert_near('parametric cvar', fin_parametric_cvar(0.0, 0.2, 0.95), 0.4125425615014851, 1e-10),
+  -- scipy: -(0.2 * sqrt(3/5) * t.ppf(.05, 5)) and the matching standardized-t expected shortfall.
+  assert_near('parametric var student t', fin_parametric_var(0.0, 0.2, 0.95, 1.0, 't', 5), 0.3121699516688459, 1e-8),
+  assert_near('parametric cvar student t', fin_parametric_cvar(0.0, 0.2, 0.95, 1.0, 't', 5), 0.4477368510923045, 1e-8)
 FROM gold_returns;
 
 WITH outlier_inputs(seq, x) AS (
@@ -683,7 +814,10 @@ SELECT
   assert_near('realized beta', fin_realized_beta(r, benchmark_r), 1.6964285714285716, 1e-12),
   assert_not_null('realized corr', fin_realized_corr(r, benchmark_r)),
   assert_not_null('realized cov', fin_realized_cov(r, benchmark_r)),
-  assert_not_null('garch forecast', fin_garch11_forecast(r, 0.000001, 0.05, 0.90))
+  -- Python recursion s2 = omega + alpha r^2 + beta s2 seeded with var(r, ddof=1).
+  assert_near('garch forecast', fin_garch11_forecast(r, 0.000001, 0.05, 0.90 ORDER BY seq), 0.07226999009999999, 1e-14),
+  assert_near('garch forecast explicit seed', fin_garch11_forecast(r, 0.000001, 0.05, 0.90, 0.0004, 1 ORDER BY seq), 0.0003059766, 1e-15),
+  assert_near('garch forecast null seed', fin_garch11_forecast(r, 0.000001, 0.05, 0.90, NULL, 252 ORDER BY seq), 0.07226999009999999, 1e-14)
 FROM gold_returns;
 
 WITH alternating_zero_returns(seq, r) AS (
@@ -703,9 +837,11 @@ FROM (VALUES (0.01)) AS single_return(r);
 
 SELECT
   assert_not_null('parkinson vol', fin_parkinson_vol(high, low, 252.0)),
-  assert_not_null('garman klass vol', fin_garman_klass_vol(open, high, low, close, 252.0)),
-  assert_not_null('rogers satchell vol', fin_rogers_satchell_vol(open, high, low, close, 252.0)),
-  assert_not_null('yang zhang vol', fin_yang_zhang_vol(open, high, low, close, 252.0))
+  assert_near('garman klass vol', fin_garman_klass_vol(open, high, low, close, 252.0), 0.37521992640640556, 1e-12),
+  assert_near('rogers satchell vol', fin_rogers_satchell_vol(open, high, low, close, 252.0), 0.3466768621656672, 1e-12),
+  -- Yang and Zhang (2000) over periods 2..N (numpy reference, sample variances).
+  assert_near('yang zhang vol', fin_yang_zhang_vol(open, high, low, close, 252.0 ORDER BY seq), 0.3951310192495169, 1e-12),
+  assert_near('yang zhang vol default annualization', fin_yang_zhang_vol(open, high, low, close ORDER BY seq), 0.3951310192495169, 1e-12)
 FROM gold_prices;
 
 SELECT
@@ -722,7 +858,7 @@ SELECT
   assert_not_null('winsorized mean alias', fin_winsorized_mean(r)),
   assert_not_null('trimmed mean alias', fin_trimmed_mean(r)),
   assert_not_null('mad', fin_mad(r)),
-  assert_not_null('zscore last', fin_zscore_last(r)),
+  assert_near('zscore last', fin_zscore_last(r, seq), -0.5738045840530311, 1e-12),
   assert_eq('ks placeholder', fin_ks_test(r, benchmark_r), NULL),
   assert_eq('mann whitney placeholder', fin_mann_whitney_u(r, benchmark_r), NULL),
   assert_eq('anova placeholder', fin_anova_oneway(r, asset), NULL),
@@ -854,6 +990,36 @@ SELECT
   assert_near('historical cvar return sign', fin_cvar(r, 0.5, 'historical', false), -7.5, 1e-12)
 FROM (VALUES (-10.0), (-5.0), (0.0), (5.0)) AS tail_returns(r);
 
+-- 1 - 0.9 = 0.09999999999999998 must still select the order statistic it
+-- names: with 11 observations the 10% quantile is exactly the second smallest.
+SELECT
+  assert_near('var snaps fp quantile position', fin_var(r, 0.9), 9.0, 1e-12),
+  assert_near('cvar includes var observation', fin_cvar(r, 0.9), 9.5, 1e-12),
+  assert_near('cvar 80 includes var observation', fin_cvar(r, 0.8), 9.0, 1e-12)
+FROM (SELECT -i::DOUBLE AS r FROM range(11) t(i));
+
+-- Treynor uses the same complete pairs as beta in its numerator.
+WITH pairs(r, b) AS (VALUES (0.01, 0.02), (0.03, 0.01), (-0.02, -0.01), (0.5, NULL))
+SELECT assert_near('treynor complete pairs', fin_treynor_ratio(r, b, 0.0, 1), (0.02 / 3) / (17.0 / 14.0), 1e-12)
+FROM pairs;
+
+-- Invalid OHLC bars make range estimators NULL instead of NaN or an error.
+SELECT
+  assert_eq('garman klass invalid bar', fin_garman_klass_vol(o, h, l, c), NULL),
+  assert_eq('rogers satchell invalid bar', fin_rogers_satchell_vol(o, h, l, c), NULL),
+  assert_eq('parkinson invalid bar', fin_parkinson_vol(h, l), NULL),
+  assert_eq('yang zhang invalid bar', fin_yang_zhang_vol(o, h, l, c ORDER BY i), NULL)
+FROM (VALUES (1, 100.0, 101.0, 99.0, 100.5), (2, 100.0, 99.0, 101.0, 100.0), (3, 100.0, 102.0, 99.0, 101.0)) t(i, o, h, l, c);
+
+SELECT
+  assert_eq('empty outlier count', fin_outlier_count(x), 0::BIGINT),
+  assert_eq('empty outlier count threshold', fin_outlier_count(x, 2.0), 0::BIGINT),
+  assert_eq('empty outlier count method', fin_outlier_count(x, 'zscore', 2.0), 0::BIGINT),
+  assert_eq('empty data quality outliers', (fin_data_quality_report(x)).outliers, 0::BIGINT),
+  assert_eq('empty volatility', fin_volatility(x), NULL),
+  assert_eq('empty var', fin_var(x), NULL)
+FROM (SELECT 1.0::DOUBLE AS x WHERE false);
+
 SELECT
   assert_near('delta aggregate', fin_delta(close), 3.0, 1e-12),
   assert_near('pct change aggregate', fin_pct_change(close), 0.03, 1e-12),
@@ -868,7 +1034,7 @@ SELECT
   assert_near('exp decay avg alias', fin_exp_decay_avg(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
   assert_eq('exp decay count alias', fin_exp_decay_count(ts, INTERVAL '1 minute'), 5::BIGINT),
   assert_eq('exp decay max alias', fin_exp_decay_max(close, ts, INTERVAL '1 minute'), 104.0),
-  assert_not_null('rolling zscore', fin_rolling_zscore(close)),
+  assert_not_null('rolling zscore', fin_rolling_zscore(close, seq)),
   assert_not_null('autocorr alias', fin_autocorr(close)),
   assert_not_null('crosscorr alias', fin_crosscorr(close, volume)),
   assert_near('hurst placeholder', fin_hurst(close), 0.5, 1e-12),

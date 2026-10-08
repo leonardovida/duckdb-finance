@@ -1,68 +1,100 @@
 enum class WeightedQuantileMethod : uint8_t { LINEAR, LOWER, HIGHER, NEAREST, MIDPOINT, INVERTED_CDF };
 
-static WeightedQuantileMethod ParseWeightedQuantileMethod(const string &method) {
-	// The documented lowercase spellings are the hot path; retain case-insensitive
-	// compatibility without allocating a lowercase string for every observation.
-	if (method == "linear") {
+static WeightedQuantileMethod ParseWeightedQuantileMethod(string_t method) {
+	if (FinTextEquals(method, "linear")) {
 		return WeightedQuantileMethod::LINEAR;
 	}
-	if (method == "lower") {
+	if (FinTextEquals(method, "lower")) {
 		return WeightedQuantileMethod::LOWER;
 	}
-	if (method == "higher") {
+	if (FinTextEquals(method, "higher")) {
 		return WeightedQuantileMethod::HIGHER;
 	}
-	if (method == "nearest") {
+	if (FinTextEquals(method, "nearest")) {
 		return WeightedQuantileMethod::NEAREST;
 	}
-	if (method == "midpoint") {
+	if (FinTextEquals(method, "midpoint")) {
 		return WeightedQuantileMethod::MIDPOINT;
 	}
-	if (method == "inverted_cdf") {
+	if (FinTextEquals(method, "inverted_cdf")) {
 		return WeightedQuantileMethod::INVERTED_CDF;
 	}
-	auto normalized = StringUtil::Lower(method);
-	if (normalized != method) {
-		return ParseWeightedQuantileMethod(normalized);
-	}
-	throw InvalidInputException("Unknown weighted quantile method '%s'", method);
+	throw InvalidInputException("fin_weighted_quantile: unknown method '%s'; supported methods are 'linear', "
+	                            "'lower', 'higher', 'nearest', 'midpoint' and 'inverted_cdf'",
+	                            method.GetString());
 }
 
 struct WeightedQuantileState {
 	vector<std::pair<double, double>> *values;
+	FinWindowAux *window;
 	double quantile;
 	WeightedQuantileMethod method;
 	bool parameters_set;
+	bool invalid;
 	double weight_scale;
 };
 
-struct WeightedQuantileOperation {
+struct WeightedQuantileOperation : public FinOperationDefaults {
+	static constexpr idx_t REQUIRED_ARGS = 3;
+	static constexpr bool ORDER_DEPENDENT = false;
+	static constexpr bool WINDOW_INCREMENTAL = true;
+
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.values = new vector<std::pair<double, double>>();
+		state.window = nullptr;
+		WindowReset(state);
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
+		state.values->clear();
 		state.quantile = 0.5;
 		state.method = WeightedQuantileMethod::LINEAR;
 		state.parameters_set = false;
+		state.invalid = false;
 		state.weight_scale = 0.0;
+	}
+
+	static double ParseText(idx_t, string_t text) {
+		return static_cast<double>(ParseWeightedQuantileMethod(text));
+	}
+
+	static void ValidateParameter(idx_t column, double value, bool valid) {
+		if (column == 2 && (!std::isfinite(value) || value < 0.0 || value > 1.0)) {
+			throw InvalidInputException("fin_weighted_quantile: q must be finite and in [0, 1]");
+		}
+		if (column == 3 && !valid) {
+			throw InvalidInputException("fin_weighted_quantile: method must not be NULL");
+		}
+	}
+
+	template <class STATE>
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t input_count) {
+		auto method = WeightedQuantileMethod::LINEAR;
+		if (input_count > 3) {
+			ValidateParameter(3, row.v[3], row.valid[3]);
+			method = static_cast<WeightedQuantileMethod>(static_cast<uint8_t>(row.v[3]));
+		}
+		UpdateValue(state, row.v[0], row.v[1], row.v[2], method);
 	}
 
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double weight, double quantile, WeightedQuantileMethod parsed_method) {
-		if (!std::isfinite(value) || !std::isfinite(weight)) {
-			throw InvalidInputException("Weighted quantile values and weights must be finite");
-		}
-		if (weight < 0.0) {
-			throw InvalidInputException("Weighted quantile weights must be non-negative");
-		}
-		if (!std::isfinite(quantile) || quantile < 0.0 || quantile > 1.0) {
-			throw InvalidInputException("Weighted quantile must be finite and in [0, 1]");
+		if (!state.parameters_set || state.quantile != quantile) {
+			ValidateParameter(2, quantile, true);
 		}
 		if (state.parameters_set && (state.quantile != quantile || state.method != parsed_method)) {
-			throw InvalidInputException("Weighted quantile and method must be constant within a group");
+			throw InvalidInputException("fin_weighted_quantile: q and method must be constant within a group");
 		}
 		state.quantile = quantile;
 		state.method = parsed_method;
 		state.parameters_set = true;
+		if (!std::isfinite(value) || !std::isfinite(weight) || weight < 0.0) {
+			// Non-finite observations or negative weights make the distribution undefined.
+			state.invalid = true;
+			return;
+		}
 		if (weight > 0.0) {
 			state.values->push_back({value, weight});
 			state.weight_scale = std::max(state.weight_scale, weight);
@@ -76,8 +108,9 @@ struct WeightedQuantileOperation {
 		}
 		if (target.parameters_set &&
 		    (target.quantile != source.quantile || target.method != source.method)) {
-			throw InvalidInputException("Weighted quantile and method must be constant within a group");
+			throw InvalidInputException("fin_weighted_quantile: q and method must be constant within a group");
 		}
+		target.invalid = target.invalid || source.invalid;
 		target.quantile = source.quantile;
 		target.method = source.method;
 		target.parameters_set = true;
@@ -87,7 +120,7 @@ struct WeightedQuantileOperation {
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (!state.values || state.values->empty()) {
+		if (state.invalid || !state.values || state.values->empty()) {
 			finalize_data.ReturnNull();
 			return;
 		}
@@ -169,5 +202,7 @@ struct WeightedQuantileOperation {
 	static void Destroy(STATE &state, AggregateInputData &) {
 		delete state.values;
 		state.values = nullptr;
+		delete state.window;
+		state.window = nullptr;
 	}
 };
