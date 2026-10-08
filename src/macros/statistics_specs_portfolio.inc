@@ -14,7 +14,7 @@
     {"fin_theils_u", "(x, y) AS finance_theils_u_internal(CASE WHEN x IS NULL THEN NULL ELSE (hash(x) >> 11)::BIGINT END, CASE WHEN y IS NULL THEN NULL ELSE (hash(y) >> 11)::BIGINT END)"},
     {"fin_outlier_count", "(x, method := 'zscore', threshold := 3.0) AS count(*) FILTER (WHERE abs(x - avg(x)) / nullif(stddev_samp(x), 0) > threshold::DOUBLE)"},
     {"fin_missing_count", "(x) AS count(*) FILTER (WHERE x IS NULL)"},
-    {"fin_data_quality_report", "(x) AS struct_pack(n := count(*), nulls := fin_missing_count(x), finite := count(*) FILTER (WHERE fin_is_finite(x)), min := min(x), max := max(x), outliers := fin_outlier_count(x))"},
+    {"fin_data_quality_report", "(x) AS struct_pack(n := count(*), nulls := fin_missing_count(x), finite := count(*) FILTER (WHERE fin_is_finite(x)), min := min(x::DOUBLE) FILTER (WHERE fin_is_finite(x)), max := max(x::DOUBLE) FILTER (WHERE fin_is_finite(x)), outliers := fin_outlier_count(x))"},
 
     {"fin_money_sum", "(x) AS sum(x)"},
     {"fin_money_weighted_sum", "(amount, weight) AS fsum(amount::DOUBLE * weight::DOUBLE)"},
