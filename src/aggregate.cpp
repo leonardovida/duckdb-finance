@@ -19,6 +19,7 @@
 #include <cmath>
 #include <array>
 #include <deque>
+#include <unordered_map>
 #include <functional>
 #include <tuple>
 #include <cstring>
@@ -49,6 +50,8 @@ namespace {
 #include "aggregate/statistics.inc"
 #include "aggregate/regression_matrix.inc"
 #include "aggregate/technical.inc"
+#include "aggregate/technical_volume.inc"
+#include "aggregate/market_volume.inc"
 
 } // namespace
 

@@ -459,38 +459,38 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	           FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	          FinanceLogicalType(LogicalTypeId::DOUBLE), SviVolFunction);
 
-	AddScalar(loader, "fin_avg_price",
-	          {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	          FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { PriceTransformFunction(args, state, result, "avg"); });
-	AddScalar(loader, "fin_typ_price", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	          FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { PriceTransformFunction(args, state, result, "typ"); });
-	AddScalar(loader, "fin_median_price", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { PriceTransformFunction(args, state, result, "median"); });
-	AddScalar(loader, "fin_weighted_close", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	          FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { PriceTransformFunction(args, state, result, "weighted"); });
-	AddScalar(loader, "fin_mid", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MicrostructureFunction(args, state, result, "mid"); });
-	AddScalar(loader, "fin_spread", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MicrostructureFunction(args, state, result, "spread"); });
-	AddScalar(loader, "fin_spread_bps", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MicrostructureFunction(args, state, result, "spread_bps"); });
-	AddScalar(loader, "fin_microprice",
-	          {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	          FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MicrostructureFunction(args, state, result, "microprice"); });
-	AddScalar(loader, "fin_order_imbalance", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MicrostructureFunction(args, state, result, "imbalance"); });
-	AddScalar(loader, "fin_queue_imbalance", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	          [](DataChunk &args, ExpressionState &state, Vector &result) { MicrostructureFunction(args, state, result, "imbalance"); });
-	ScalarFunctionSet trade_sign(FinanceFunctionName("fin_trade_sign"));
-	AddOverload(trade_sign, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
-	            TradeSignFunction);
-	AddOverload(trade_sign, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
-	            FinanceLogicalType(LogicalTypeId::DOUBLE), TradeSignFunction);
-	loader.RegisterFunction(std::move(trade_sign));
+	{
+		// Price transforms and microstructure scalars: standard NULL propagation.
+		auto add_market = [&](const char *name, idx_t arity, scalar_function_t func) {
+			vector<LogicalType> arguments(arity, FinanceLogicalType(LogicalTypeId::DOUBLE));
+			loader.RegisterFunction(ScalarFunction(FinanceFunctionName(name), std::move(arguments),
+			                                        FinanceLogicalType(LogicalTypeId::DOUBLE), std::move(func)));
+		};
+		add_market("fin_avg_price", 4, MarketScalarFunction<AvgPriceOp, 4>);
+		add_market("fin_typ_price", 3, MarketScalarFunction<TypPriceOp, 3>);
+		add_market("fin_median_price", 2, MarketScalarFunction<MedianPriceOp, 2>);
+		add_market("fin_weighted_close", 3, MarketScalarFunction<WeightedCloseOp, 3>);
+		add_market("fin_bop", 4, MarketScalarFunction<BalanceOfPowerOp, 4>);
+		add_market("fin_mid", 2, MarketScalarFunction<MidOp, 2>);
+		add_market("fin_spread", 2, MarketScalarFunction<SpreadOp, 2>);
+		add_market("fin_spread_bps", 2, MarketScalarFunction<SpreadBpsOp, 2>);
+		add_market("fin_microprice", 4, MarketScalarFunction<MicropriceOp, 4>);
+		add_market("fin_order_imbalance", 2, MarketScalarFunction<ImbalanceOp, 2>);
+		add_market("fin_queue_imbalance", 2, MarketScalarFunction<ImbalanceOp, 2>);
+		ScalarFunctionSet trade_sign(FinanceFunctionName("fin_trade_sign"));
+		for (idx_t arity = 3; arity <= 5; arity++) {
+			vector<LogicalType> arguments(std::min<idx_t>(arity, 4), FinanceLogicalType(LogicalTypeId::DOUBLE));
+			if (arity == 5) {
+				arguments.push_back(FinanceLogicalType(LogicalTypeId::VARCHAR));
+			}
+			ScalarFunction function(std::move(arguments), FinanceLogicalType(LogicalTypeId::DOUBLE), TradeSignFunction);
+			// The previous price may be NULL (tick test unavailable).
+			function.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+			function.SetBindCallback(BindTradeSign);
+			trade_sign.AddFunction(std::move(function));
+		}
+		loader.RegisterFunction(std::move(trade_sign));
+	}
 
 	auto double_list = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));
 	auto matrix_type = LogicalType::LIST(double_list);

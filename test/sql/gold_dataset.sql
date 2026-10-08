@@ -101,6 +101,15 @@ INSERT INTO gold_bars VALUES
   (58, 103.44, 102.23, 102.84),
   (59, 103.04, 101.26, 102.05);
 
+-- gold_bars with deterministic opens, volumes, signed volumes and irregular
+-- timestamps for the volume, directional and microstructure indicators.
+CREATE OR REPLACE TEMP TABLE gold_vbars AS
+SELECT i, low + (high - low) * ((i * 7) % 10) / 10.0 AS open, high, low, close,
+  1000.0 + ((i * 37) % 11) * 100.0 AS volume,
+  (1000.0 + ((i * 37) % 11) * 100.0) * (((i * 5) % 7) / 3.0 - 1.0) AS signed_volume,
+  TIMESTAMP '2026-01-02 09:30:00' + to_seconds(i * 60 + (i % 4) * 17) AS ts
+FROM gold_bars;
+
 CREATE OR REPLACE TEMP TABLE gold_options(
   kind VARCHAR,
   spot DOUBLE,

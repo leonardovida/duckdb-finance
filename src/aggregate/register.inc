@@ -1,6 +1,8 @@
 void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	RegisterValueAtKeyAggregates(loader);
 	RegisterTechnicalAggregates(loader);
+	RegisterTechnicalVolumeIndicators(loader);
+	RegisterMarketVolumeAggregates(loader);
 	AggregateFunctionSet sortino_set(FinanceFunctionName("fin_sortino"));
 	auto sortino = UnaryDoubleAggregate<SortinoState, SortinoOperation>("fin_sortino");
 	sortino.SetStateSimpleUpdateCallback(SortinoSimpleUpdate);

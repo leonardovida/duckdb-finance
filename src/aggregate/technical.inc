@@ -23,7 +23,7 @@
 // indicators NULL while that row is inside their lookback and recursive
 // indicators NULL for the rest of the series.
 
-constexpr idx_t TECH_MAX_INPUTS = 3;
+constexpr idx_t TECH_MAX_INPUTS = 4;
 constexpr idx_t TECH_MAX_PARAMS = 8;
 constexpr idx_t TECH_MAX_FIELDS = 5;
 constexpr double TECH_MAX_PERIOD = 100000.0;

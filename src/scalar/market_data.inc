@@ -1,67 +1,235 @@
-static void PriceTransformFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
-	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		if (name == "avg") {
-			return (input.GetDouble(0, row) + input.GetDouble(1, row) + input.GetDouble(2, row) +
-			        input.GetDouble(3, row)) /
-			       4.0;
+//===--------------------------------------------------------------------===//
+// Price transforms and quote/trade microstructure scalars
+//===--------------------------------------------------------------------===//
+// Each kernel is a compile-time operation over N DOUBLE inputs: no per-row
+// strings or exceptions. A NULL input, a non-finite result or a domain case
+// the kernel rejects (crossed quotes, negative sizes, empty books) gives NULL.
+template <class OP, idx_t N>
+static void MarketScalarFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	const auto count = args.size();
+	const bool constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
+	UnifiedVectorFormat formats[N];
+	const double *data[N];
+	bool all_valid = true;
+	for (idx_t c = 0; c < N; c++) {
+		FinanceToUnifiedFormat(args.data[c], count, formats[c]);
+		data[c] = UnifiedVectorFormat::GetData<double>(formats[c]);
+		all_valid = all_valid && formats[c].validity.AllValid();
+	}
+	const idx_t rows = constant && count > 0 ? idx_t(1) : count;
+	double in[N];
+	for (idx_t row = 0; row < rows; row++) {
+		bool valid = true;
+		for (idx_t c = 0; c < N; c++) {
+			auto index = formats[c].sel->get_index(row);
+			if (!all_valid && !formats[c].validity.RowIsValid(index)) {
+				valid = false;
+				break;
+			}
+			in[c] = data[c][index];
 		}
-		if (name == "typ") {
-			return (input.GetDouble(0, row) + input.GetDouble(1, row) + input.GetDouble(2, row)) / 3.0;
+		double value;
+		if (valid && OP::Compute(in, value) && std::isfinite(value)) {
+			output[row] = value;
+		} else {
+			SetResultNull(result, row, count, constant);
 		}
-		if (name == "median") {
-			return (input.GetDouble(0, row) + input.GetDouble(1, row)) / 2.0;
-		}
-		return (input.GetDouble(0, row) + input.GetDouble(1, row) + 2.0 * input.GetDouble(2, row)) / 4.0;
-	});
+	}
 }
 
-static void MicrostructureFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
-	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		if (name == "mid") {
-			return (input.GetDouble(0, row) + input.GetDouble(1, row)) / 2.0;
-		}
-		if (name == "spread") {
-			return input.GetDouble(1, row) - input.GetDouble(0, row);
-		}
-		if (name == "spread_bps") {
-			double mid = (input.GetDouble(0, row) + input.GetDouble(1, row)) / 2.0;
-			return (input.GetDouble(1, row) - input.GetDouble(0, row)) / mid * 10000.0;
-		}
-		if (name == "microprice") {
-			double bid_px = input.GetDouble(0, row);
-			double bid_size = input.GetDouble(1, row);
-			double ask_px = input.GetDouble(2, row);
-			double ask_size = input.GetDouble(3, row);
-			return (ask_px * bid_size + bid_px * ask_size) / (bid_size + ask_size);
-		}
-		double bid_size = input.GetDouble(0, row);
-		double ask_size = input.GetDouble(1, row);
-		return (bid_size - ask_size) / (bid_size + ask_size);
-	});
+// TA-Lib AVGPRICE (open, high, low, close).
+struct AvgPriceOp {
+	static bool Compute(const double *in, double &out) {
+		out = (in[0] + in[1] + in[2] + in[3]) / 4.0;
+		return true;
+	}
+};
+
+// TA-Lib TYPPRICE (high, low, close).
+struct TypPriceOp {
+	static bool Compute(const double *in, double &out) {
+		out = (in[0] + in[1] + in[2]) / 3.0;
+		return true;
+	}
+};
+
+// TA-Lib MEDPRICE (high, low).
+struct MedianPriceOp {
+	static bool Compute(const double *in, double &out) {
+		out = (in[0] + in[1]) / 2.0;
+		return true;
+	}
+};
+
+// TA-Lib WCLPRICE (high, low, close).
+struct WeightedCloseOp {
+	static bool Compute(const double *in, double &out) {
+		out = (in[0] + in[1] + 2.0 * in[2]) / 4.0;
+		return true;
+	}
+};
+
+// TA-Lib BOP (open, high, low, close): (close - open) / (high - low), 0 when
+// high <= low.
+struct BalanceOfPowerOp {
+	static bool Compute(const double *in, double &out) {
+		auto range = in[1] - in[2];
+		out = range > 0.0 ? (in[3] - in[0]) / range : 0.0;
+		return std::isfinite(in[0]) && std::isfinite(in[3]) && std::isfinite(range);
+	}
+};
+
+// Quotes (bid, ask): crossed books (bid > ask) are invalid; locked books are not.
+static bool ValidQuotes(double bid, double ask) {
+	return std::isfinite(bid) && std::isfinite(ask) && bid <= ask;
 }
 
+struct MidOp {
+	static bool Compute(const double *in, double &out) {
+		out = (in[0] + in[1]) / 2.0;
+		return ValidQuotes(in[0], in[1]);
+	}
+};
+
+struct SpreadOp {
+	static bool Compute(const double *in, double &out) {
+		out = in[1] - in[0];
+		return ValidQuotes(in[0], in[1]);
+	}
+};
+
+// Quoted spread in basis points of the mid; NULL unless the mid is positive.
+struct SpreadBpsOp {
+	static bool Compute(const double *in, double &out) {
+		auto mid = (in[0] + in[1]) / 2.0;
+		out = (in[1] - in[0]) / mid * 10000.0;
+		return ValidQuotes(in[0], in[1]) && mid > 0.0;
+	}
+};
+
+static bool ValidSizes(double bid_size, double ask_size) {
+	return bid_size >= 0.0 && ask_size >= 0.0 && bid_size + ask_size > 0.0;
+}
+
+// Size-weighted mid (bid, bid_size, ask, ask_size):
+// (bid * ask_size + ask * bid_size) / (bid_size + ask_size).
+struct MicropriceOp {
+	static bool Compute(const double *in, double &out) {
+		if (!ValidQuotes(in[0], in[2]) || !ValidSizes(in[1], in[3])) {
+			return false;
+		}
+		out = (in[0] * in[3] + in[2] * in[1]) / (in[1] + in[3]);
+		return true;
+	}
+};
+
+// (bid_size - ask_size) / (bid_size + ask_size) in [-1, 1].
+struct ImbalanceOp {
+	static bool Compute(const double *in, double &out) {
+		if (!ValidSizes(in[0], in[1])) {
+			return false;
+		}
+		out = (in[0] - in[1]) / (in[0] + in[1]);
+		return true;
+	}
+};
+
+enum class TradeSignRule : uint8_t { LEE_READY, EMO };
+
+static TradeSignRule ParseTradeSignRule(const string &text) {
+	auto lower = StringUtil::Lower(text);
+	if (lower == "lee_ready" || lower == "lee-ready") {
+		return TradeSignRule::LEE_READY;
+	}
+	if (lower == "emo") {
+		return TradeSignRule::EMO;
+	}
+	throw InvalidInputException("fin_trade_sign: unknown method '%s' (expected 'lee_ready' or 'emo')", text);
+}
+
+// Trade classification: +1 buyer-initiated, -1 seller-initiated, 0 unclassified.
+// Lee and Ready (1991): above the quote midpoint +1, below -1; at the midpoint
+// the tick test against the previous trade price. EMO (Ellis, Michaely and
+// O'Hara 2000): at or above the ask +1, at or below the bid -1, otherwise the
+// tick test. A NULL previous price leaves the tick test unclassified (0).
+// Crossed quotes or non-finite inputs give NULL.
 static void TradeSignFunction(DataChunk &args, ExpressionState &, Vector &result) {
-	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		double price = input.GetDouble(0, row);
-		double bid = input.GetDouble(1, row);
-		double ask = input.GetDouble(2, row);
-		if (price >= ask) {
-			return 1.0;
+	const auto count = args.size();
+	const bool constant = AllInputsConstant(args);
+	SetResultVectorType(result, constant);
+	auto output = GetResultData<double>(result, constant);
+	auto rule = TradeSignRule::LEE_READY;
+	if (args.ColumnCount() >= 5) {
+		auto &method = args.data[4];
+		if (method.GetVectorType() != VectorType::CONSTANT_VECTOR || ConstantVector::IsNull(method)) {
+			throw InvalidInputException("fin_trade_sign: method must be a non-NULL constant");
 		}
-		if (price <= bid) {
-			return -1.0;
+		rule = ParseTradeSignRule(ConstantVector::GetData<string_t>(method)[0].GetString());
+	}
+	const idx_t inputs = std::min<idx_t>(args.ColumnCount(), 4);
+	UnifiedVectorFormat formats[4];
+	const double *data[4];
+	for (idx_t c = 0; c < inputs; c++) {
+		FinanceToUnifiedFormat(args.data[c], count, formats[c]);
+		data[c] = UnifiedVectorFormat::GetData<double>(formats[c]);
+	}
+	const idx_t rows = constant && count > 0 ? idx_t(1) : count;
+	for (idx_t row = 0; row < rows; row++) {
+		double in[3];
+		bool valid = true;
+		for (idx_t c = 0; c < 3 && valid; c++) {
+			auto index = formats[c].sel->get_index(row);
+			valid = formats[c].validity.RowIsValid(index);
+			in[c] = data[c][index];
 		}
-		if (args.ColumnCount() >= 4 && !input.IsNull(3, row)) {
-			double prev = input.GetDouble(3, row);
-			if (price > prev) {
-				return 1.0;
+		if (!valid || !std::isfinite(in[0]) || !ValidQuotes(in[1], in[2])) {
+			SetResultNull(result, row, count, constant);
+			continue;
+		}
+		auto price = in[0];
+		double sign = 0.0;
+		bool decided = false;
+		if (rule == TradeSignRule::LEE_READY) {
+			auto mid = (in[1] + in[2]) / 2.0;
+			if (price != mid) {
+				sign = price > mid ? 1.0 : -1.0;
+				decided = true;
 			}
-			if (price < prev) {
-				return -1.0;
+		} else if (price >= in[2] || price <= in[1]) {
+			sign = price >= in[2] ? 1.0 : -1.0;
+			decided = true;
+		}
+		if (!decided && inputs >= 4) {
+			auto index = formats[3].sel->get_index(row);
+			if (formats[3].validity.RowIsValid(index)) {
+				auto previous = data[3][index];
+				if (!std::isfinite(previous)) {
+					SetResultNull(result, row, count, constant);
+					continue;
+				}
+				sign = price > previous ? 1.0 : (price < previous ? -1.0 : 0.0);
 			}
 		}
-		return 0.0;
-	});
+		output[row] = sign;
+	}
+}
+
+static unique_ptr<FunctionData> BindTradeSign(ClientContext &context, ScalarFunction &,
+                                              vector<unique_ptr<Expression>> &arguments) {
+	if (arguments.size() >= 5) {
+		auto &method = *arguments[4];
+		if (!method.IsFoldable()) {
+			throw InvalidInputException("fin_trade_sign: method must be a constant");
+		}
+		auto value = ExpressionExecutor::EvaluateScalar(context, method, true);
+		if (value.IsNull()) {
+			throw InvalidInputException("fin_trade_sign: method must be a non-NULL constant");
+		}
+		ParseTradeSignRule(StringValue::Get(value.DefaultCastAs(LogicalType::VARCHAR)));
+	}
+	return nullptr;
 }
 
 enum class ListOp : uint8_t { SUM, MEAN, INVERSE_VOL, NORMALIZE, SCALE };

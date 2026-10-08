@@ -102,6 +102,42 @@ SELECT round((fin_macd(x, 2, 3, 2 ORDER BY i)).macd, 9), round(fin_rsi(x, 2 ORDE
 ----
 0.5	84.615384615
 
+# Volume, directional and microstructure functions (0.3.0).
+statement error
+SELECT fin_vpin(1.0, 1.0, 50)
+----
+fin_vpin: bucket_volume is required and must be positive
+
+statement error
+SELECT fin_adx(1.0, 1.0, 1.0, 1)
+----
+fin_adx: period must be an integer between 2 and 100000
+
+statement error
+SELECT fin_trade_sign(1.0, 1.0, 2.0, NULL, 'tick')
+----
+fin_trade_sign: unknown method 'tick' (expected 'lee_ready' or 'emo')
+
+statement error
+SELECT fin_volume_profile(1.0, 1.0, 0)
+----
+fin_volume_profile: bins must be an integer between 1 and 100000
+
+statement error
+SELECT fin_twap(x, t) FROM (VALUES (1.0, 3.0), (2.0, 1.0), (3.0, 2.0)) AS v(x, t)
+----
+fin_twap: rows reached the aggregate out of time order
+
+query R
+SELECT fin_atr(h, l, c, 2 ORDER BY i) FROM (VALUES (1, 2.0, 1.0, 1.5), (2, 3.0, 1.5, 2.5), (3, 2.8, 2.0, 2.2), (4, 3.5, 2.1, 3.4)) AS t(i, h, l, c)
+----
+1.275
+
+query RRR
+SELECT fin_mid(99.0, 101.0), fin_mid(101.0, 99.0), fin_trade_sign(100.5, 99.0, 101.0, 100.0)
+----
+100.0	NULL	1.0
+
 statement error
 SELECT fin_sortino(r, annualization := 12.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
 ----
