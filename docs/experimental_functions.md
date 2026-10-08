@@ -50,8 +50,6 @@ promoted out of this page.
 | `fin_welch_ttest` | Delegates to two-sample t-test output that does not include a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
 | `fin_portfolio_optimize` | Returns equal weights without solving the supplied objective. | Use an external optimizer and validate its weights in SQL. |
 | `fin_portfolio_optimize_table` | Assigns equal weights to distinct assets without using return history. | Use an external optimizer and validate its weights in SQL. |
-| `fin_bootstrap_curve` | Treats quoted rates as zero rates without bootstrapping instrument cash flows. | Bootstrap instrument-specific discount factors externally. |
-| `fin_curve_bootstrap` | Alias of `fin_bootstrap_curve`; treats quoted rates as zero rates. | Bootstrap instrument-specific discount factors externally. |
 | `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters; only p = 1, q = 1, and `normal` are accepted. | Fit GARCH externally before using parameters in SQL forecasts. |
 | `fin_fama_macbeth` | Uses the first factor for per-date regressions, without second-stage inference or lag correction. | Compute reviewed cross-sectional fits and second-stage inference explicitly. |
 | `fin_autocorr` | Correlates values with themselves and ignores lag. | Build lagged pairs with SQL windows, then use `corr`. |

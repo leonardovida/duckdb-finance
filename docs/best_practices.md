@@ -67,8 +67,10 @@ single total unless you have mapped them to the same scenario or PnL unit.
 
 ## Treat Models As Local Models
 
-The extension prices from caller-supplied inputs. It does not calibrate curves,
-fetch market data, select calendars, or apply desk-specific risk conventions.
+The extension prices from caller-supplied inputs. It does not fetch market data,
+select calendars, or apply desk-specific risk conventions, and
+`fin_bootstrap_curve` builds a curve only from the quotes and year fractions you
+pass in.
 
 Before using outputs in a serious workflow, reconcile:
 
