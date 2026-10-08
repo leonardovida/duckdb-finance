@@ -178,13 +178,13 @@ static double SolveSwapDiscount(const CurveNodes &nodes, double maturity, double
 }
 
 static LogicalType CurveBootstrapNodeType() {
-	child_list_t<LogicalType> fields = {{"instrument", LogicalType::VARCHAR},
-	                                    {"instrument_type", LogicalType::VARCHAR},
-	                                    {"maturity", LogicalType::DOUBLE},
-	                                    {"rate", LogicalType::DOUBLE},
-	                                    {"discount_factor", LogicalType::DOUBLE},
-	                                    {"zero_rate", LogicalType::DOUBLE},
-	                                    {"forward_rate", LogicalType::DOUBLE}};
+	child_list_t<LogicalType> fields = {{"instrument", FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                                    {"instrument_type", FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	                                    {"maturity", FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	                                    {"rate", FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	                                    {"discount_factor", FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	                                    {"zero_rate", FinanceLogicalType(LogicalTypeId::DOUBLE)},
+	                                    {"forward_rate", FinanceLogicalType(LogicalTypeId::DOUBLE)}};
 	return LogicalType::STRUCT(fields);
 }
 
