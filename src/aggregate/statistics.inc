@@ -478,7 +478,7 @@ template <class OP>
 static LogicalType StatStructType() {
 	child_list_t<LogicalType> children;
 	for (auto &name : OP::FieldNames()) {
-		children.emplace_back(name, LogicalType::DOUBLE);
+		children.emplace_back(name, FinanceLogicalType(LogicalTypeId::DOUBLE));
 	}
 	return LogicalType::STRUCT(std::move(children));
 }
