@@ -1,7 +1,10 @@
 #include "finance/finance_extension.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
+#include "duckdb/catalog/catalog_entry/aggregate_function_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/function_entry.hpp"
+#include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 #include "duckdb/common/string_util.hpp"
 #if __has_include("duckdb/common/identifier.hpp")
 #define FINANCE_METADATA_HAS_DUCKDB_IDENTIFIER 1
@@ -18,7 +21,16 @@ struct FinanceFunctionMetadata {
 	const char *category;
 	const char *description;
 	const char *example;
+	//! Documented parameter names, `name[:TYPE],...` per signature, signatures separated by ';'.
+	const char *signatures;
 };
+
+struct FinanceParameter {
+	string name;
+	string type_hint;
+};
+
+using FinanceSignature = vector<FinanceParameter>;
 
 #include "function_metadata.inc"
 
@@ -55,6 +67,98 @@ static const FinanceFunctionMetadata *FindFinanceFunctionMetadata(const string &
 	return nullptr;
 }
 
+static vector<FinanceSignature> ParseFinanceSignatures(const char *text) {
+	vector<FinanceSignature> signatures;
+	if (!text || !*text) {
+		return signatures;
+	}
+	for (auto &signature_text : StringUtil::Split(string(text), ';')) {
+		FinanceSignature signature;
+		for (auto &parameter_text : StringUtil::Split(signature_text, ',')) {
+			FinanceParameter parameter;
+			auto colon = parameter_text.find(':');
+			parameter.name = parameter_text.substr(0, colon);
+			if (colon != string::npos) {
+				parameter.type_hint = parameter_text.substr(colon + 1);
+			}
+			signature.push_back(std::move(parameter));
+		}
+		signatures.push_back(std::move(signature));
+	}
+	return signatures;
+}
+
+// An overload with N positional arguments takes the first N names of the first documented signature that has at
+// least N names and whose type hints match its argument types (see docs/function_examples.sql).
+static bool MatchFinanceSignature(const vector<FinanceSignature> &signatures, const vector<LogicalType> &arguments,
+                                  vector<string> &names) {
+	for (auto &signature : signatures) {
+		if (signature.size() < arguments.size()) {
+			continue;
+		}
+		bool matches = true;
+		for (idx_t i = 0; i < arguments.size() && matches; i++) {
+			auto &hint = signature[i].type_hint;
+			matches = hint.empty() || arguments[i].id() == LogicalTypeId::ANY ||
+			          StringUtil::CIEquals(arguments[i].ToString(), hint);
+		}
+		if (!matches) {
+			continue;
+		}
+		names.clear();
+		for (idx_t i = 0; i < arguments.size(); i++) {
+			names.push_back(signature[i].name);
+		}
+		return true;
+	}
+	return false;
+}
+
+// duckdb_functions() picks the description whose parameter_types equal the overload's arguments, so every overload
+// gets its own description; table functions list their named parameters after the positional ones.
+static FunctionDescription DescribeFinanceOverload(const FunctionDescription &base,
+                                                   const vector<FinanceSignature> &signatures,
+                                                   const vector<LogicalType> &arguments,
+                                                   const vector<string> &named_parameters) {
+	FunctionDescription description = base;
+	description.parameter_types = arguments;
+	if (MatchFinanceSignature(signatures, arguments, description.parameter_names)) {
+		for (auto &name : named_parameters) {
+			description.parameter_names.push_back(name);
+		}
+	}
+	return description;
+}
+
+template <class ENTRY>
+static vector<FunctionDescription> DescribeFinanceOverloads(CatalogEntry &entry, const FunctionDescription &base,
+                                                            const vector<FinanceSignature> &signatures) {
+	vector<FunctionDescription> descriptions;
+	auto &functions = entry.Cast<ENTRY>().functions;
+	for (idx_t i = 0; i < functions.Size(); i++) {
+		auto function = functions.GetFunctionByOffset(i);
+		descriptions.push_back(DescribeFinanceOverload(base, signatures, function.arguments, {}));
+	}
+	return descriptions;
+}
+
+static vector<FunctionDescription> DescribeFinanceTableOverloads(CatalogEntry &entry, const FunctionDescription &base,
+                                                                 const vector<FinanceSignature> &signatures) {
+	vector<FunctionDescription> descriptions;
+	auto &functions = entry.Cast<TableFunctionCatalogEntry>().functions;
+	for (idx_t i = 0; i < functions.Size(); i++) {
+		// duckdb_functions() also lists named parameters from a copy of the overload; iterate a copy the same way
+		// so the order matches.
+		auto function = functions.GetFunctionByOffset(i);
+		vector<string> named_parameters;
+		for (auto &parameter : function.named_parameters) {
+			named_parameters.push_back(parameter.first);
+		}
+		descriptions.push_back(DescribeFinanceOverload(base, signatures, function.arguments, named_parameters));
+	}
+	return descriptions;
+}
+
 static void ApplyFinanceFunctionMetadata(CatalogEntry &entry) {
 	auto &name = FinanceEntryName(entry);
 	if (!StringUtil::StartsWith(name, "fin_")) {
@@ -68,7 +172,28 @@ static void ApplyFinanceFunctionMetadata(CatalogEntry &entry) {
 	description.description = metadata->description;
 	description.examples.push_back(metadata->example);
 	description.categories.push_back(metadata->category);
-	entry.Cast<FunctionEntry>().descriptions = {std::move(description)};
+	auto signatures = ParseFinanceSignatures(metadata->signatures);
+	vector<FunctionDescription> descriptions;
+	if (!signatures.empty()) {
+		switch (entry.type) {
+		case CatalogType::SCALAR_FUNCTION_ENTRY:
+			descriptions = DescribeFinanceOverloads<ScalarFunctionCatalogEntry>(entry, description, signatures);
+			break;
+		case CatalogType::AGGREGATE_FUNCTION_ENTRY:
+			descriptions = DescribeFinanceOverloads<AggregateFunctionCatalogEntry>(entry, description, signatures);
+			break;
+		case CatalogType::TABLE_FUNCTION_ENTRY:
+			descriptions = DescribeFinanceTableOverloads(entry, description, signatures);
+			break;
+		default:
+			// Macros report their own parameter names.
+			break;
+		}
+	}
+	if (descriptions.empty()) {
+		descriptions.push_back(std::move(description));
+	}
+	entry.Cast<FunctionEntry>().descriptions = std::move(descriptions);
 }
 
 static void RegisterFinanceFunctionMetadata(ExtensionLoader &loader) {
