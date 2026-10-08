@@ -59,7 +59,8 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
 	                             list_varchar},
 	                            {FinanceLogicalType(LogicalTypeId::BIGINT)}, FamaMacbethBindReplace);
-	RegisterBindReplacePrefixes(loader, "fin_garch_fit", {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
+	RegisterBindReplacePrefixes(loader, "fin_garch_fit",
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                            {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                            GarchFitBindReplace);
 	RegisterBindReplacePrefixes(loader, "fin_calendar", {FinanceLogicalType(LogicalTypeId::VARCHAR)},

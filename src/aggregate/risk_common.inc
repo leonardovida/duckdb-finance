@@ -64,6 +64,14 @@ static void FinReadValue(const_data_ptr_t base, PhysicalType type, idx_t index, 
 	case PhysicalType::INT64:
 		row.v[column] = static_cast<double>(reinterpret_cast<const int64_t *>(base)[index]);
 		break;
+	case PhysicalType::INTERVAL: {
+		// Intervals (e.g. half-lives) are read as microseconds; months count as 30 days.
+		int64_t micros;
+		auto interval = reinterpret_cast<const interval_t *>(base)[index];
+		row.v[column] = Interval::TryGetMicro(interval, micros) ? static_cast<double>(micros)
+		                                                       : std::numeric_limits<double>::quiet_NaN();
+		break;
+	}
 	case PhysicalType::VARCHAR: {
 		// Point at the string_t header and parse once per distinct string.
 		auto text = reinterpret_cast<const string_t *>(base)[index];

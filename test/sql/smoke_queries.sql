@@ -71,8 +71,8 @@ INSERT INTO factor_inputs VALUES
   (DATE '2026-01-02', 'B', 0.5, -0.005);
 SELECT round(ic, 6) AS ic, round(mean_return, 6) AS mean_return, round(quantile_spread, 6) AS quantile_spread
 FROM fin_factor_report('factor_inputs', 'd', 'asset', 'factor', 'ret', 2);
-SELECT p, q, round(annualized_vol, 6) AS annualized_vol
-FROM fin_garch_fit('factor_inputs', 'ret', 1, 1, 'normal');
+SELECT p, q, nobs
+FROM fin_garch_fit('factor_inputs', 'ret', 'd', 1, 1, 'normal');
 
 SELECT * FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06');
 SELECT count(*) AS default_calendar_rows FROM fin_calendar('weekday');

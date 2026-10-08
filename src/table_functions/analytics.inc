@@ -4,16 +4,40 @@ static unique_ptr<TableRef> PortfolioOptimizeTableBindReplace(ClientContext &con
 	auto asset = SqlColumnArg(input, 1, function_name, "asset_col");
 	auto date = SqlColumnArg(input, 2, function_name, "date_col");
 	auto ret = SqlColumnArg(input, 3, function_name, "return_col");
-	// date_col and return_col are bound (so misspelled names fail) but not used
-	// by the equal-weight placeholder.
+	// Validate constant optimizer parameters at bind time (the solve itself runs on the data).
+	ValidatePortfolioQPConfig(ReadPortfolioQPConfig(input.inputs, 4, function_name), function_name);
+	static const char *const TYPES[] = {"VARCHAR", "DOUBLE", "BOOLEAN", "DOUBLE", "DOUBLE", "DOUBLE", "DOUBLE", "DOUBLE"};
+	string params;
+	for (idx_t i = 0; i < 8; i++) {
+		auto index = 4 + i;
+		auto literal = index < input.inputs.size() ? SqlLiteral(input.inputs[index]) : string("NULL");
+		params += ", CAST(" + literal + " AS " + TYPES[i] + ")";
+	}
+	// Sample mean returns and the pairwise-complete sample covariance per asset,
+	// in fin_cov_matrix label order, feed the shared bounded QP optimizer.
 	auto query = StringUtil::Format(
-	    "WITH __finance_assets AS ("
-	    "  SELECT DISTINCT asset FROM (SELECT %s AS asset, %s AS __finance_date, %s AS __finance_ret FROM %s) "
-	    "  WHERE asset IS NOT NULL"
+	    "WITH __finance_src AS ("
+	    "  SELECT %s AS __finance_asset, %s AS __finance_date, %s::DOUBLE AS __finance_ret FROM %s "
+	    "  WHERE %s IS NOT NULL"
+	    "), __finance_cov AS ("
+	    "  SELECT fin_cov_matrix(__finance_date, __finance_asset, __finance_ret) AS m FROM __finance_src"
+	    "), __finance_labels AS ("
+	    "  SELECT unnest(m.labels) AS label, generate_subscripts(m.labels, 1) AS idx FROM __finance_cov"
+	    "), __finance_mu AS ("
+	    "  SELECT __finance_asset::VARCHAR AS label, avg(__finance_ret) AS mu, any_value(__finance_asset) AS asset "
+	    "  FROM __finance_src GROUP BY 1"
+	    "), __finance_inputs AS ("
+	    "  SELECT list(mu.mu ORDER BY l.idx) AS mu, list(mu.asset ORDER BY l.idx) AS assets "
+	    "  FROM __finance_labels l JOIN __finance_mu mu USING (label)"
+	    "), __finance_w AS ("
+	    "  SELECT i.assets, finance_portfolio_optimize_internal(i.mu, c.m.matrix%s) AS w "
+	    "  FROM __finance_cov c LEFT JOIN __finance_inputs i ON true"
 	    ") "
-	    "SELECT asset, row_number() OVER (ORDER BY asset) - 1 AS asset_idx, 1.0::DOUBLE / count(*) OVER () AS weight "
-	    "FROM __finance_assets ORDER BY asset",
-	    asset, date, ret, table);
+	    "SELECT unnest(assets) AS asset, unnest(generate_series(0, len(assets) - 1)) AS asset_idx, "
+	    "unnest(CASE WHEN w IS NULL THEN error('fin_portfolio_optimize_table: covariance is undefined (needs "
+	    "finite returns, unique (date, asset) rows and at least two shared dates for every asset pair)') "
+	    "ELSE w END) AS weight FROM __finance_w ORDER BY asset_idx",
+	    asset, date, ret, table, asset, params);
 	return ParseSubquery(context, query);
 }
 
@@ -153,26 +177,29 @@ static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFun
 	const string function_name = "fin_garch_fit";
 	auto table = SqlSourceArg(input, 0, function_name);
 	auto ret = SqlColumnArg(input, 1, function_name, "return_col");
-	if (input.inputs.size() >= 3 && RequireInteger(input.inputs[2], function_name, "p") != 1) {
+	auto order = SqlColumnArg(input, 2, function_name, "order_col");
+	if (input.inputs.size() >= 4 && RequireInteger(input.inputs[3], function_name, "p") != 1) {
 		throw InvalidInputException("%s: only p = 1 is supported", function_name);
 	}
-	if (input.inputs.size() >= 4 && RequireInteger(input.inputs[3], function_name, "q") != 1) {
+	if (input.inputs.size() >= 5 && RequireInteger(input.inputs[4], function_name, "q") != 1) {
 		throw InvalidInputException("%s: only q = 1 is supported", function_name);
 	}
-	if (input.inputs.size() >= 5) {
-		auto distribution = StringUtil::Lower(RequireString(input.inputs[4], function_name, "distribution"));
+	if (input.inputs.size() >= 6) {
+		auto distribution = StringUtil::Lower(RequireString(input.inputs[5], function_name, "distribution"));
 		StringUtil::Trim(distribution);
 		if (distribution != "normal") {
 			throw InvalidInputException("%s: unknown distribution '%s' (only 'normal' is supported)", function_name,
 			                            distribution);
 		}
 	}
+	// Zero-mean GARCH(1,1) maximum likelihood over the rows ordered by order_col.
 	auto query = StringUtil::Format(
-	    "SELECT 1::BIGINT AS p, 1::BIGINT AS q, 0.000001::DOUBLE AS omega, 0.05::DOUBLE AS alpha, "
-	    "0.90::DOUBLE AS beta, var_samp(%s::DOUBLE) AS unconditional_variance, "
-	    "sqrt(var_samp(%s::DOUBLE) * 252.0) AS annualized_vol "
-	    "FROM %s",
-	    ret, ret, table);
+	    "SELECT 1::BIGINT AS p, 1::BIGINT AS q, f.omega AS omega, f.alpha AS alpha, f.beta AS beta, "
+	    "f.alpha + f.beta AS persistence, f.omega / (1.0 - f.alpha - f.beta) AS unconditional_variance, "
+	    "sqrt(252.0 * f.omega / (1.0 - f.alpha - f.beta)) AS annualized_vol, f.loglik AS loglik, "
+	    "f.nobs::BIGINT AS nobs "
+	    "FROM (SELECT finance_garch11_fit_internal(%s::DOUBLE, %s) AS f FROM %s)",
+	    ret, order, table);
 	return ParseSubquery(context, query);
 }
 
@@ -245,19 +272,56 @@ static unique_ptr<TableRef> FamaMacbethBindReplace(ClientContext &context, Table
 	if (x_children.empty()) {
 		throw InvalidInputException("%s: x_cols requires at least one column", function_name);
 	}
-	auto x_col = SqlColumn(x_children[0], function_name, "x_cols element");
-	if (input.inputs.size() >= 6) {
-		auto lags = RequireInteger(input.inputs[5], function_name, "lags");
-		if (lags < 0) {
-			throw InvalidInputException("%s: lags must be non-negative", function_name);
+	string x_values;
+	string terms = "['intercept'";
+	for (auto &child : x_children) {
+		x_values += (x_values.empty() ? "" : ", ") + SqlColumn(child, function_name, "x_cols element") + "::DOUBLE";
+		terms += ", " + SqlStringLiteral(RequireString(child, function_name, "x_cols element"));
+	}
+	terms += "]";
+	int64_t lags = -1;
+	if (input.inputs.size() >= 6 && !input.inputs[5].IsNull()) {
+		lags = RequireInteger(input.inputs[5], function_name, "lags");
+		if (lags < 0 || lags > 100000) {
+			throw InvalidInputException("%s: lags must be between 0 and 100000", function_name);
 		}
 	}
+	// Stage 1: per-date OLS of y on all x columns with an intercept (fin_ols).
+	// Stage 2: time-series mean of each coefficient; the standard error is the
+	// classic Fama-MacBeth s / sqrt(T) (lags omitted or NULL) or Newey-West with
+	// Bartlett weights 1 - j / (lags + 1) and no small-sample correction.
+	string stderr_sql;
+	string extra_cte;
+	if (lags < 0) {
+		stderr_sql = "stddev_samp(v) / sqrt(count(v))";
+	} else {
+		extra_cte = StringUtil::Format(
+		    ", __finance_fm_nw AS ("
+		    "  SELECT a.k, sum(CASE WHEN r.j = 0 THEN 1.0 ELSE 2.0 * (1.0 - r.j / (%lld + 1.0)) END * a.e * b.e) AS s "
+		    "  FROM __finance_fm_dev a CROSS JOIN range(0, %lld + 1) r(j) "
+		    "  JOIN __finance_fm_dev b ON b.k = a.k AND b.t = a.t - r.j GROUP BY a.k"
+		    ")",
+		    static_cast<long long>(lags), static_cast<long long>(lags));
+		stderr_sql = "CASE WHEN count(v) >= 2 THEN sqrt(greatest(any_value(nw.s), 0.0)) / count(v) END";
+	}
 	auto query = StringUtil::Format(
-	    "SELECT __finance_date AS date, regr_intercept(__finance_y, __finance_x) AS intercept, "
-	    "regr_slope(__finance_y, __finance_x) AS beta, regr_r2(__finance_y, __finance_x) AS r2, "
-	    "regr_count(__finance_y, __finance_x)::BIGINT AS n "
-	    "FROM (SELECT %s AS __finance_date, %s AS __finance_asset, %s::DOUBLE AS __finance_y, "
-	    "%s::DOUBLE AS __finance_x FROM %s) GROUP BY 1 ORDER BY 1",
-	    date_col, asset_col, y_col, x_col, table);
+	    "WITH __finance_fm_src AS ("
+	    "  SELECT %s AS __finance_date, %s AS __finance_asset, %s::DOUBLE AS __finance_y, [%s] AS __finance_x "
+	    "  FROM %s WHERE %s IS NOT NULL"
+	    "), __finance_fm_stage1 AS ("
+	    "  SELECT __finance_date, fin_ols(__finance_y, __finance_x) AS fit FROM __finance_fm_src GROUP BY 1"
+	    "), __finance_fm_coef AS ("
+	    "  SELECT row_number() OVER (ORDER BY __finance_date) AS t, [fit.intercept] || fit.beta AS b "
+	    "  FROM __finance_fm_stage1 WHERE fit IS NOT NULL AND fit.beta IS NOT NULL"
+	    "), __finance_fm_long AS ("
+	    "  SELECT t, unnest(generate_series(1, len(b))) AS k, unnest(b) AS v FROM __finance_fm_coef"
+	    "), __finance_fm_dev AS ("
+	    "  SELECT t, k, v, v - avg(v) OVER (PARTITION BY k) AS e FROM __finance_fm_long"
+	    ")%s "
+	    "SELECT (%s)[d.k] AS term, avg(d.v) AS estimate, %s AS stderr, "
+	    "avg(d.v) / nullif(%s, 0) AS tstat, count(d.v)::BIGINT AS n_periods "
+	    "FROM __finance_fm_dev d%s GROUP BY d.k ORDER BY d.k",
+	    date_col, asset_col, y_col, x_values, table, date_col, extra_cte, terms, stderr_sql, stderr_sql,
+	    lags < 0 ? "" : " LEFT JOIN __finance_fm_nw nw ON nw.k = d.k");
 	return ParseSubquery(context, query);
 }

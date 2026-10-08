@@ -6,10 +6,21 @@
 #include "duckdb/common/types/column/column_data_collection.hpp"
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/planner/expression.hpp"
+#include "duckdb/planner/expression/bound_cast_expression.hpp"
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include "duckdb/common/types/interval.hpp"
+#if !FINANCE_OLD_DUCKDB_VECTOR_API
+#include "duckdb/common/vector/list_vector.hpp"
+#endif
+#include "duckdb/common/serializer/serializer.hpp"
+#include "duckdb/common/serializer/deserializer.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <array>
 #include <deque>
+#include <functional>
+#include <tuple>
 #include <cstring>
 #include <cctype>
 #include <limits>
@@ -23,11 +34,9 @@ namespace {
 #include "aggregate/update_helpers.inc"
 #include "aggregate/numeric_helpers.inc"
 #include "aggregate/risk_common.inc"
-#include "aggregate/ema.inc"
 #include "aggregate/sortino.inc"
 #include "aggregate/ewma.inc"
 #include "aggregate/bipower_variation.inc"
-#include "aggregate/rsi.inc"
 #include "aggregate/drawdown.inc"
 #include "aggregate/outliers.inc"
 #include "aggregate/quantile_spread.inc"
@@ -37,6 +46,9 @@ namespace {
 #include "aggregate/risk_metrics.inc"
 #include "aggregate/helpers.inc"
 #include "aggregate/value_at_key.inc"
+#include "aggregate/statistics.inc"
+#include "aggregate/regression_matrix.inc"
+#include "aggregate/technical.inc"
 
 } // namespace
 

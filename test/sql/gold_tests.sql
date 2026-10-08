@@ -305,10 +305,11 @@ SELECT
   assert_near('robust finite large trimmed mean', fin_trimmed_mean(x), 1e308, 1e294)
 FROM (VALUES (1e308), (1e308), (1e308)) t(x);
 
--- A recursive Wilder recurrence independently checks seed and tail handling.
+-- A recursive Wilder recurrence independently checks seed and tail handling
+-- (TA-Lib RSI: seed with the mean of the first `period` changes).
 WITH RECURSIVE prices AS (
   SELECT period, i, 100+sin(i::DOUBLE)*5 AS px
-  FROM (VALUES (1),(2),(14),(200)) p(period), range(120) t(i)
+  FROM (VALUES (1),(2),(14),(119)) p(period), range(120) t(i)
 ), changes AS (
   SELECT *, px-lag(px) OVER (PARTITION BY period ORDER BY i) AS diff FROM prices
 ), recurrence(period,i,gain,loss) AS (
@@ -328,7 +329,22 @@ FROM native n JOIN recurrence w USING(period) WHERE w.i=119;
 SELECT assert_near('rsi default period', fin_rsi(px ORDER BY i), fin_rsi(px,14 ORDER BY i), 1e-12)
 FROM (SELECT i,100+sin(i::DOUBLE)*5 px FROM range(10000) t(i));
 
--- Moving windows combine both partially seeded states and affine tails.
+SELECT
+  assert_eq('rsi warm-up needs period changes', fin_rsi(px, 200 ORDER BY i), NULL),
+  assert_eq('rsi bigint period', fin_rsi(px, 14::BIGINT ORDER BY i), fin_rsi(px, 14 ORDER BY i)),
+  assert_eq('rsi decimal period', fin_rsi(px, 14.0 ORDER BY i), fin_rsi(px, 14 ORDER BY i))
+FROM (SELECT i,100+sin(i::DOUBLE)*5 px FROM range(120) t(i));
+
+-- TA-Lib conventions: no movement gives 0, only gains give 100, a non-finite
+-- price makes the recursive indicator NULL for the rest of the series.
+SELECT
+  assert_eq('rsi flat series is zero', fin_rsi(5.0, 3 ORDER BY i), 0.0),
+  assert_eq('rsi rising series is 100', fin_rsi(i::DOUBLE, 3 ORDER BY i), 100.0),
+  assert_eq('rsi nan poisons the series', fin_rsi(CASE WHEN i = 2 THEN 'NaN'::DOUBLE ELSE i END, 3 ORDER BY i), NULL),
+  assert_near('rsi skips null rows', fin_rsi(CASE WHEN i = 2 THEN NULL ELSE i END, 3 ORDER BY i), 100.0, 0.0)
+FROM range(10) t(i);
+
+-- Sliding frames reseed RSI at the frame start; frames shorter than period + 1 rows are NULL.
 WITH prices AS (
   SELECT i,100+sin(i::DOUBLE)*5 AS px FROM range(4096) t(i)
 ), changes AS (
@@ -345,8 +361,8 @@ WITH prices AS (
     coalesce(fsum(greatest(-c.diff,0)/14 * pow(13.0/14,n.i-c.i)) FILTER (WHERE c.i>greatest(n.i-30,0)+14),0) AS loss
   FROM native n JOIN changes c ON c.i>greatest(n.i-30,0) AND c.i<=n.i GROUP BY n.i,n.rsi
 )
-SELECT assert_true('rsi affine window oracle', bool_and(coalesce(abs(rsi-
-  CASE WHEN loss=0 THEN 100 ELSE 100-100/(1+gain/loss) END)<1e-10,false))) FROM refs;
+SELECT assert_true('rsi affine window oracle', bool_and(CASE WHEN i < 14 THEN rsi IS NULL ELSE coalesce(abs(rsi-
+  CASE WHEN loss=0 THEN 100 ELSE 100-100/(1+gain/loss) END)<1e-10,false) END)) FROM refs;
 
 WITH results AS (
   SELECT i, least(i+1,10)::DOUBLE AS n,
@@ -623,8 +639,7 @@ FROM gold_returns;
 -- Explicit-axis trend: hand-calculated noisy fit (Sxx=10, Sxy=6, SSE=2.4).
 WITH points(x, y) AS (
   VALUES (1.0, 2.0), (2.0, 4.0), (3.0, 5.0), (4.0, 4.0), (5.0, 5.0),
-         (NULL, 900.0), (900.0, NULL), ('Infinity'::DOUBLE, 8.0),
-         (8.0, 'NaN'::DOUBLE)
+         (NULL, 900.0), (900.0, NULL), (NULL, 'NaN'::DOUBLE)
 ), fitted AS (SELECT fin_linear_trend(y, x := x) AS t FROM points)
 SELECT assert_near('trend noisy slope', t.slope, 0.6, 1e-12),
        assert_near('trend noisy intercept', t.intercept, 2.2, 1e-12),
@@ -664,21 +679,16 @@ SELECT assert_near('trend two point slope', t.slope, 2.0, 1e-12),
        assert_eq('trend two point stderr', t.stderr, NULL)
 FROM fitted;
 
-WITH fitted AS (
-  SELECT fin_linear_trend(y) AS t FROM (VALUES (2.0), (4.0), (NULL)) p(y)
-)
-SELECT assert_eq('trend fallback slope', t.slope, NULL),
-       assert_near('trend fallback mean', t.intercept, 3.0, 1e-12),
-       assert_eq('trend fallback r2', t.r2, NULL),
-       assert_eq('trend fallback stderr', t.stderr, NULL)
-FROM fitted;
+-- A complete NaN/inf pair makes the whole trend NULL (0.3.0 non-finite policy).
+SELECT assert_eq('trend nonfinite pair is NULL', fin_linear_trend(y, x), NULL)
+FROM (VALUES (1.0, 2.0), (2.0, 4.0), (3.0, 5.0), ('Infinity'::DOUBLE, 8.0)) p(x, y);
 
 WITH fitted AS (
   SELECT fin_linear_trend(y, x := x) AS t
   FROM (VALUES (NULL::DOUBLE, 2.0), (NULL, 4.0), (NULL, NULL)) p(x, y)
 )
 SELECT assert_eq('trend all null axis slope', t.slope, NULL),
-       assert_near('trend all null axis mean', t.intercept, 3.0, 1e-12),
+       assert_eq('trend all null axis intercept', t.intercept, NULL),
        assert_eq('trend all null axis r2', t.r2, NULL),
        assert_eq('trend all null axis stderr', t.stderr, NULL)
 FROM fitted;
@@ -859,19 +869,64 @@ SELECT
   assert_not_null('trimmed mean alias', fin_trimmed_mean(r)),
   assert_not_null('mad', fin_mad(r)),
   assert_near('zscore last', fin_zscore_last(r, seq), -0.5738045840530311, 1e-12),
-  assert_eq('ks placeholder', fin_ks_test(r, benchmark_r), NULL),
-  assert_eq('mann whitney placeholder', fin_mann_whitney_u(r, benchmark_r), NULL),
-  assert_eq('anova placeholder', fin_anova_oneway(r, asset), NULL),
-  assert_not_null('ttest 1 sample stat', (fin_ttest_1samp(r, 0.0)).stat),
-  assert_not_null('ttest 2 sample stat', (fin_ttest_2samp(r, benchmark_r)).stat),
-  assert_not_null('welch ttest stat', (fin_welch_ttest(r, benchmark_r)).stat),
-  assert_not_null('ztest mean', fin_ztest_mean(r, 0.0)),
-  assert_not_null('entropy', fin_entropy(asset)),
-  assert_not_null('rank corr', fin_rank_corr(r, benchmark_r)),
-  assert_eq('mutual information placeholder', fin_mutual_information(r, benchmark_r), NULL),
-  assert_eq('cramers v placeholder', fin_cramers_v(asset, asset), NULL),
-  assert_eq('theils u placeholder', fin_theils_u(asset, asset), NULL)
+  assert_near('entropy of a single category', fin_entropy(asset), 0.0, 1e-12)
 FROM gold_returns;
+
+-- Statistical tests and association measures on gold_stats. Expected values:
+-- scipy 1.16 (ttest_1samp, ttest_ind, ks_2samp statistic, kstwobign with
+-- Stephens' correction, mannwhitneyu(method='asymptotic'), f_oneway,
+-- spearmanr, kendalltau, contingency.association), sklearn mutual_info_score
+-- on numpy histogram2d counts, and the Bergsma bias-corrected Cramer's V.
+SELECT
+  assert_near('ttest 1samp stat', (fin_ttest_1samp(x, 0.1)).stat, 0.05931848307317688, 1e-12),
+  assert_near('ttest 1samp pvalue', (fin_ttest_1samp(x, 0.1)).pvalue, 0.9528862023830069, 1e-12),
+  assert_eq('ttest 1samp df', (fin_ttest_1samp(x, 0.1)).df, 63.0::DOUBLE),
+  assert_near('ttest 2samp pooled stat', (fin_ttest_2samp(x, y)).stat, 0.34314108933029613, 1e-12),
+  assert_near('ttest 2samp pooled pvalue', (fin_ttest_2samp(x, y)).pvalue, 0.732064168020113, 1e-12),
+  assert_eq('ttest 2samp pooled df', (fin_ttest_2samp(x, y)).df, 126.0::DOUBLE),
+  assert_near('welch stat', (fin_welch_ttest(x, y)).stat, 0.3431410893302961, 1e-12),
+  assert_near('welch pvalue', (fin_welch_ttest(x, y)).pvalue, 0.7320642879871965, 1e-12),
+  assert_near('welch satterthwaite df', (fin_welch_ttest(x, y)).df, 125.97354285382625, 1e-9),
+  assert_near('ttest unequal var named', (fin_ttest_2samp(x, y, equal_var := false)).df, 125.97354285382625, 1e-9),
+  assert_eq('ttest df type', typeof((fin_ttest_2samp(x, y)).df), 'DOUBLE'),
+  assert_near('ztest sample sigma stat', (fin_ztest_mean(x, 0.1)).stat, 0.05931848307317688, 1e-12),
+  assert_near('ztest sample sigma pvalue', (fin_ztest_mean(x, 0.1)).pvalue, 0.9526984396725346, 1e-12),
+  assert_near('ztest known sigma stat', (fin_ztest_mean(x, 0.1, 0.8)).stat, 0.058103649502982135, 1e-12),
+  assert_near('ztest known sigma pvalue', (fin_ztest_mean(x, 0.1, 0.8)).pvalue, 0.9536660674235217, 1e-12),
+  assert_near('ks stat', (fin_ks_test(x, y)).stat, 0.140625, 1e-15),
+  assert_near('ks asymptotic pvalue', (fin_ks_test(x, y)).pvalue, 0.5197741925453158, 1e-12),
+  assert_near('mann whitney u', (fin_mann_whitney_u(x, y)).stat, 2179.5, 1e-9),
+  assert_near('mann whitney pvalue', (fin_mann_whitney_u(x, y)).pvalue, 0.53243413305854, 1e-12),
+  assert_near('anova f', (fin_anova_oneway(x, g)).f_stat, 0.04221959435491558, 1e-12),
+  assert_near('anova pvalue', (fin_anova_oneway(x, g)).pvalue, 0.9586872290712113, 1e-12),
+  assert_eq('anova df', [(fin_anova_oneway(x, g)).df_between, (fin_anova_oneway(x, g)).df_within], [2.0, 61.0]),
+  assert_near('anova varchar groups', (fin_anova_oneway(x, 'g' || g)).f_stat, 0.04221959435491558, 1e-12),
+  assert_near('spearman rank corr', fin_rank_corr(x, y), 0.3975640191453417, 1e-12),
+  assert_near('kendall tau-b', fin_rank_corr(x, y, 'kendall'), 0.29436592920776256, 1e-12),
+  assert_near('factor ic spearman default', fin_factor_ic(x, y), 0.3975640191453417, 1e-12),
+  assert_near('factor ic pearson', fin_factor_ic(x, y, 'pearson'), 0.4350683747600051, 1e-12),
+  assert_near('rank ic', fin_rank_ic(x, y), 0.3975640191453417, 1e-12),
+  assert_near('mutual information 5 bins', fin_mutual_information(x, y, 5), 0.30273720906793783, 1e-12),
+  assert_near('cramers v uncorrected', fin_cramers_v(g, h, false), 0.33686123029444703, 1e-12),
+  assert_near('cramers v bias corrected', fin_cramers_v(g, h), 0.2905324612645811, 1e-12),
+  assert_near('theils u', fin_theils_u(g, h), 0.10850540650785828, 1e-12),
+  assert_near('cramers v perfect association', fin_cramers_v(g, 'k' || g, false), 1.0, 1e-12),
+  assert_eq('theils u constant x is NULL', fin_theils_u(1, h), NULL),
+  assert_eq('ttest nonfinite input is NULL', fin_ttest_1samp(CASE WHEN i = 3 THEN 'NaN'::DOUBLE ELSE x END, 0.0), NULL),
+  assert_eq('rank corr nonfinite input is NULL', fin_rank_corr(CASE WHEN i = 3 THEN 'Infinity'::DOUBLE ELSE x END, y), NULL)
+FROM gold_stats;
+
+SELECT
+  assert_eq('ttest single row is NULL', fin_ttest_1samp(x, 0.0), NULL),
+  assert_eq('two-sample ttest one row per sample is NULL', fin_ttest_2samp(x, x), NULL),
+  assert_eq('ks empty sample is NULL', fin_ks_test(x, NULL::DOUBLE), NULL),
+  assert_eq('anova single group is NULL', fin_anova_oneway(x, 1), NULL)
+FROM (VALUES (1.0)) t(x);
+
+-- Two-sample tests take independent NULLs in x and y.
+SELECT assert_near('ks with independent nulls', (fin_ks_test(x, y)).stat, 1.0, 1e-15),
+       assert_near('mann whitney with independent nulls', (fin_mann_whitney_u(x, y)).stat, 0.0, 1e-15)
+FROM (VALUES (1.0, NULL), (2.0, 5.0), (NULL, 6.0), (3.0, 7.0)) t(x, y);
 
 -- Weighted, robust, and tail statistics must honor every public parameter.
 SELECT
@@ -1075,54 +1130,374 @@ SELECT
   assert_eq('first non null', fin_first_non_null(close, ts), 100.0),
   assert_eq('delta return type', typeof(fin_delta(close, ts)), 'DOUBLE'),
   assert_eq('changes return type', typeof(fin_changes(close, ts)), 'BIGINT'),
-  assert_near('ema default recurrence', fin_ema(close ORDER BY seq), 100.69349705112582, 1e-12),
-  assert_near('ema halflife alias', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
-  assert_near('exp decay sum alias', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 508.0, 1e-12),
-  assert_near('exp decay avg alias', fin_exp_decay_avg(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
-  assert_eq('exp decay count alias', fin_exp_decay_count(ts, INTERVAL '1 minute'), 5::BIGINT),
-  assert_eq('exp decay max alias', fin_exp_decay_max(close, ts, INTERVAL '1 minute'), 104.0),
-  assert_not_null('rolling zscore', fin_rolling_zscore(close, seq)),
-  assert_not_null('autocorr alias', fin_autocorr(close)),
-  assert_not_null('crosscorr alias', fin_crosscorr(close, volume)),
-  assert_near('hurst placeholder', fin_hurst(close), 0.5, 1e-12),
-  assert_eq('half life placeholder', fin_half_life_mean_reversion(close), NULL),
-  assert_eq('linear trend omitted axis compatibility', (fin_linear_trend(close)).slope, NULL),
-  assert_eq('adf placeholder', fin_adf(close), NULL),
-  assert_eq('ljung box placeholder', fin_ljung_box(close), NULL)
+  assert_eq('ema warm-up before period rows', fin_ema(close ORDER BY seq), NULL),
+  -- closes 100, 102, 99, 104, 103 one minute apart; weights 2^-(4 - k) with a 1-minute half-life.
+  assert_near('ema halflife', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 198.75 / 1.9375, 1e-12),
+  assert_near('exp decay sum', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 198.75, 1e-12),
+  assert_near('exp decay avg', fin_exp_decay_avg(close, ts, INTERVAL '1 minute'), 198.75 / 1.9375, 1e-12),
+  assert_near('exp decay count', fin_exp_decay_count(ts, INTERVAL '1 minute'), 1.9375, 1e-15),
+  assert_near('exp decay max', fin_exp_decay_max(close, ts, INTERVAL '1 minute'), 103.0, 1e-12),
+  assert_near('exp decay numeric axis', fin_exp_decay_sum(close, epoch(ts), 60.0), 198.75, 1e-12),
+  assert_near('rolling zscore', fin_rolling_zscore(close, ts), 0.6751399510385797, 1e-12),
+  assert_near('rolling zscore matches zscore_last', fin_rolling_zscore(close, ts) - fin_zscore_last(close, ts), 0.0, 1e-15)
 FROM gold_prices;
 
+-- Technical indicators are native TA-Lib-compatible aggregates. Expected values
+-- below are TA-Lib outputs (python ta-lib 0.8.1, TA-Lib C 0.6) on gold_bars;
+-- fin_hma and the custom-constant fin_kama use independent numpy recursions.
+-- Grouped calls return the value at the last ordered row; running windows
+-- reproduce the TA-Lib series and are NULL during warm-up.
 SELECT
-  assert_near('sma alias', fin_sma(close), 101.6, 1e-12),
-  assert_near('wma alias', fin_wma(close), 101.6, 1e-12),
-  assert_near('dema alias', fin_dema(close), 101.6, 1e-12),
-  assert_near('tema alias', fin_tema(close), 101.6, 1e-12),
-  assert_near('trima alias', fin_trima(close), 101.6, 1e-12),
-  assert_near('t3 alias', fin_t3(close), 101.6, 1e-12),
-  assert_near('kama alias', fin_kama(close), 101.6, 1e-12),
-  assert_near('hma alias', fin_hma(close), 101.6, 1e-12),
-  assert_near('linearreg alias', fin_linearreg(close), 101.6, 1e-12),
-  assert_eq('linearreg slope placeholder', fin_linearreg_slope(close), NULL),
-  assert_near('linearreg intercept alias', fin_linearreg_intercept(close), 101.6, 1e-12),
-  assert_near('tsf alias', fin_tsf(close), 101.6, 1e-12),
-  assert_near('momentum', fin_mom(close), 3.0, 1e-12),
-  assert_near('roc', fin_roc(close), 3.0, 1e-12),
-  assert_near('rocp', fin_rocp(close), 0.03, 1e-12),
-  assert_near('rocr', fin_rocr(close), 1.03, 1e-12),
-  assert_near('rocr100', fin_rocr100(close), 103.0, 1e-12)
-FROM gold_prices;
+  assert_near('fin_sma(close, 5) grouped', fin_sma(close, 5 ORDER BY i), 104.22399999999993, 1e-08),
+  assert_near('fin_sma(close) grouped', fin_sma(close ORDER BY i), 102.45549999999999, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_sma(close, 5) OVER run AS c0,
+    fin_sma(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_sma(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_sma(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 101.952, 1e-08),
+  assert_near('fin_sma(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 103.136, 1e-08),
+  assert_true('fin_sma(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_sma(close) row 19', max(c1) FILTER (WHERE i = 19), 100.583, 1e-08),
+  assert_near('fin_sma(close) row 39', max(c1) FILTER (WHERE i = 39), 102.00249999999998, 1e-08)
+FROM series;
 
 SELECT
-  assert_near('rsi', fin_rsi(close ORDER BY ts), 63.63636363636363, 1e-12),
-  assert_near('rsi honors period', fin_rsi(close, 2 ORDER BY ts), 63.15789473684211, 1e-12),
-  assert_near('macd placeholder', (fin_macd(close)).macd, 0.0, 1e-12),
-  assert_near('ppo placeholder', fin_ppo(close), 0.0, 1e-12),
-  assert_near('apo placeholder', fin_apo(close), 0.0, 1e-12),
-  assert_near('trix alias', fin_trix(close), 0.03, 1e-12),
-  assert_near('cmo direction', fin_cmo(close), 100.0, 1e-12),
-  assert_not_null('stoch', (fin_stoch(high, low, close)).k),
-  assert_not_null('willr', fin_willr(high, low, close)),
+  assert_near('fin_wma(close, 5) grouped', fin_wma(close, 5 ORDER BY i), 103.66999999999987, 1e-08),
+  assert_near('fin_wma(close) grouped', fin_wma(close ORDER BY i), 102.8800476190475, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_wma(close, 5) OVER run AS c0,
+    fin_wma(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_wma(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_wma(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 102.14599999999999, 1e-08),
+  assert_near('fin_wma(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 103.26600000000005, 1e-08),
+  assert_true('fin_wma(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_wma(close) row 19', max(c1) FILTER (WHERE i = 19), 100.44990476190476, 1e-08),
+  assert_near('fin_wma(close) row 39', max(c1) FILTER (WHERE i = 39), 102.02233333333331, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_ema(close, 5) grouped', fin_ema(close, 5 ORDER BY i), 103.26225509669199, 1e-08),
+  assert_near('fin_ema(close) grouped', fin_ema(close ORDER BY i), 102.74406188643894, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_ema(close, 5) OVER run AS c0,
+    fin_ema(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_ema(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_ema(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 101.952, 1e-08),
+  assert_near('fin_ema(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 102.73005894523298, 1e-08),
+  assert_true('fin_ema(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_ema(close) row 19', max(c1) FILTER (WHERE i = 19), 100.583, 1e-08),
+  assert_near('fin_ema(close) row 39', max(c1) FILTER (WHERE i = 39), 101.96284677845344, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_dema(close, 5) grouped', fin_dema(close, 5 ORDER BY i), 103.1406708547677, 1e-08),
+  assert_near('fin_dema(close) grouped', fin_dema(close ORDER BY i), 103.35022365586487, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_dema(close, 5) OVER run AS c0,
+    fin_dema(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_dema(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 8)),
+  assert_near('fin_dema(close, 5) row 8', max(c0) FILTER (WHERE i = 8), 97.40315555555557, 1e-08),
+  assert_near('fin_dema(close, 5) row 33', max(c0) FILTER (WHERE i = 33), 100.49476504400717, 1e-08),
+  assert_true('fin_dema(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 38)),
+  assert_near('fin_dema(close) row 38', max(c1) FILTER (WHERE i = 38), 102.08189664790092, 1e-08),
+  assert_near('fin_dema(close) row 48', max(c1) FILTER (WHERE i = 48), 103.00228398099446, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_tema(close, 5) grouped', fin_tema(close, 5 ORDER BY i), 102.67461933589873, 1e-08),
+  assert_near('fin_tema(close) grouped', fin_tema(close ORDER BY i), 103.53304012053445, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_tema(close, 5) OVER run AS c0,
+    fin_tema(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_tema(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 12)),
+  assert_near('fin_tema(close, 5) row 12', max(c0) FILTER (WHERE i = 12), 102.89980138393533, 1e-08),
+  assert_near('fin_tema(close, 5) row 35', max(c0) FILTER (WHERE i = 35), 98.72602558589409, 1e-08),
+  assert_true('fin_tema(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 57)),
+  assert_near('fin_tema(close) row 57', max(c1) FILTER (WHERE i = 57), 104.08395270430739, 1e-08),
+  assert_near('fin_tema(close) row 58', max(c1) FILTER (WHERE i = 58), 103.89907440083327, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_trima(close, 6) grouped', fin_trima(close, 6 ORDER BY i), 104.5566666666671, 1e-08),
+  assert_near('fin_trima(close, 7) grouped', fin_trima(close, 7 ORDER BY i), 104.37125000000007, 1e-08),
+  assert_near('fin_trima(close) grouped', fin_trima(close ORDER BY i), 102.47063636363632, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_trima(close, 6) OVER run AS c0,
+    fin_trima(close, 7) OVER run AS c1,
+    fin_trima(close) OVER run AS c2
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_trima(close, 6) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_trima(close, 6) row 5', max(c0) FILTER (WHERE i = 5), 101.9125, 1e-08),
+  assert_near('fin_trima(close, 6) row 32', max(c0) FILTER (WHERE i = 32), 103.2300000000002, 1e-08),
+  assert_true('fin_trima(close, 7) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 6)),
+  assert_near('fin_trima(close, 7) row 6', max(c1) FILTER (WHERE i = 6), 101.51062499999999, 1e-08),
+  assert_near('fin_trima(close, 7) row 32', max(c1) FILTER (WHERE i = 32), 102.99125000000018, 1e-08),
+  assert_true('fin_trima(close) warm-up rows', bool_and(c2 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_trima(close) row 19', max(c2) FILTER (WHERE i = 19), 100.49463636363635, 1e-08),
+  assert_near('fin_trima(close) row 39', max(c2) FILTER (WHERE i = 39), 101.64390909090906, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_t3(close, 3) grouped', fin_t3(close, 3 ORDER BY i), 103.81709038854918, 1e-08),
+  assert_near('fin_t3(close, 3, 0.5) grouped', fin_t3(close, 3, 0.5 ORDER BY i), 103.83638450621041, 1e-08),
+  assert_eq('fin_t3(close) grouped warm-up', fin_t3(close ORDER BY i), NULL)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_t3(close, 3) OVER run AS c0,
+    fin_t3(close, 3, 0.5) OVER run AS c1,
+    fin_t3(close) OVER run AS c2
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_t3(close, 3) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 12)),
+  assert_near('fin_t3(close, 3) row 12', max(c0) FILTER (WHERE i = 12), 102.56618325757276, 1e-08),
+  assert_near('fin_t3(close, 3) row 35', max(c0) FILTER (WHERE i = 35), 99.25901596013618, 1e-08),
+  assert_true('fin_t3(close, 3, 0.5) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 12)),
+  assert_near('fin_t3(close, 3, 0.5) row 12', max(c1) FILTER (WHERE i = 12), 102.06793758983638, 1e-08),
+  assert_near('fin_t3(close, 3, 0.5) row 35', max(c1) FILTER (WHERE i = 35), 99.68894986374828, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_kama(close) grouped', fin_kama(close ORDER BY i), 101.4712618285204, 1e-08),
+  assert_near('fin_kama(close, 5, 3, 20) grouped', fin_kama(close, 5, 3, 20 ORDER BY i), 103.3348130640134, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_kama(close) OVER run AS c0,
+    fin_kama(close, 5, 3, 20) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_kama(close) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_kama(close) row 10', max(c0) FILTER (WHERE i = 10), 100.44675007976707, 1e-08),
+  assert_near('fin_kama(close) row 34', max(c0) FILTER (WHERE i = 34), 100.82581179722685, 1e-08),
+  assert_true('fin_kama(close, 5, 3, 20) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_kama(close, 5, 3, 20) row 5', max(c1) FILTER (WHERE i = 5), 101.26068846709121, 1e-08),
+  assert_near('fin_kama(close, 5, 3, 20) row 32', max(c1) FILTER (WHERE i = 32), 102.35159686828713, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_hma(close, 9) grouped', fin_hma(close, 9 ORDER BY i), 104.65344444444446, 1e-08),
+  assert_near('fin_hma(close) grouped', fin_hma(close ORDER BY i), 103.71471385281386, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_hma(close, 9) OVER run AS c0,
+    fin_hma(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_hma(close, 9) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_hma(close, 9) row 10', max(c0) FILTER (WHERE i = 10), 99.6234814814815, 1e-08),
+  assert_near('fin_hma(close, 9) row 34', max(c0) FILTER (WHERE i = 34), 99.2788148148148, 1e-08),
+  assert_true('fin_hma(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 22)),
+  assert_near('fin_hma(close) row 22', max(c1) FILTER (WHERE i = 22), 102.36925800865801, 1e-08),
+  assert_near('fin_hma(close) row 40', max(c1) FILTER (WHERE i = 40), 102.65942597402598, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_linearreg(close, 5) grouped', fin_linearreg(close, 5 ORDER BY i), 102.56200000000096, 1e-08),
+  assert_near('fin_linearreg(close) grouped', fin_linearreg(close ORDER BY i), 102.9977142857146, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_linearreg(close, 5) OVER run AS c0,
+    fin_linearreg(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_linearreg(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_linearreg(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 102.53400000000005, 1e-08),
+  assert_near('fin_linearreg(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 103.52600000000017, 1e-08),
+  assert_true('fin_linearreg(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 13)),
+  assert_near('fin_linearreg(close) row 13', max(c1) FILTER (WHERE i = 13), 101.37971428571431, 1e-08),
+  assert_near('fin_linearreg(close) row 36', max(c1) FILTER (WHERE i = 36), 101.329142857143, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_linearreg_slope(close, 5) grouped', fin_linearreg_slope(close, 5 ORDER BY i), -0.8309999999994762, 1e-09),
+  assert_near('fin_linearreg_slope(close) grouped', fin_linearreg_slope(close ORDER BY i), -0.024527472527416237, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_linearreg_slope(close, 5) OVER run AS c0,
+    fin_linearreg_slope(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_linearreg_slope(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_linearreg_slope(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 0.29100000000002185, 1e-09),
+  assert_near('fin_linearreg_slope(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 0.19500000000009096, 1e-09),
+  assert_true('fin_linearreg_slope(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 13)),
+  assert_near('fin_linearreg_slope(close) row 13', max(c1) FILTER (WHERE i = 13), 0.06193406593406886, 1e-09),
+  assert_near('fin_linearreg_slope(close) row 36', max(c1) FILTER (WHERE i = 36), 0.06316483516486039, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_linearreg_intercept(close, 5) grouped', fin_linearreg_intercept(close, 5 ORDER BY i), 105.88599999999887, 1e-08),
+  assert_near('fin_linearreg_intercept(close) grouped', fin_linearreg_intercept(close ORDER BY i), 103.31657142857101, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_linearreg_intercept(close, 5) OVER run AS c0,
+    fin_linearreg_intercept(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_linearreg_intercept(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_linearreg_intercept(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 101.36999999999996, 1e-08),
+  assert_near('fin_linearreg_intercept(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 102.7459999999998, 1e-08),
+  assert_true('fin_linearreg_intercept(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 13)),
+  assert_near('fin_linearreg_intercept(close) row 13', max(c1) FILTER (WHERE i = 13), 100.57457142857142, 1e-08),
+  assert_near('fin_linearreg_intercept(close) row 36', max(c1) FILTER (WHERE i = 36), 100.50799999999981, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_tsf(close, 5) grouped', fin_tsf(close, 5 ORDER BY i), 101.73100000000149, 1e-08),
+  assert_near('fin_tsf(close) grouped', fin_tsf(close ORDER BY i), 102.97318681318718, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_tsf(close, 5) OVER run AS c0,
+    fin_tsf(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_tsf(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_tsf(close, 5) row 4', max(c0) FILTER (WHERE i = 4), 102.82500000000007, 1e-08),
+  assert_near('fin_tsf(close, 5) row 31', max(c0) FILTER (WHERE i = 31), 103.72100000000025, 1e-08),
+  assert_true('fin_tsf(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 13)),
+  assert_near('fin_tsf(close) row 13', max(c1) FILTER (WHERE i = 13), 101.44164835164838, 1e-08),
+  assert_near('fin_tsf(close) row 36', max(c1) FILTER (WHERE i = 36), 101.39230769230785, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_mom(close, 3) grouped', fin_mom(close, 3 ORDER BY i), -4.480000000000004, 1e-09),
+  assert_near('fin_mom(close) grouped', fin_mom(close ORDER BY i), -1.490000000000009, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_mom(close, 3) OVER run AS c0,
+    fin_mom(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_mom(close, 3) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 3)),
+  assert_near('fin_mom(close, 3) row 3', max(c0) FILTER (WHERE i = 3), 2.6099999999999994, 1e-09),
+  assert_near('fin_mom(close, 3) row 31', max(c0) FILTER (WHERE i = 31), -0.8100000000000023, 1e-09),
+  assert_true('fin_mom(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_mom(close) row 10', max(c1) FILTER (WHERE i = 10), 2.460000000000008, 1e-09),
+  assert_near('fin_mom(close) row 34', max(c1) FILTER (WHERE i = 34), 0.12999999999999545, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_roc(close, 3) grouped', fin_roc(close, 3 ORDER BY i), -4.205388153571765, 1e-09),
+  assert_near('fin_roc(close) grouped', fin_roc(close ORDER BY i), -1.4390573691327124, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_roc(close, 3) OVER run AS c0,
+    fin_roc(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_roc(close, 3) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 3)),
+  assert_near('fin_roc(close, 3) row 3', max(c0) FILTER (WHERE i = 3), 2.589285714285716, 1e-09),
+  assert_near('fin_roc(close, 3) row 31', max(c0) FILTER (WHERE i = 31), -0.7890122735242588, 1e-09),
+  assert_true('fin_roc(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_roc(close) row 10', max(c1) FILTER (WHERE i = 10), 2.440476190476204, 1e-09),
+  assert_near('fin_roc(close) row 34', max(c1) FILTER (WHERE i = 34), 0.13197969543146115, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_rocp(close, 3) grouped', fin_rocp(close, 3 ORDER BY i), -0.04205388153571767, 1e-09),
+  assert_near('fin_rocp(close) grouped', fin_rocp(close ORDER BY i), -0.01439057369132711, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_rocp(close, 3) OVER run AS c0,
+    fin_rocp(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_rocp(close, 3) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 3)),
+  assert_near('fin_rocp(close, 3) row 3', max(c0) FILTER (WHERE i = 3), 0.025892857142857138, 1e-09),
+  assert_near('fin_rocp(close, 3) row 31', max(c0) FILTER (WHERE i = 31), -0.007890122735242571, 1e-09),
+  assert_true('fin_rocp(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_rocp(close) row 10', max(c1) FILTER (WHERE i = 10), 0.024404761904761985, 1e-09),
+  assert_near('fin_rocp(close) row 34', max(c1) FILTER (WHERE i = 34), 0.0013197969543146746, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_rocr(close, 3) grouped', fin_rocr(close, 3 ORDER BY i), 0.9579461184642823, 1e-09),
+  assert_near('fin_rocr(close) grouped', fin_rocr(close ORDER BY i), 0.9856094263086729, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_rocr(close, 3) OVER run AS c0,
+    fin_rocr(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_rocr(close, 3) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 3)),
+  assert_near('fin_rocr(close, 3) row 3', max(c0) FILTER (WHERE i = 3), 1.0258928571428572, 1e-09),
+  assert_near('fin_rocr(close, 3) row 31', max(c0) FILTER (WHERE i = 31), 0.9921098772647574, 1e-09),
+  assert_true('fin_rocr(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_rocr(close) row 10', max(c1) FILTER (WHERE i = 10), 1.024404761904762, 1e-09),
+  assert_near('fin_rocr(close) row 34', max(c1) FILTER (WHERE i = 34), 1.0013197969543146, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_rocr100(close, 3) grouped', fin_rocr100(close, 3 ORDER BY i), 95.79461184642824, 1e-08),
+  assert_near('fin_rocr100(close) grouped', fin_rocr100(close ORDER BY i), 98.56094263086729, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_rocr100(close, 3) OVER run AS c0,
+    fin_rocr100(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_rocr100(close, 3) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 3)),
+  assert_near('fin_rocr100(close, 3) row 3', max(c0) FILTER (WHERE i = 3), 102.58928571428572, 1e-08),
+  assert_near('fin_rocr100(close, 3) row 31', max(c0) FILTER (WHERE i = 31), 99.21098772647574, 1e-08),
+  assert_true('fin_rocr100(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_rocr100(close) row 10', max(c1) FILTER (WHERE i = 10), 102.4404761904762, 1e-08),
+  assert_near('fin_rocr100(close) row 34', max(c1) FILTER (WHERE i = 34), 100.13197969543145, 1e-08)
+FROM series;
+
+SELECT
   assert_not_null('ultosc', fin_ultosc(high, low, close)),
-  assert_not_null('cci', fin_cci(high, low, close)),
   assert_not_null('mfi', fin_mfi(high, low, close, volume)),
   assert_near('true range', fin_true_range(high, low, close), 7.0, 1e-12),
   assert_not_null('atr', fin_atr(high, low, close)),
@@ -1130,27 +1505,646 @@ SELECT
 FROM gold_prices;
 
 SELECT
-  assert_not_null('stochrsi alias', (fin_stochrsi(close)).k)
-FROM gold_prices;
+  assert_near('fin_rsi(close, 5) grouped', fin_rsi(close, 5 ORDER BY i), 40.8696563404658, 4e-09),
+  assert_near('fin_rsi(close) grouped', fin_rsi(close ORDER BY i), 48.746887976151264, 5e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_rsi(close, 5) OVER run AS c0,
+    fin_rsi(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_rsi(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_rsi(close, 5) row 5', max(c0) FILTER (WHERE i = 5), 34.25196850393704, 3e-09),
+  assert_near('fin_rsi(close, 5) row 32', max(c0) FILTER (WHERE i = 32), 36.517319311008684, 4e-09),
+  assert_true('fin_rsi(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 14)),
+  assert_near('fin_rsi(close) row 14', max(c1) FILTER (WHERE i = 14), 46.751740139211165, 5e-09),
+  assert_near('fin_rsi(close) row 36', max(c1) FILTER (WHERE i = 36), 53.915427323175514, 5e-09)
+FROM series;
 
 SELECT
-  assert_not_null('bbands middle', (fin_bbands(close)).middle),
-  assert_not_null('keltner middle', (fin_keltner(high, low, close)).middle),
-  assert_not_null('donchian middle', (fin_donchian(high, low)).middle),
-  assert_not_null('stddev indicator', fin_stddev(close)),
-  assert_not_null('var indicator', fin_var_indicator(close)),
+  assert_near('fin_cmo(close, 5) grouped', fin_cmo(close, 5 ORDER BY i), -18.260687319068406, 2e-09),
+  assert_near('fin_cmo(close) grouped', fin_cmo(close ORDER BY i), -2.5062240476974655, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_cmo(close, 5) OVER run AS c0,
+    fin_cmo(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_cmo(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_cmo(close, 5) row 5', max(c0) FILTER (WHERE i = 5), -31.49606299212591, 3e-09),
+  assert_near('fin_cmo(close, 5) row 32', max(c0) FILTER (WHERE i = 32), -26.96536137798264, 3e-09),
+  assert_true('fin_cmo(close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 14)),
+  assert_near('fin_cmo(close) row 14', max(c1) FILTER (WHERE i = 14), -6.4965197215776715, 1e-09),
+  assert_near('fin_cmo(close) row 36', max(c1) FILTER (WHERE i = 36), 7.830854646351075, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_macd(close).macd grouped', (fin_macd(close ORDER BY i)).macd, 0.4758814095501691, 1e-09),
+  assert_near('fin_macd(close).signal grouped', (fin_macd(close ORDER BY i)).signal, 0.41305311078516943, 1e-09),
+  assert_near('fin_macd(close).hist grouped', (fin_macd(close ORDER BY i)).hist, 0.06282829876499968, 1e-09),
+  assert_near('fin_macd(close, 5, 10, 4).macd grouped', (fin_macd(close, 5, 10, 4 ORDER BY i)).macd, 0.13475043643278184, 1e-09),
+  assert_near('fin_macd(close, 5, 10, 4).signal grouped', (fin_macd(close, 5, 10, 4 ORDER BY i)).signal, 0.37219990983164575, 1e-09),
+  assert_near('fin_macd(close, 5, 10, 4).hist grouped', (fin_macd(close, 5, 10, 4 ORDER BY i)).hist, -0.2374494733988639, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_macd(close) OVER run AS c0,
+    fin_macd(close, 5, 10, 4) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_macd(close).macd warm-up rows', bool_and((c0).macd IS NULL) FILTER (WHERE i < 33)),
+  assert_near('fin_macd(close).macd row 33', max((c0).macd) FILTER (WHERE i = 33), 0.13151910030791214, 1e-09),
+  assert_near('fin_macd(close).macd row 46', max((c0).macd) FILTER (WHERE i = 46), 0.2415481957680754, 1e-09),
+  assert_true('fin_macd(close).signal warm-up rows', bool_and((c0).signal IS NULL) FILTER (WHERE i < 33)),
+  assert_near('fin_macd(close).signal row 33', max((c0).signal) FILTER (WHERE i = 33), 0.18234160555251971, 1e-09),
+  assert_near('fin_macd(close).signal row 46', max((c0).signal) FILTER (WHERE i = 46), 0.13257199025446387, 1e-09),
+  assert_true('fin_macd(close).hist warm-up rows', bool_and((c0).hist IS NULL) FILTER (WHERE i < 33)),
+  assert_near('fin_macd(close).hist row 33', max((c0).hist) FILTER (WHERE i = 33), -0.050822505244607574, 1e-09),
+  assert_near('fin_macd(close).hist row 46', max((c0).hist) FILTER (WHERE i = 46), 0.10897620551361153, 1e-09),
+  assert_true('fin_macd(close, 5, 10, 4).macd warm-up rows', bool_and((c1).macd IS NULL) FILTER (WHERE i < 12)),
+  assert_near('fin_macd(close, 5, 10, 4).macd row 12', max((c1).macd) FILTER (WHERE i = 12), 0.14512572001001445, 1e-09),
+  assert_near('fin_macd(close, 5, 10, 4).macd row 35', max((c1).macd) FILTER (WHERE i = 35), -0.6834542121977876, 1e-09),
+  assert_true('fin_macd(close, 5, 10, 4).signal warm-up rows', bool_and((c1).signal IS NULL) FILTER (WHERE i < 12)),
+  assert_near('fin_macd(close, 5, 10, 4).signal row 12', max((c1).signal) FILTER (WHERE i = 12), -0.5902247683446085, 1e-09),
+  assert_near('fin_macd(close, 5, 10, 4).signal row 35', max((c1).signal) FILTER (WHERE i = 35), -0.4169854430591846, 1e-09),
+  assert_true('fin_macd(close, 5, 10, 4).hist warm-up rows', bool_and((c1).hist IS NULL) FILTER (WHERE i < 12)),
+  assert_near('fin_macd(close, 5, 10, 4).hist row 12', max((c1).hist) FILTER (WHERE i = 12), 0.7353504883546229, 1e-09),
+  assert_near('fin_macd(close, 5, 10, 4).hist row 35', max((c1).hist) FILTER (WHERE i = 35), -0.26646876913860296, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_apo(close) grouped', fin_apo(close ORDER BY i), 0.390641025640889, 1e-09),
+  assert_near('fin_apo(close, 5, 10, ''ema'') grouped', fin_apo(close, 5, 10, 'ema' ORDER BY i), 0.1347504376517037, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_apo(close) OVER run AS c0,
+    fin_apo(close, 5, 10, 'ema') OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_apo(close) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 25)),
+  assert_near('fin_apo(close) row 25', max(c0) FILTER (WHERE i = 25), -0.12006410256408628, 1e-09),
+  assert_near('fin_apo(close) row 42', max(c0) FILTER (WHERE i = 42), -0.2561538461538646, 1e-09),
+  assert_true('fin_apo(close, 5, 10, ''ema'') warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_apo(close, 5, 10, ''ema'') row 9', max(c1) FILTER (WHERE i = 9), -0.9417901234567978, 1e-09),
+  assert_near('fin_apo(close, 5, 10, ''ema'') row 34', max(c1) FILTER (WHERE i = 34), -0.6452497427090123, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_ppo(close) grouped', fin_ppo(close ORDER BY i), 0.3814567215001542, 1e-09),
+  assert_near('fin_ppo(close, 5, 10, ''ema'') grouped', fin_ppo(close, 5, 10, 'ema' ORDER BY i), 0.130663917542866, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_ppo(close) OVER run AS c0,
+    fin_ppo(close, 5, 10, 'ema') OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_ppo(close) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 25)),
+  assert_near('fin_ppo(close) row 25', max(c0) FILTER (WHERE i = 25), -0.1190235619627733, 1e-09),
+  assert_near('fin_ppo(close) row 42', max(c0) FILTER (WHERE i = 42), -0.2517453969526136, 1e-09),
+  assert_true('fin_ppo(close, 5, 10, ''ema'') warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_ppo(close, 5, 10, ''ema'') row 9', max(c1) FILTER (WHERE i = 9), -0.9396008534682168, 1e-09),
+  assert_near('fin_ppo(close, 5, 10, ''ema'') row 34', max(c1) FILTER (WHERE i = 34), -0.6391676565581739, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_trix(close, 5) grouped', fin_trix(close, 5 ORDER BY i), 0.16743309973663578, 1e-09),
+  assert_eq('fin_trix(close) grouped warm-up', fin_trix(close ORDER BY i), NULL)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_trix(close, 5) OVER run AS c0,
+    fin_trix(close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_trix(close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 13)),
+  assert_near('fin_trix(close, 5) row 13', max(c0) FILTER (WHERE i = 13), 0.33476746138090263, 1e-09),
+  assert_near('fin_trix(close, 5) row 36', max(c0) FILTER (WHERE i = 36), -0.17850187252730354, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_stoch(high, low, close).k grouped', (fin_stoch(high, low, close ORDER BY i)).k, 55.49263873159683, 6e-09),
+  assert_near('fin_stoch(high, low, close).d grouped', (fin_stoch(high, low, close ORDER BY i)).d, 69.49227124189805, 7e-09),
+  assert_near('fin_stoch(high, low, close, 5, 3, 1).k grouped', (fin_stoch(high, low, close, 5, 3, 1 ORDER BY i)).k, 12.99342105263145, 1e-09),
+  assert_near('fin_stoch(high, low, close, 5, 3, 1).d grouped', (fin_stoch(high, low, close, 5, 3, 1 ORDER BY i)).d, 31.9111313378082, 3e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_stoch(high, low, close) OVER run AS c0,
+    fin_stoch(high, low, close, 5, 3, 1) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_stoch(high, low, close).k warm-up rows', bool_and((c0).k IS NULL) FILTER (WHERE i < 17)),
+  assert_near('fin_stoch(high, low, close).k row 17', max((c0).k) FILTER (WHERE i = 17), 22.76211213555239, 2e-09),
+  assert_near('fin_stoch(high, low, close).k row 38', max((c0).k) FILTER (WHERE i = 38), 76.66666666666676, 8e-09),
+  assert_true('fin_stoch(high, low, close).d warm-up rows', bool_and((c0).d IS NULL) FILTER (WHERE i < 17)),
+  assert_near('fin_stoch(high, low, close).d row 17', max((c0).d) FILTER (WHERE i = 17), 27.919690073828804, 3e-09),
+  assert_near('fin_stoch(high, low, close).d row 38', max((c0).d) FILTER (WHERE i = 38), 57.66541822721609, 6e-09),
+  assert_true('fin_stoch(high, low, close, 5, 3, 1).k warm-up rows', bool_and((c1).k IS NULL) FILTER (WHERE i < 6)),
+  assert_near('fin_stoch(high, low, close, 5, 3, 1).k row 6', max((c1).k) FILTER (WHERE i = 6), 9.885386819484204, 1e-09),
+  assert_near('fin_stoch(high, low, close, 5, 3, 1).k row 32', max((c1).k) FILTER (WHERE i = 32), 11.819595645412003, 1e-09),
+  assert_true('fin_stoch(high, low, close, 5, 3, 1).d warm-up rows', bool_and((c1).d IS NULL) FILTER (WHERE i < 6)),
+  assert_near('fin_stoch(high, low, close, 5, 3, 1).d row 6', max((c1).d) FILTER (WHERE i = 6), 17.14489674308421, 2e-09),
+  assert_near('fin_stoch(high, low, close, 5, 3, 1).d row 32', max((c1).d) FILTER (WHERE i = 32), 37.60143850319623, 4e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_stochrsi(close).k grouped', (fin_stochrsi(close ORDER BY i)).k, 0.0, 1e-09),
+  assert_near('fin_stochrsi(close).d grouped', (fin_stochrsi(close ORDER BY i)).d, 7.507804449893892, 1e-09),
+  assert_near('fin_stochrsi(close, 5, 5, 2).k grouped', (fin_stochrsi(close, 5, 5, 2 ORDER BY i)).k, 0.0, 1e-09),
+  assert_near('fin_stochrsi(close, 5, 5, 2).d grouped', (fin_stochrsi(close, 5, 5, 2 ORDER BY i)).d, 2.842170943040401e-14, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_stochrsi(close) OVER run AS c0,
+    fin_stochrsi(close, 5, 5, 2) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_stochrsi(close).k warm-up rows', bool_and((c0).k IS NULL) FILTER (WHERE i < 18)),
+  assert_near('fin_stochrsi(close).k row 18', max((c0).k) FILTER (WHERE i = 18), 100.0, 1e-08),
+  assert_near('fin_stochrsi(close).k row 38', max((c0).k) FILTER (WHERE i = 38), 88.48041608594879, 9e-09),
+  assert_true('fin_stochrsi(close).d warm-up rows', bool_and((c0).d IS NULL) FILTER (WHERE i < 18)),
+  assert_near('fin_stochrsi(close).d row 18', max((c0).d) FILTER (WHERE i = 18), 84.08198515669129, 8e-09),
+  assert_near('fin_stochrsi(close).d row 38', max((c0).d) FILTER (WHERE i = 38), 96.16013869531626, 1e-08),
+  assert_true('fin_stochrsi(close, 5, 5, 2).k warm-up rows', bool_and((c1).k IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_stochrsi(close, 5, 5, 2).k row 10', max((c1).k) FILTER (WHERE i = 10), 100.0, 1e-08),
+  assert_near('fin_stochrsi(close, 5, 5, 2).k row 34', max((c1).k) FILTER (WHERE i = 34), 0.0, 1e-09),
+  assert_true('fin_stochrsi(close, 5, 5, 2).d warm-up rows', bool_and((c1).d IS NULL) FILTER (WHERE i < 10)),
+  assert_near('fin_stochrsi(close, 5, 5, 2).d row 10', max((c1).d) FILTER (WHERE i = 10), 100.0, 1e-08),
+  assert_near('fin_stochrsi(close, 5, 5, 2).d row 34', max((c1).d) FILTER (WHERE i = 34), 2.842170943040401e-14, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_willr(high, low, close, 5) grouped', fin_willr(high, low, close, 5 ORDER BY i), -87.00657894736855, 9e-09),
+  assert_near('fin_willr(high, low, close) grouped', fin_willr(high, low, close ORDER BY i), -59.909399773499516, 6e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_willr(high, low, close, 5) OVER run AS c0,
+    fin_willr(high, low, close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_willr(high, low, close, 5) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_willr(high, low, close, 5) row 4', max(c0) FILTER (WHERE i = 4), -67.13286713286726, 7e-09),
+  assert_near('fin_willr(high, low, close, 5) row 31', max(c0) FILTER (WHERE i = 31), -83.22580645161291, 8e-09),
+  assert_true('fin_willr(high, low, close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 13)),
+  assert_near('fin_willr(high, low, close) row 13', max(c1) FILTER (WHERE i = 13), -27.374301675977726, 3e-09),
+  assert_near('fin_willr(high, low, close) row 36', max(c1) FILTER (WHERE i = 36), -34.943820224719076, 3e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_cci(high, low, close, 10, 0.03) grouped', fin_cci(high, low, close, 10, 0.03 ORDER BY i), -10.257879656160585, 1e-09),
+  assert_near('fin_cci(high, low, close) grouped', fin_cci(high, low, close ORDER BY i), -14.171569057863142, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_cci(high, low, close, 10, 0.03) OVER run AS c0,
+    fin_cci(high, low, close) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_cci(high, low, close, 10, 0.03) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_cci(high, low, close, 10, 0.03) row 9', max(c0) FILTER (WHERE i = 9), 3.520768074974064, 1e-09),
+  assert_near('fin_cci(high, low, close, 10, 0.03) row 34', max(c0) FILTER (WHERE i = 34), -44.39895371318119, 4e-09),
+  assert_true('fin_cci(high, low, close) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_cci(high, low, close) row 19', max(c1) FILTER (WHERE i = 19), 87.21896383186625, 9e-09),
+  assert_near('fin_cci(high, low, close) row 39', max(c1) FILTER (WHERE i = 39), 79.73775865601397, 8e-09)
+FROM series;
+
+SELECT
   assert_not_null('adx alias', fin_adx(high, low, close)),
   assert_not_null('adxr alias', fin_adxr(high, low, close)),
   assert_not_null('dx alias', fin_dx(high, low, close)),
   assert_not_null('plus di', fin_plus_di(high, low, close)),
   assert_not_null('minus di', fin_minus_di(high, low, close)),
   assert_not_null('plus dm', fin_plus_dm(high, low)),
-  assert_not_null('minus dm', fin_minus_dm(high, low)),
-  assert_near('aroon placeholder', (fin_aroon(high, low)).oscillator, 0.0, 1e-12),
-  assert_near('aroonosc placeholder', fin_aroonosc(high, low), 0.0, 1e-12),
-  assert_not_null('sar alias', fin_sar(high, low)),
-  assert_not_null('sarext alias', fin_sarext(high, low, NULL))
+  assert_not_null('minus dm', fin_minus_dm(high, low))
 FROM gold_prices;
+
+SELECT
+  assert_near('fin_bbands(close).lower grouped', (fin_bbands(close ORDER BY i)).lower, 98.03171214342277, 1e-08),
+  assert_near('fin_bbands(close).middle grouped', (fin_bbands(close ORDER BY i)).middle, 102.45549999999999, 1e-08),
+  assert_near('fin_bbands(close).upper grouped', (fin_bbands(close ORDER BY i)).upper, 106.8792878565772, 1e-08),
+  assert_near('fin_bbands(close).width grouped', (fin_bbands(close ORDER BY i)).width, 0.08635530267437515, 1e-09),
+  assert_near('fin_bbands(close).percent_b grouped', (fin_bbands(close ORDER BY i)).percent_b, 0.45416823623254243, 1e-09),
+  assert_near('fin_bbands(close, 10, 1.5, 1).lower grouped', (fin_bbands(close, 10, 1.5, 1 ORDER BY i)).lower, 99.0953738423863, 1e-08),
+  assert_near('fin_bbands(close, 10, 1.5, 1).middle grouped', (fin_bbands(close, 10, 1.5, 1 ORDER BY i)).middle, 102.59800000000004, 1e-08),
+  assert_near('fin_bbands(close, 10, 1.5, 1).upper grouped', (fin_bbands(close, 10, 1.5, 1 ORDER BY i)).upper, 106.10062615761379, 1e-08),
+  assert_near('fin_bbands(close, 10, 1.5, 1).width grouped', (fin_bbands(close, 10, 1.5, 1 ORDER BY i)).width, 0.06827864398163211, 1e-09),
+  assert_near('fin_bbands(close, 10, 1.5, 1).percent_b grouped', (fin_bbands(close, 10, 1.5, 1 ORDER BY i)).percent_b, 0.4217729818512257, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_bbands(close) OVER run AS c0,
+    fin_bbands(close, 10, 1.5, 1) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_bbands(close).lower warm-up rows', bool_and((c0).lower IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_bbands(close).lower row 19', max((c0).lower) FILTER (WHERE i = 19), 96.4916476563366, 1e-08),
+  assert_near('fin_bbands(close).lower row 39', max((c0).lower) FILTER (WHERE i = 39), 97.13520146795986, 1e-08),
+  assert_true('fin_bbands(close).middle warm-up rows', bool_and((c0).middle IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_bbands(close).middle row 19', max((c0).middle) FILTER (WHERE i = 19), 100.583, 1e-08),
+  assert_near('fin_bbands(close).middle row 39', max((c0).middle) FILTER (WHERE i = 39), 102.00249999999998, 1e-08),
+  assert_true('fin_bbands(close).upper warm-up rows', bool_and((c0).upper IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_bbands(close).upper row 19', max((c0).upper) FILTER (WHERE i = 19), 104.6743523436634, 1e-08),
+  assert_near('fin_bbands(close).upper row 39', max((c0).upper) FILTER (WHERE i = 39), 106.86979853204011, 1e-08),
+  assert_true('fin_bbands(close).width warm-up rows', bool_and((c0).width IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_bbands(close).width row 19', max((c0).width) FILTER (WHERE i = 19), 0.0813527602808308, 1e-09),
+  assert_near('fin_bbands(close).width row 39', max((c0).width) FILTER (WHERE i = 39), 0.09543488702806548, 1e-09),
+  assert_true('fin_bbands(close).percent_b warm-up rows', bool_and((c0).percent_b IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_bbands(close).percent_b row 19', max((c0).percent_b) FILTER (WHERE i = 19), 0.7880465677382283, 1e-09),
+  assert_near('fin_bbands(close).percent_b row 39', max((c0).percent_b) FILTER (WHERE i = 39), 0.7719681135821276, 1e-09),
+  assert_true('fin_bbands(close, 10, 1.5, 1).lower warm-up rows', bool_and((c1).lower IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_bbands(close, 10, 1.5, 1).lower row 9', max((c1).lower) FILTER (WHERE i = 9), 97.15023297993508, 1e-08),
+  assert_near('fin_bbands(close, 10, 1.5, 1).lower row 34', max((c1).lower) FILTER (WHERE i = 34), 97.59423434772356, 1e-08),
+  assert_true('fin_bbands(close, 10, 1.5, 1).middle warm-up rows', bool_and((c1).middle IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_bbands(close, 10, 1.5, 1).middle row 9', max((c1).middle) FILTER (WHERE i = 9), 100.233, 1e-08),
+  assert_near('fin_bbands(close, 10, 1.5, 1).middle row 34', max((c1).middle) FILTER (WHERE i = 34), 101.17, 1e-08),
+  assert_true('fin_bbands(close, 10, 1.5, 1).upper warm-up rows', bool_and((c1).upper IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_bbands(close, 10, 1.5, 1).upper row 9', max((c1).upper) FILTER (WHERE i = 9), 103.31576702006492, 1e-08),
+  assert_near('fin_bbands(close, 10, 1.5, 1).upper row 34', max((c1).upper) FILTER (WHERE i = 34), 104.74576565227645, 1e-08),
+  assert_true('fin_bbands(close, 10, 1.5, 1).width warm-up rows', bool_and((c1).width IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_bbands(close, 10, 1.5, 1).width row 9', max((c1).width) FILTER (WHERE i = 9), 0.061512017400754654, 1e-09),
+  assert_near('fin_bbands(close, 10, 1.5, 1).width row 34', max((c1).width) FILTER (WHERE i = 34), 0.07068826039886221, 1e-09),
+  assert_true('fin_bbands(close, 10, 1.5, 1).percent_b warm-up rows', bool_and((c1).percent_b IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_bbands(close, 10, 1.5, 1).percent_b row 9', max((c1).percent_b) FILTER (WHERE i = 9), 0.5205983778815242, 1e-09),
+  assert_near('fin_bbands(close, 10, 1.5, 1).percent_b row 34', max((c1).percent_b) FILTER (WHERE i = 34), 0.14483131068964736, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_stddev(close) grouped', fin_stddev(close ORDER BY i), 2.2118939282886063, 1e-09),
+  assert_near('fin_stddev(close, 10, 1) grouped', fin_stddev(close, 10, 1 ORDER BY i), 2.3350841050758286, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_stddev(close) OVER run AS c0,
+    fin_stddev(close, 10, 1) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_stddev(close) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_stddev(close) row 19', max(c0) FILTER (WHERE i = 19), 2.0456761718317, 1e-09),
+  assert_near('fin_stddev(close) row 39', max(c0) FILTER (WHERE i = 39), 2.433649266020065, 1e-09),
+  assert_true('fin_stddev(close, 10, 1) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_stddev(close, 10, 1) row 9', max(c1) FILTER (WHERE i = 9), 2.0551780133766178, 1e-09),
+  assert_near('fin_stddev(close, 10, 1) row 34', max(c1) FILTER (WHERE i = 34), 2.3838437681842986, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_var_indicator(close) grouped', fin_var_indicator(close ORDER BY i), 4.892474750000002, 1e-09),
+  assert_near('fin_var_indicator(close, 10, 1) grouped', fin_var_indicator(close, 10, 1 ORDER BY i), 5.4526177777777844, 1e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_var_indicator(close) OVER run AS c0,
+    fin_var_indicator(close, 10, 1) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_var_indicator(close) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_var_indicator(close) row 19', max(c0) FILTER (WHERE i = 19), 4.184790999999998, 1e-09),
+  assert_near('fin_var_indicator(close) row 39', max(c0) FILTER (WHERE i = 39), 5.9226487500000005, 1e-09),
+  assert_true('fin_var_indicator(close, 10, 1) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 9)),
+  assert_near('fin_var_indicator(close, 10, 1) row 9', max(c1) FILTER (WHERE i = 9), 4.22375666666666, 1e-09),
+  assert_near('fin_var_indicator(close, 10, 1) row 34', max(c1) FILTER (WHERE i = 34), 5.682711111111115, 1e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_keltner(high, low, close).lower grouped', (fin_keltner(high, low, close ORDER BY i)).lower, 98.01229603803272, 1e-08),
+  assert_near('fin_keltner(high, low, close).middle grouped', (fin_keltner(high, low, close ORDER BY i)).middle, 102.74406188643894, 1e-08),
+  assert_near('fin_keltner(high, low, close).upper grouped', (fin_keltner(high, low, close ORDER BY i)).upper, 107.47582773484517, 1e-08),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).lower grouped', (fin_keltner(high, low, close, 5, 3, 1.5 ORDER BY i)).lower, 99.78019792649772, 1e-08),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).middle grouped', (fin_keltner(high, low, close, 5, 3, 1.5 ORDER BY i)).middle, 103.26225509669199, 1e-08),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).upper grouped', (fin_keltner(high, low, close, 5, 3, 1.5 ORDER BY i)).upper, 106.74431226688625, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_keltner(high, low, close) OVER run AS c0,
+    fin_keltner(high, low, close, 5, 3, 1.5) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_keltner(high, low, close).lower warm-up rows', bool_and((c0).lower IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_keltner(high, low, close).lower row 19', max((c0).lower) FILTER (WHERE i = 19), 95.919880147956, 1e-08),
+  assert_near('fin_keltner(high, low, close).lower row 39', max((c0).lower) FILTER (WHERE i = 39), 97.33499964298807, 1e-08),
+  assert_true('fin_keltner(high, low, close).middle warm-up rows', bool_and((c0).middle IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_keltner(high, low, close).middle row 19', max((c0).middle) FILTER (WHERE i = 19), 100.583, 1e-08),
+  assert_near('fin_keltner(high, low, close).middle row 39', max((c0).middle) FILTER (WHERE i = 39), 101.96284677845344, 1e-08),
+  assert_true('fin_keltner(high, low, close).upper warm-up rows', bool_and((c0).upper IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_keltner(high, low, close).upper row 19', max((c0).upper) FILTER (WHERE i = 19), 105.246119852044, 1e-08),
+  assert_near('fin_keltner(high, low, close).upper row 39', max((c0).upper) FILTER (WHERE i = 39), 106.59069391391881, 1e-08),
+  assert_true('fin_keltner(high, low, close, 5, 3, 1.5).lower warm-up rows', bool_and((c1).lower IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).lower row 4', max((c1).lower) FILTER (WHERE i = 4), 98.80366666666666, 1e-08),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).lower row 31', max((c1).lower) FILTER (WHERE i = 31), 98.74118882119036, 1e-08),
+  assert_true('fin_keltner(high, low, close, 5, 3, 1.5).middle warm-up rows', bool_and((c1).middle IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).middle row 4', max((c1).middle) FILTER (WHERE i = 4), 101.952, 1e-08),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).middle row 31', max((c1).middle) FILTER (WHERE i = 31), 102.73005894523298, 1e-08),
+  assert_true('fin_keltner(high, low, close, 5, 3, 1.5).upper warm-up rows', bool_and((c1).upper IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).upper row 4', max((c1).upper) FILTER (WHERE i = 4), 105.10033333333334, 1e-08),
+  assert_near('fin_keltner(high, low, close, 5, 3, 1.5).upper row 31', max((c1).upper) FILTER (WHERE i = 31), 106.7189290692756, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_donchian(high, low).lower grouped', (fin_donchian(high, low ORDER BY i)).lower, 98.35, 1e-08),
+  assert_near('fin_donchian(high, low).middle grouped', (fin_donchian(high, low ORDER BY i)).middle, 102.845, 1e-08),
+  assert_near('fin_donchian(high, low).upper grouped', (fin_donchian(high, low ORDER BY i)).upper, 107.34, 1e-08),
+  assert_near('fin_donchian(high, low, 5).lower grouped', (fin_donchian(high, low, 5 ORDER BY i)).lower, 101.26, 1e-08),
+  assert_near('fin_donchian(high, low, 5).middle grouped', (fin_donchian(high, low, 5 ORDER BY i)).middle, 104.30000000000001, 1e-08),
+  assert_near('fin_donchian(high, low, 5).upper grouped', (fin_donchian(high, low, 5 ORDER BY i)).upper, 107.34, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_donchian(high, low) OVER run AS c0,
+    fin_donchian(high, low, 5) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_donchian(high, low).lower warm-up rows', bool_and((c0).lower IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_donchian(high, low).lower row 19', max((c0).lower) FILTER (WHERE i = 19), 96.65, 1e-08),
+  assert_near('fin_donchian(high, low).lower row 39', max((c0).lower) FILTER (WHERE i = 39), 96.82, 1e-08),
+  assert_true('fin_donchian(high, low).middle warm-up rows', bool_and((c0).middle IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_donchian(high, low).middle row 19', max((c0).middle) FILTER (WHERE i = 19), 100.47, 1e-08),
+  assert_near('fin_donchian(high, low).middle row 39', max((c0).middle) FILTER (WHERE i = 39), 101.27, 1e-08),
+  assert_true('fin_donchian(high, low).upper warm-up rows', bool_and((c0).upper IS NULL) FILTER (WHERE i < 19)),
+  assert_near('fin_donchian(high, low).upper row 19', max((c0).upper) FILTER (WHERE i = 19), 104.29, 1e-08),
+  assert_near('fin_donchian(high, low).upper row 39', max((c0).upper) FILTER (WHERE i = 39), 105.72, 1e-08),
+  assert_true('fin_donchian(high, low, 5).lower warm-up rows', bool_and((c1).lower IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_donchian(high, low, 5).lower row 4', max((c1).lower) FILTER (WHERE i = 4), 100.0, 1e-08),
+  assert_near('fin_donchian(high, low, 5).lower row 31', max((c1).lower) FILTER (WHERE i = 31), 101.07, 1e-08),
+  assert_true('fin_donchian(high, low, 5).middle warm-up rows', bool_and((c1).middle IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_donchian(high, low, 5).middle row 4', max((c1).middle) FILTER (WHERE i = 4), 102.14500000000001, 1e-08),
+  assert_near('fin_donchian(high, low, 5).middle row 31', max((c1).middle) FILTER (WHERE i = 31), 103.395, 1e-08),
+  assert_true('fin_donchian(high, low, 5).upper warm-up rows', bool_and((c1).upper IS NULL) FILTER (WHERE i < 4)),
+  assert_near('fin_donchian(high, low, 5).upper row 4', max((c1).upper) FILTER (WHERE i = 4), 104.29, 1e-08),
+  assert_near('fin_donchian(high, low, 5).upper row 31', max((c1).upper) FILTER (WHERE i = 31), 105.72, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_aroon(high, low).aroon_down grouped', (fin_aroon(high, low ORDER BY i)).aroon_down, 42.85714285714286, 4e-09),
+  assert_near('fin_aroon(high, low).aroon_up grouped', (fin_aroon(high, low ORDER BY i)).aroon_up, 78.57142857142857, 8e-09),
+  assert_near('fin_aroon(high, low, 5).aroon_down grouped', (fin_aroon(high, low, 5 ORDER BY i)).aroon_down, 100.0, 1e-08),
+  assert_near('fin_aroon(high, low, 5).aroon_up grouped', (fin_aroon(high, low, 5 ORDER BY i)).aroon_up, 40.0, 4e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_aroon(high, low) OVER run AS c0,
+    fin_aroon(high, low, 5) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_aroon(high, low).aroon_down warm-up rows', bool_and((c0).aroon_down IS NULL) FILTER (WHERE i < 14)),
+  assert_near('fin_aroon(high, low).aroon_down row 14', max((c0).aroon_down) FILTER (WHERE i = 14), 57.142857142857146, 6e-09),
+  assert_near('fin_aroon(high, low).aroon_down row 36', max((c0).aroon_down) FILTER (WHERE i = 36), 21.42857142857143, 2e-09),
+  assert_true('fin_aroon(high, low).aroon_up warm-up rows', bool_and((c0).aroon_up IS NULL) FILTER (WHERE i < 14)),
+  assert_near('fin_aroon(high, low).aroon_up row 14', max((c0).aroon_up) FILTER (WHERE i = 14), 21.42857142857143, 2e-09),
+  assert_near('fin_aroon(high, low).aroon_up row 36', max((c0).aroon_up) FILTER (WHERE i = 36), 57.142857142857146, 6e-09),
+  assert_true('fin_aroon(high, low, 5).aroon_down warm-up rows', bool_and((c1).aroon_down IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_aroon(high, low, 5).aroon_down row 5', max((c1).aroon_down) FILTER (WHERE i = 5), 100.0, 1e-08),
+  assert_near('fin_aroon(high, low, 5).aroon_down row 32', max((c1).aroon_down) FILTER (WHERE i = 32), 100.0, 1e-08),
+  assert_true('fin_aroon(high, low, 5).aroon_up warm-up rows', bool_and((c1).aroon_up IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_aroon(high, low, 5).aroon_up row 5', max((c1).aroon_up) FILTER (WHERE i = 5), 60.0, 6e-09),
+  assert_near('fin_aroon(high, low, 5).aroon_up row 32', max((c1).aroon_up) FILTER (WHERE i = 32), 60.0, 6e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_aroonosc(high, low) grouped', fin_aroonosc(high, low ORDER BY i), 35.714285714285715, 4e-09),
+  assert_near('fin_aroonosc(high, low, 5) grouped', fin_aroonosc(high, low, 5 ORDER BY i), -60.0, 6e-09)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_aroonosc(high, low) OVER run AS c0,
+    fin_aroonosc(high, low, 5) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_aroonosc(high, low) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 14)),
+  assert_near('fin_aroonosc(high, low) row 14', max(c0) FILTER (WHERE i = 14), -35.714285714285715, 4e-09),
+  assert_near('fin_aroonosc(high, low) row 36', max(c0) FILTER (WHERE i = 36), 35.714285714285715, 4e-09),
+  assert_true('fin_aroonosc(high, low, 5) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 5)),
+  assert_near('fin_aroonosc(high, low, 5) row 5', max(c1) FILTER (WHERE i = 5), -40.0, 4e-09),
+  assert_near('fin_aroonosc(high, low, 5) row 32', max(c1) FILTER (WHERE i = 32), -40.0, 4e-09)
+FROM series;
+
+SELECT
+  assert_near('fin_sar(high, low) grouped', fin_sar(high, low ORDER BY i), 99.02927464, 1e-08),
+  assert_near('fin_sar(high, low, 0.05, 0.1) grouped', fin_sar(high, low, 0.05, 0.1 ORDER BY i), 101.147874, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_sar(high, low) OVER run AS c0,
+    fin_sar(high, low, 0.05, 0.1) OVER run AS c1
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_sar(high, low) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 1)),
+  assert_near('fin_sar(high, low) row 1', max(c0) FILTER (WHERE i = 1), 100.0, 1e-08),
+  assert_near('fin_sar(high, low) row 30', max(c0) FILTER (WHERE i = 30), 96.9862, 1e-08),
+  assert_true('fin_sar(high, low, 0.05, 0.1) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 1)),
+  assert_near('fin_sar(high, low, 0.05, 0.1) row 1', max(c1) FILTER (WHERE i = 1), 100.0, 1e-08),
+  assert_near('fin_sar(high, low, 0.05, 0.1) row 30', max(c1) FILTER (WHERE i = 30), 97.95835, 1e-08)
+FROM series;
+
+SELECT
+  assert_near('fin_sarext(high, low) grouped', fin_sarext(high, low ORDER BY i), 99.02927464, 1e-08),
+  assert_near('fin_sarext(high, low, 0, 0.01, 0.03, 0.02, 0.25, 0.01, 0.04, 0.15) grouped', fin_sarext(high, low, 0, 0.01, 0.03, 0.02, 0.25, 0.01, 0.04, 0.15 ORDER BY i), 98.3820232377, 1e-08),
+  assert_near('fin_sarext(high, low, -105, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) grouped', fin_sarext(high, low, -105, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2 ORDER BY i), 99.02927464, 1e-08)
+FROM gold_bars;
+
+WITH series AS (
+  SELECT i, fin_sarext(high, low) OVER run AS c0,
+    fin_sarext(high, low, 0, 0.01, 0.03, 0.02, 0.25, 0.01, 0.04, 0.15) OVER run AS c1,
+    fin_sarext(high, low, -105, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) OVER run AS c2
+  FROM gold_bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('fin_sarext(high, low) warm-up rows', bool_and(c0 IS NULL) FILTER (WHERE i < 1)),
+  assert_near('fin_sarext(high, low) row 1', max(c0) FILTER (WHERE i = 1), 100.0, 1e-08),
+  assert_near('fin_sarext(high, low) row 30', max(c0) FILTER (WHERE i = 30), 96.9862, 1e-08),
+  assert_true('fin_sarext(high, low, 0, 0.01, 0.03, 0.02, 0.25, 0.01, 0.04, 0.15) warm-up rows', bool_and(c1 IS NULL) FILTER (WHERE i < 1)),
+  assert_near('fin_sarext(high, low, 0, 0.01, 0.03, 0.02, 0.25, 0.01, 0.04, 0.15) row 1', max(c1) FILTER (WHERE i = 1), 100.0, 1e-08),
+  assert_near('fin_sarext(high, low, 0, 0.01, 0.03, 0.02, 0.25, 0.01, 0.04, 0.15) row 30', max(c1) FILTER (WHERE i = 30), -106.22196312833634, 1e-08),
+  assert_true('fin_sarext(high, low, -105, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) warm-up rows', bool_and(c2 IS NULL) FILTER (WHERE i < 1)),
+  assert_near('fin_sarext(high, low, -105, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) row 1', max(c2) FILTER (WHERE i = 1), -105.0, 1e-08),
+  assert_near('fin_sarext(high, low, -105, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) row 30', max(c2) FILTER (WHERE i = 30), 96.9862, 1e-08)
+FROM series;
+
+-- Window semantics shared by the technical indicators: bounded indicators
+-- slide over their lookback, recursive ones reseed at the frame start, NULL
+-- rows are skipped, and a non-finite input yields NULL while it is inside a
+-- bounded lookback (for the rest of the series for recursive indicators).
+WITH series AS (
+  SELECT i,
+    fin_sma(close, 5) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS sma_slide,
+    fin_sma(close, 5) OVER (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sma_run,
+    fin_ema(close, 5) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS ema_slide
+  FROM gold_bars
+)
+SELECT
+  assert_true('bounded sliding frame equals running value', bool_and(sma_slide IS NOT DISTINCT FROM sma_run)),
+  assert_near('recursive sliding frame reseeds at the frame start', max(ema_slide) FILTER (WHERE i = 59),
+    (SELECT fin_ema(close, 5 ORDER BY i) FROM gold_bars WHERE i >= 50), 1e-12)
+FROM series;
+
+WITH bars AS (
+  SELECT i, CASE WHEN i = 30 THEN 'NaN'::DOUBLE WHEN i = 40 THEN NULL ELSE close END AS c FROM gold_bars
+), series AS (
+  SELECT i, fin_sma(c, 5) OVER run AS sma, fin_ema(c, 5) OVER run AS ema
+  FROM bars WINDOW run AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+SELECT
+  assert_true('bounded indicator is NULL while a NaN is in the lookback', bool_and(sma IS NULL) FILTER (WHERE i BETWEEN 30 AND 34)),
+  assert_near('bounded indicator recovers after the lookback', max(sma) FILTER (WHERE i = 35),
+    (SELECT avg(close) FROM gold_bars WHERE i BETWEEN 31 AND 35), 1e-9),
+  assert_true('recursive indicator stays NULL after a NaN', bool_and(ema IS NULL) FILTER (WHERE i >= 30)),
+  assert_near('NULL rows are skipped', max(sma) FILTER (WHERE i = 41),
+    (SELECT avg(close) FROM gold_bars WHERE i IN (36, 37, 38, 39, 41)), 1e-9),
+  assert_near('grouped bounded indicator ignores an old NaN', (SELECT fin_sma(c, 5 ORDER BY i) FROM bars),
+    (SELECT avg(close) FROM gold_bars WHERE i >= 55), 1e-9),
+  assert_eq('grouped recursive indicator is NULL after a NaN', (SELECT fin_ema(c, 5 ORDER BY i) FROM bars), NULL)
+FROM series;
+
+SELECT
+  assert_eq('roc zero base is NULL', fin_roc(x, 1 ORDER BY i), NULL),
+  assert_eq('rocr zero base is NULL', fin_rocr(x, 1 ORDER BY i), NULL),
+  assert_eq('mom zero base is defined', fin_mom(x, 1 ORDER BY i), 5.0),
+  assert_eq('willr flat range is zero', fin_willr(1.0, 1.0, 1.0, 2 ORDER BY i), 0.0),
+  assert_eq('stoch flat range is zero', (fin_stoch(1.0, 1.0, 1.0, 2, 1, 1 ORDER BY i)).k, 0.0),
+  assert_eq('cmo flat series is zero', fin_cmo(1.0, 1 ORDER BY i), 0.0)
+FROM (VALUES (1, 0.0), (2, 5.0)) t(i, x);
+
+-- Parameters live in the bind data, which is serialized: calls that differ
+-- only in their parameters must not be merged as a common subplan.
+SELECT
+  assert_eq('parameters keep union branches distinct', (SELECT count(DISTINCT v) FROM (
+    SELECT fin_sma(close, 5 ORDER BY i) AS v FROM gold_bars
+    UNION ALL SELECT fin_sma(close, 20 ORDER BY i) FROM gold_bars
+    UNION ALL SELECT fin_sma(close, 5 ORDER BY i) FROM gold_bars)), 2::BIGINT),
+  assert_eq('ma_type keeps union branches distinct', (SELECT count(DISTINCT v) FROM (
+    SELECT fin_apo(close, 5, 10, 'sma' ORDER BY i) AS v FROM gold_bars
+    UNION ALL SELECT fin_apo(close, 5, 10, 'ema' ORDER BY i) FROM gold_bars)), 2::BIGINT);
+
+-- Ordered indicators are deterministic: grouped and windowed results are
+-- bit-identical for one and eight threads.
+CREATE OR REPLACE TEMP TABLE tech_determinism AS
+SELECT i % 7 AS sym, i, 100 + 5 * sin(i / 9.0) + (i % 13) * 0.07 AS close,
+  101 + 5 * sin(i / 9.0) + (i % 3) * 0.05 AS high, 99 + 5 * sin(i / 9.0) - (i % 5) * 0.03 AS low
+FROM range(20000) t(i);
+
+CREATE OR REPLACE TEMP MACRO tech_grouped() AS TABLE
+SELECT sym,
+  fin_sma(close, 20 ORDER BY i) AS g0,
+  fin_wma(close, 20 ORDER BY i) AS g1,
+  fin_ema(close, 20 ORDER BY i) AS g2,
+  fin_dema(close, 20 ORDER BY i) AS g3,
+  fin_tema(close, 20 ORDER BY i) AS g4,
+  fin_trima(close, 20 ORDER BY i) AS g5,
+  fin_t3(close, 5, 0.7 ORDER BY i) AS g6,
+  fin_kama(close, 10, 2, 30 ORDER BY i) AS g7,
+  fin_hma(close, 20 ORDER BY i) AS g8,
+  fin_linearreg(close, 14 ORDER BY i) AS g9,
+  fin_linearreg_slope(close, 14 ORDER BY i) AS g10,
+  fin_linearreg_intercept(close, 14 ORDER BY i) AS g11,
+  fin_tsf(close, 14 ORDER BY i) AS g12,
+  fin_mom(close, 10 ORDER BY i) AS g13,
+  fin_roc(close, 10 ORDER BY i) AS g14,
+  fin_rocp(close, 10 ORDER BY i) AS g15,
+  fin_rocr(close, 10 ORDER BY i) AS g16,
+  fin_rocr100(close, 10 ORDER BY i) AS g17,
+  fin_rsi(close, 14 ORDER BY i) AS g18,
+  fin_cmo(close, 14 ORDER BY i) AS g19,
+  fin_macd(close, 12, 26, 9 ORDER BY i) AS g20,
+  fin_apo(close, 12, 26, 'ema' ORDER BY i) AS g21,
+  fin_ppo(close, 12, 26, 'sma' ORDER BY i) AS g22,
+  fin_trix(close, 15 ORDER BY i) AS g23,
+  fin_stochrsi(close, 14, 5, 3 ORDER BY i) AS g24,
+  fin_bbands(close, 20, 2.0, 0 ORDER BY i) AS g25,
+  fin_stddev(close, 20, 1 ORDER BY i) AS g26,
+  fin_var_indicator(close, 20, 0 ORDER BY i) AS g27,
+  fin_stoch(high, low, close, 14, 3, 3 ORDER BY i) AS g28,
+  fin_willr(high, low, close, 14 ORDER BY i) AS g29,
+  fin_cci(high, low, close, 20, 0.015 ORDER BY i) AS g30,
+  fin_keltner(high, low, close, 20, 10, 2.0 ORDER BY i) AS g31,
+  fin_donchian(high, low, 20 ORDER BY i) AS g32,
+  fin_aroon(high, low, 14 ORDER BY i) AS g33,
+  fin_aroonosc(high, low, 14 ORDER BY i) AS g34,
+  fin_sar(high, low, 0.02, 0.2 ORDER BY i) AS g35,
+  fin_sarext(high, low, 0, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2 ORDER BY i) AS g36
+FROM tech_determinism GROUP BY sym;
+
+CREATE OR REPLACE TEMP MACRO tech_windowed() AS TABLE
+SELECT sym, i,
+  fin_sma(close, 20) OVER run AS w0, fin_sma(close, 20) OVER slide AS s0,
+  fin_wma(close, 20) OVER run AS w1, fin_wma(close, 20) OVER slide AS s1,
+  fin_ema(close, 20) OVER run AS w2, fin_ema(close, 20) OVER slide AS s2,
+  fin_dema(close, 20) OVER run AS w3, fin_dema(close, 20) OVER slide AS s3,
+  fin_tema(close, 20) OVER run AS w4, fin_tema(close, 20) OVER slide AS s4,
+  fin_trima(close, 20) OVER run AS w5, fin_trima(close, 20) OVER slide AS s5,
+  fin_t3(close, 5, 0.7) OVER run AS w6, fin_t3(close, 5, 0.7) OVER slide AS s6,
+  fin_kama(close, 10, 2, 30) OVER run AS w7, fin_kama(close, 10, 2, 30) OVER slide AS s7,
+  fin_hma(close, 20) OVER run AS w8, fin_hma(close, 20) OVER slide AS s8,
+  fin_linearreg(close, 14) OVER run AS w9, fin_linearreg(close, 14) OVER slide AS s9,
+  fin_linearreg_slope(close, 14) OVER run AS w10, fin_linearreg_slope(close, 14) OVER slide AS s10,
+  fin_linearreg_intercept(close, 14) OVER run AS w11, fin_linearreg_intercept(close, 14) OVER slide AS s11,
+  fin_tsf(close, 14) OVER run AS w12, fin_tsf(close, 14) OVER slide AS s12,
+  fin_mom(close, 10) OVER run AS w13, fin_mom(close, 10) OVER slide AS s13,
+  fin_roc(close, 10) OVER run AS w14, fin_roc(close, 10) OVER slide AS s14,
+  fin_rocp(close, 10) OVER run AS w15, fin_rocp(close, 10) OVER slide AS s15,
+  fin_rocr(close, 10) OVER run AS w16, fin_rocr(close, 10) OVER slide AS s16,
+  fin_rocr100(close, 10) OVER run AS w17, fin_rocr100(close, 10) OVER slide AS s17,
+  fin_rsi(close, 14) OVER run AS w18, fin_rsi(close, 14) OVER slide AS s18,
+  fin_cmo(close, 14) OVER run AS w19, fin_cmo(close, 14) OVER slide AS s19,
+  fin_macd(close, 12, 26, 9) OVER run AS w20, fin_macd(close, 12, 26, 9) OVER slide AS s20,
+  fin_apo(close, 12, 26, 'ema') OVER run AS w21, fin_apo(close, 12, 26, 'ema') OVER slide AS s21,
+  fin_ppo(close, 12, 26, 'sma') OVER run AS w22, fin_ppo(close, 12, 26, 'sma') OVER slide AS s22,
+  fin_trix(close, 15) OVER run AS w23, fin_trix(close, 15) OVER slide AS s23,
+  fin_stochrsi(close, 14, 5, 3) OVER run AS w24, fin_stochrsi(close, 14, 5, 3) OVER slide AS s24,
+  fin_bbands(close, 20, 2.0, 0) OVER run AS w25, fin_bbands(close, 20, 2.0, 0) OVER slide AS s25,
+  fin_stddev(close, 20, 1) OVER run AS w26, fin_stddev(close, 20, 1) OVER slide AS s26,
+  fin_var_indicator(close, 20, 0) OVER run AS w27, fin_var_indicator(close, 20, 0) OVER slide AS s27,
+  fin_stoch(high, low, close, 14, 3, 3) OVER run AS w28, fin_stoch(high, low, close, 14, 3, 3) OVER slide AS s28,
+  fin_willr(high, low, close, 14) OVER run AS w29, fin_willr(high, low, close, 14) OVER slide AS s29,
+  fin_cci(high, low, close, 20, 0.015) OVER run AS w30, fin_cci(high, low, close, 20, 0.015) OVER slide AS s30,
+  fin_keltner(high, low, close, 20, 10, 2.0) OVER run AS w31, fin_keltner(high, low, close, 20, 10, 2.0) OVER slide AS s31,
+  fin_donchian(high, low, 20) OVER run AS w32, fin_donchian(high, low, 20) OVER slide AS s32,
+  fin_aroon(high, low, 14) OVER run AS w33, fin_aroon(high, low, 14) OVER slide AS s33,
+  fin_aroonosc(high, low, 14) OVER run AS w34, fin_aroonosc(high, low, 14) OVER slide AS s34,
+  fin_sar(high, low, 0.02, 0.2) OVER run AS w35, fin_sar(high, low, 0.02, 0.2) OVER slide AS s35,
+  fin_sarext(high, low, 0, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) OVER run AS w36, fin_sarext(high, low, 0, 0, 0.02, 0.02, 0.2, 0.02, 0.02, 0.2) OVER slide AS s36
+FROM tech_determinism
+WINDOW run AS (PARTITION BY sym ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+  slide AS (PARTITION BY sym ORDER BY i ROWS BETWEEN 40 PRECEDING AND CURRENT ROW);
+
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE tech_grouped_1 AS FROM tech_grouped();
+CREATE OR REPLACE TEMP TABLE tech_windowed_1 AS FROM tech_windowed();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE tech_grouped_8 AS FROM tech_grouped();
+CREATE OR REPLACE TEMP TABLE tech_windowed_8 AS FROM tech_windowed();
+RESET threads;
+
+SELECT
+  assert_eq('technical grouped results independent of threads',
+    (SELECT count(*) FROM (FROM tech_grouped_1 EXCEPT FROM tech_grouped_8)), 0::BIGINT),
+  assert_eq('technical window results independent of threads',
+    (SELECT count(*) FROM (FROM tech_windowed_1 EXCEPT FROM tech_windowed_8)), 0::BIGINT),
+  assert_eq('technical grouped value equals last running value',
+    (SELECT count(*) FROM tech_grouped_1 g
+     JOIN (SELECT sym, max(i) AS i FROM tech_determinism GROUP BY sym) l USING (sym)
+     JOIN tech_windowed_1 w ON w.sym = g.sym AND w.i = l.i
+     WHERE g.g18 IS DISTINCT FROM w.w18 OR g.g20 IS DISTINCT FROM w.w20 OR g.g35 IS DISTINCT FROM w.w35), 0::BIGINT);
 
 SELECT
   assert_not_null('obv', fin_obv(close, volume)),
@@ -1189,15 +2183,17 @@ FROM iv_path;
 
 -- Second sweep: exponential weighting and empirical percentiles have their
 -- own independent expectations, including ordering, NULLs, ties and windows.
+-- fin_ema follows TA-Lib: the SMA of the first `period` values seeds the
+-- recurrence ema = k * x + (1 - k) * ema with k = 2 / (period + 1).
 WITH path(i, x) AS (VALUES (1, 10.0), (2, 20.0), (3, NULL), (4, 40.0))
 SELECT
-  assert_near('ema default period', fin_ema(x ORDER BY i), 13.718820861678005, 1e-12),
-  assert_near('ema period three', fin_ema(x, 3 ORDER BY i), 27.5, 1e-12),
-  assert_near('ema named period', fin_ema(x, period := 3 ORDER BY i), 27.5, 1e-12),
-  assert_near('ema reverse order', fin_ema(x, 3 ORDER BY i DESC), 20.0, 1e-12),
+  assert_eq('ema default period warm-up', fin_ema(x ORDER BY i), NULL),
+  assert_near('ema period two', fin_ema(x, 2 ORDER BY i), 95.0/3.0, 1e-12),
+  assert_near('ema period three seeds with the mean', fin_ema(x, 3 ORDER BY i), 70.0/3.0, 1e-12),
+  assert_near('ema reverse order', fin_ema(x, 2 ORDER BY i DESC), 50.0/3.0, 1e-12),
   assert_near('ema period one', fin_ema(x, 1 ORDER BY i), 40.0, 1e-12),
-  assert_near('ema filtered rows', fin_ema(x, 3 ORDER BY i) FILTER (WHERE i <> 2), 25.0, 1e-12),
-  assert_near('ema subset without ordering', fin_ema(x, 3) FILTER (WHERE i = 2), 20.0, 1e-12)
+  assert_near('ema filtered rows', fin_ema(x, 2 ORDER BY i) FILTER (WHERE i <> 2), 25.0, 1e-12),
+  assert_near('ema subset without ordering', fin_ema(x, 1) FILTER (WHERE i = 2), 20.0, 1e-12)
 FROM path;
 
 SELECT
@@ -1207,14 +2203,13 @@ FROM (SELECT NULL::DOUBLE AS x WHERE false);
 
 SELECT
   assert_eq('ema null input', fin_ema(NULL::DOUBLE), NULL),
-  assert_eq('ema null period', fin_ema(10.0, NULL), NULL),
   assert_eq('iv percentile singleton', fin_iv_percentile(0.2), NULL);
 
 WITH path(i, x) AS (VALUES (1, 10.0), (2, 20.0), (3, 40.0)), results AS (
-  SELECT i, fin_ema(x, 3) OVER (ORDER BY i ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS ema
+  SELECT i, fin_ema(x, 2) OVER (ORDER BY i ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS ema
   FROM path
 )
-SELECT assert_true('ema sliding window reseeds', bool_and(ema = CASE i WHEN 1 THEN 10 WHEN 2 THEN 15 ELSE 30 END))
+SELECT assert_true('ema sliding window reseeds', bool_and(ema IS NOT DISTINCT FROM CASE i WHEN 2 THEN 15 WHEN 3 THEN 30 END))
 FROM results;
 
 SELECT
@@ -1223,12 +2218,12 @@ SELECT
   assert_near('ema extreme finite constant', fin_ema(1.7e308)/1.7e308, 1.0, 1e-12)
 FROM range(10000);
 
-SELECT assert_near('ema avoids extreme subtraction overflow', fin_ema(x, 3 ORDER BY i), 0.0, 0.0)
+SELECT assert_near('ema seed avoids extreme overflow', fin_ema(x, 2 ORDER BY i), 0.0, 0.0)
 FROM (VALUES (1, -1e308), (2, 1e308)) t(i,x);
 
 WITH path AS (SELECT i, CASE WHEN i = 0 THEN 1e200 ELSE 0.0 END AS x FROM range(1501) t(i))
 SELECT
-  assert_near('ema decay preserves finite late value', fin_ema(x,3 ORDER BY i)/(1e200*pow(2.0,-1000)), pow(2.0,-500), 1e-162),
+  assert_near('ema decays geometrically after the seed', fin_ema(x,3 ORDER BY i)/(1e200/3*pow(2.0,-1000)), pow(2.0,-498), 1e-162),
   assert_near('ewma decay preserves finite late volatility', fin_ewma_vol(x,0.5,1 ORDER BY i)/1e200, pow(2.0,-750), 1e-237)
 FROM path;
 
@@ -1238,17 +2233,9 @@ FROM (VALUES (1,1e200),(2,0.0)) t(i,x);
 SELECT assert_near('ewma repeated tiny lambda preserves decay', fin_ewma_vol(x,1e-190,1 ORDER BY i)/1e118, 1.0, 1e-12)
 FROM (VALUES (1,1e308),(2,0.0),(3,0.0)) t(i,x);
 
-SELECT assert_near('ema cancellation releases scale', fin_ema(x,3 ORDER BY i)/1e-320, 0.5, 1e-3)
-FROM (VALUES (1,0.0),(2,1e308),(3,-5e307),(4,1e-320)) t(i,x);
-
 WITH path(i,x) AS (VALUES (1,-1e308),(2,1e308),(3,1e-320))
-SELECT assert_near('ema cancellation before tiny observation', fin_ema(x,3 ORDER BY i)/1e-320, 0.5, 1e-3)
+SELECT assert_near('ema seed cancels extreme values exactly', fin_ema(x,3 ORDER BY i)/1e-320, 1.0/3.0, 1e-3)
 FROM path;
-
-WITH path(i,x) AS (VALUES (1,-1e308),(2,1e308),(3,1e-320)), results AS (
-  SELECT i, fin_ema(x,3) OVER (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ema FROM path
-)
-SELECT assert_near('ema window merge retains tiny correction', ema/1e-320, 0.5, 1e-3) FROM results WHERE i=3;
 
 SELECT assert_eq('ema period one returns tiny latest value', fin_ema(x,1 ORDER BY i), 1e-320)
 FROM (VALUES (1,1e308),(2,1e-320)) t(i,x);
@@ -1259,7 +2246,7 @@ WITH path AS (
 ), results AS (
   SELECT i, fin_ema(x,3) OVER (ORDER BY i ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS ema FROM path
 )
-SELECT assert_near('ema segment tree retains cancellation residual', ema/1e-320, 0.5, 1e-3)
+SELECT assert_near('ema sliding frame seeds from the frame rows', ema/1e-320, 1.0/3.0, 1e-3)
 FROM results WHERE i=8195;
 
 WITH path(i, iv) AS (VALUES (1, 0.1), (2, 0.11), (3, 0.9), (4, NULL), (5, 0.2))
@@ -1660,23 +2647,165 @@ SELECT
   assert_near('marginal risk second', fin_marginal_risk([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])[2], 0.05, 1e-12),
   assert_not_null('component risk', fin_component_risk([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])),
   assert_not_null('risk contribution', fin_risk_contribution([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])),
-  assert_eq('min variance weights placeholder', fin_min_variance_weights([[0.04, 0.01], [0.01, 0.09]]), [0.5, 0.5]),
-  assert_eq('risk parity weights placeholder', fin_risk_parity_weights([[0.04, 0.01], [0.01, 0.09]]), [0.5, 0.5]),
-  assert_eq('max sharpe weights placeholder', fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]), [0.5, 0.5]),
-  assert_eq('black litterman returns placeholder', fin_black_litterman_returns([0.6, 0.4], [[0.04, 0.01], [0.01, 0.09]], [[1.0, 0.0]], [0.1]), [0.6, 0.4]);
+  assert_near('two asset min variance', fin_min_variance_weights([[0.04, 0.01], [0.01, 0.09]])[1], 0.8 / 1.1, 1e-12),
+  assert_near('two asset risk parity', fin_risk_parity_weights([[0.04, 0.0], [0.0, 0.09]])[1], 0.6, 1e-9),
+  assert_near('two asset max sharpe', fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])[1], 0.5, 1e-12),
+  assert_near('black litterman single view', fin_black_litterman_returns([0.6, 0.4], [[0.04, 0.01], [0.01, 0.09]], [[1.0, 0.0]], [0.1])[1],
+              0.085, 1e-12);
+
+-- Portfolio construction against closed forms / KKT-verified numpy solutions
+-- (see docs: long-only solves use an exact active-set QP). S is a 4-asset
+-- covariance whose unconstrained minimum-variance and maximum-Sharpe
+-- portfolios short asset 2.
+WITH inputs AS (
+  SELECT [[0.04, 0.006, 0.012, 0.0], [0.006, 0.09, 0.018, 0.009], [0.012, 0.018, 0.0625, -0.005], [0.0, 0.009, -0.005, 0.01]] AS s,
+         [0.08, 0.03, 0.10, 0.025] AS mu
+), w AS (
+  SELECT s, mu,
+    fin_min_variance_weights(s, false) AS mv_free, fin_min_variance_weights(s) AS mv_long,
+    fin_max_sharpe_weights(mu, s, 0.02, false) AS ms_free, fin_max_sharpe_weights(mu, s, 0.02) AS ms_long,
+    fin_risk_parity_weights(s, [0.4, 0.3, 0.2, 0.1]) AS rp_budget, fin_risk_parity_weights(s) AS rp_equal,
+    fin_black_litterman_returns([0.3, 0.3, 0.2, 0.2], s, [[1, -1, 0, 0], [0, 0, 1, 0.0]], [0.02, 0.09]) AS bl,
+    fin_black_litterman_returns([0.3, 0.3, 0.2, 0.2], s, [[1, -1, 0, 0], [0, 0, 1, 0.0]], [0.02, 0.09], 0.05, [[0.001, 0], [0, 0.002]]) AS bl_omega
+  FROM inputs
+)
+SELECT
+  assert_true('min variance unconstrained', list_reduce(list_transform(list_zip(mv_free, [0.12277312854459042, -0.04343908457547364, 0.15427470980736274, 0.7663912462235204]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('min variance long only', list_reduce(list_transform(list_zip(mv_long, [0.12367491166077739, 0.0, 0.14134275618374556, 0.734982332155477]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_near('max sharpe unconstrained shorts asset 2', ms_free[2], -0.10416449, 1e-8),
+  assert_true('max sharpe long only', list_reduce(list_transform(list_zip(ms_long, [0.3430599369085173, 0.0, 0.3391167192429022, 0.31782334384858046]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('max sharpe beats equal weight', fin_portfolio_sharpe(ms_long, mu, s, 0.02) > fin_portfolio_sharpe([0.25, 0.25, 0.25, 0.25], mu, s, 0.02)),
+  assert_true('risk parity hits budgets', list_reduce(list_transform(list_zip(fin_risk_contribution(rp_budget, s), [0.4, 0.3, 0.2, 0.1]), p -> abs(p[1] - p[2]) < 1e-8), (a, b) -> a AND b)),
+  assert_true('risk parity reference', list_reduce(list_transform(list_zip(rp_equal, [0.21355818119019918, 0.12264755883586934, 0.17976156921275435, 0.4840326907611773]), p -> abs(p[1] - p[2]) < 1e-7), (a, b) -> a AND b)),
+  assert_true('black litterman default omega', list_reduce(list_transform(list_zip(bl, [0.054027525115395054, 0.0674983708932935, 0.06977404629378224, 0.005079062584849304]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('black litterman explicit omega', list_reduce(list_transform(list_zip(bl_omega, [0.06199549932667091, 0.05176940250903677, 0.07373378694450353, 0.0028184669359982957]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_eq('min variance non-PD covariance is NULL', fin_min_variance_weights([[1.0, 2.0], [2.0, 1.0]]), NULL),
+  assert_eq('max sharpe needs positive excess return long only', fin_max_sharpe_weights([0.01, 0.0], [[0.04, 0.0], [0.0, 0.09]], 0.02), NULL),
+  assert_eq('risk parity budget length mismatch is NULL', fin_risk_parity_weights(s, [0.5, 0.5]), NULL),
+  assert_eq('risk parity non-convergence is NULL', fin_risk_parity_weights(s, NULL, 1e-12, 1), NULL),
+  assert_eq('black litterman view shape mismatch is NULL', fin_black_litterman_returns([0.5, 0.5], [[0.04, 0.0], [0.0, 0.09]], [[1.0, 0.0, 0.0]], [0.1]), NULL)
+FROM w;
 
 SELECT
-  assert_not_null('cov matrix placeholder', fin_cov_matrix(asset, r)),
-  assert_not_null('corr matrix placeholder', fin_corr_matrix(asset, r)),
-  assert_eq('ols beta placeholder', (fin_ols(r, [factor])).beta, NULL),
-  assert_eq('ols no intercept beta placeholder', (fin_ols_no_intercept(r, [factor])).beta, NULL),
-  assert_not_null('rolling beta', fin_rolling_beta(r, benchmark_r)),
-  assert_not_null('factor alpha', fin_factor_alpha(r, benchmark_r)),
-  assert_not_null('factor ic', fin_factor_ic(factor, forward_return)),
-  assert_not_null('rank ic', fin_rank_ic(factor, forward_return)),
-  assert_not_null('factor turnover', fin_factor_turnover(factor)),
-  assert_eq('newey west placeholder', fin_newey_west_tstat(r, factor), NULL)
+  assert_near('ols single factor beta', (fin_ols(r, [benchmark_r])).beta[1], 1.6964285714285716, 1e-12),
+  assert_near('ols single factor intercept', (fin_ols(r, [benchmark_r])).intercept, -0.005535714285714281, 1e-12),
+  assert_near('ols single factor r2', (fin_ols(r, [benchmark_r])).r2, 0.9647716229348883, 1e-12),
+  assert_near('ols single factor stderr', (fin_ols(r, [benchmark_r])).stderr[1], 0.18715826412901804, 1e-12),
+  assert_near('ols intercept stderr', (fin_ols(r, [benchmark_r])).intercept_stderr, 0.002252129137603524, 1e-12),
+  assert_eq('ols nobs', (fin_ols(r, [benchmark_r])).nobs, 5::BIGINT),
+  assert_near('rolling beta grouped equals beta', fin_rolling_beta(r, benchmark_r), 1.6964285714285716, 1e-12),
+  assert_near('factor alpha', fin_factor_alpha(r, benchmark_r), fin_alpha(r, benchmark_r), 1e-15),
+  assert_near('factor ic spearman', fin_factor_ic(factor, forward_return), 0.1, 1e-12),
+  assert_near('factor ic pearson', fin_factor_ic(factor, forward_return, 'pearson'), 0.12873121026029494, 1e-12),
+  assert_near('factor ic kendall', fin_factor_ic(factor, forward_return, 'kendall'), 0.0, 1e-12),
+  assert_near('rank ic', fin_rank_ic(factor, forward_return), 0.1, 1e-12)
 FROM gold_returns;
+
+-- Regression, matrix and ordered diagnostics on gold_stats. References:
+-- statsmodels 0.15 OLS (bse, uncentered R^2 without a constant), HAC with
+-- maxlags 3 and use_correction=False, adfuller(autolag=None), acorr_ljungbox,
+-- pandas autocorr/corr(shift), DataFrame.cov/corr (pairwise complete), the
+-- alphalens rank autocorrelation, and a numpy R/S Hurst implementation.
+SELECT
+  assert_near('ols two factor beta 1', (fin_ols(oy, [f1, f2])).beta[1], 1.2019142848429625, 1e-12),
+  assert_near('ols two factor beta 2', (fin_ols(oy, [f1, f2])).beta[2], -0.704929823348132, 1e-12),
+  assert_near('ols two factor intercept', (fin_ols(oy, [f1, f2])).intercept, 0.5013749754795397, 1e-12),
+  assert_near('ols two factor r2', (fin_ols(oy, [f1, f2])).r2, 0.9583237680170038, 1e-12),
+  assert_near('ols two factor stderr 2', (fin_ols(oy, [f1, f2])).stderr[2], 0.037875113018565054, 1e-12),
+  assert_near('ols two factor intercept stderr', (fin_ols(oy, [f1, f2])).intercept_stderr, 0.026894285705937666, 1e-12),
+  assert_near('ols no intercept beta 1', (fin_ols_no_intercept(oy, [f1, f2])).beta[1], 1.2206889185338872, 1e-12),
+  assert_near('ols no intercept uncentered r2', (fin_ols_no_intercept(oy, [f1, f2])).r2, 0.7741168572435024, 1e-12),
+  assert_near('ols no intercept stderr 2', (fin_ols_no_intercept(oy, [f1, f2])).stderr[2], 0.09710677139336973, 1e-12),
+  assert_eq('ols no intercept has no intercept stderr', (fin_ols_no_intercept(oy, [f1, f2])).intercept_stderr, NULL),
+  assert_eq('ols collinear design is NULL', fin_ols(oy, [f1, 2 * f1]), NULL),
+  assert_near('newey west tstat', fin_newey_west_tstat(y, x, i, 3), 3.132567893408392, 1e-10),
+  assert_near('autocorr lag 1', fin_autocorr(x, i), -0.11833985791502655, 1e-12),
+  assert_near('autocorr lag 2', fin_autocorr(x, i, 2), -0.7844807623772095, 1e-12),
+  assert_near('crosscorr lag 1', fin_crosscorr(x, y, i, 1), -0.07694083267100597, 1e-12),
+  assert_near('crosscorr lag 0 is pearson', fin_crosscorr(x, y, i), 0.4350683747600051, 1e-12),
+  assert_near('hurst rescaled range', fin_hurst(x, i), 0.29204213557909403, 1e-12),
+  assert_near('half life ar1', fin_half_life_mean_reversion(ar, i), 1.7302267683904657, 1e-10),
+  assert_near('adf constant stat', (fin_adf(ar, i)).stat, -3.092598291133777, 1e-10),
+  assert_near('adf constant pvalue', (fin_adf(ar, i)).pvalue, 0.02710581929864506, 1e-10),
+  assert_eq('adf nobs', (fin_adf(ar, i)).nobs, 62.0::DOUBLE),
+  assert_near('adf trend stat', (fin_adf(ar, i, 0, 'ct')).stat, -3.7708138093687005, 1e-10),
+  assert_near('adf trend pvalue', (fin_adf(ar, i, 0, 'ct')).pvalue, 0.0180974415334357, 1e-10),
+  assert_near('adf no constant stat', (fin_adf(ar, i, max_lag := 2, regression := 'n')).stat, -2.212652001840801, 1e-10),
+  assert_near('adf no constant pvalue', (fin_adf(ar, i, max_lag := 2, regression := 'n')).pvalue, 0.025867889872054003, 1e-10),
+  assert_near('ljung box stat', (fin_ljung_box(x, i, 5)).stat, 80.26708456678584, 1e-9),
+  assert_near('ljung box pvalue', (fin_ljung_box(x, i, 5)).pvalue, 7.378660165348503e-16, 1e-20),
+  assert_near('factor turnover', fin_factor_turnover(i // 8, i % 8, x), 0.5034013605442176, 1e-12),
+  assert_near('factor turnover period 2', fin_factor_turnover(i // 8, 'a' || (i % 8), x, 2), 1.376984126984127, 1e-12),
+  assert_eq('factor turnover duplicate asset is NULL', fin_factor_turnover(i // 8, i % 4, x), NULL),
+  assert_near('exp decay sum numeric', fin_exp_decay_sum(x, i, 10.0), 0.9625694363858702, 1e-12),
+  assert_near('exp decay avg pandas ewm times', fin_exp_decay_avg(x, TIMESTAMP '2026-01-01' + i * INTERVAL 1 MINUTE, INTERVAL 10 MINUTE), 0.06523285274589181, 1e-12),
+  assert_near('exp decay count numeric', fin_exp_decay_count(i::DOUBLE, 10.0), 14.755899763198531, 1e-12),
+  assert_near('exp decay max numeric', fin_exp_decay_max(x, i, 10.0), 1.2139238480000343, 1e-12)
+FROM gold_stats;
+
+WITH long_returns AS (
+  SELECT i, 'x' AS asset, x AS r FROM gold_stats UNION ALL
+  SELECT i, 'y', y FROM gold_stats UNION ALL
+  SELECT i, 'oy', oy FROM gold_stats WHERE i % 7 <> 0
+), m AS (
+  SELECT fin_cov_matrix(i, asset, r) AS cov, fin_corr_matrix(i, asset, r) AS corr FROM long_returns
+)
+SELECT
+  assert_eq('cov matrix labels sorted', cov.labels, ['oy', 'x', 'y']),
+  assert_near('cov matrix pairwise variance', cov.matrix[1][1], 0.8646536020002162, 1e-12),
+  assert_near('cov matrix pairwise covariance', cov.matrix[1][2], -0.02726141315817192, 1e-12),
+  assert_near('cov matrix symmetric', cov.matrix[2][3] - cov.matrix[3][2], 0.0, 0),
+  assert_near('cov matrix full pair', cov.matrix[2][3], 0.27105568867940405, 1e-12),
+  assert_near('corr matrix pairwise', corr.matrix[1][3], -0.0316212523808466, 1e-12),
+  assert_near('corr matrix diagonal', corr.matrix[2][2], 1.0, 0),
+  assert_near('corr matrix full pair', corr.matrix[3][2], 0.4350683747600051, 1e-12)
+FROM m;
+
+SELECT assert_eq('cov matrix duplicate key and asset is NULL', fin_cov_matrix(d, a, r), NULL)
+FROM (VALUES (1, 1, 0.1), (1, 1, 0.2), (2, 1, 0.3)) t(d, a, r);
+
+SELECT assert_eq('cov matrix integer labels cast to varchar', fin_cov_matrix(d, a, r).labels, ['10', '2'])
+FROM (VALUES (1, 10, 0.1), (1, 2, 0.2), (2, 10, 0.3), (2, 2, 0.1)) t(d, a, r);
+
+-- Window use: rolling beta and z-score over explicit frames equal grouped
+-- results over the same rows.
+WITH framed AS (
+  SELECT i,
+    fin_rolling_beta(y, x) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS rb,
+    fin_rolling_zscore(x, i) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS rz,
+    fin_exp_decay_avg(x, i, 3.0) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS ed
+  FROM gold_stats
+), grouped AS (
+  SELECT f.i, fin_beta(s.y, s.x) AS rb, fin_zscore_last(s.x, s.i) AS rz, fin_exp_decay_avg(s.x, s.i, 3.0) AS ed
+  FROM gold_stats f JOIN gold_stats s ON s.i BETWEEN f.i - 9 AND f.i GROUP BY f.i
+)
+SELECT
+  assert_true('rolling beta window equals grouped', bool_and(abs(framed.rb - grouped.rb) < 1e-12 OR (framed.rb IS NULL AND grouped.rb IS NULL))),
+  assert_true('rolling zscore window equals grouped', bool_and(abs(framed.rz - grouped.rz) < 1e-12 OR (framed.rz IS NULL AND grouped.rz IS NULL))),
+  assert_true('exp decay window equals grouped', bool_and(abs(framed.ed - grouped.ed) < 1e-12))
+FROM framed JOIN grouped USING (i);
+
+-- Ordered statistics depend only on the ordering key, never on threads or row order.
+CREATE OR REPLACE TEMP TABLE sp_order_input AS
+  SELECT i % 50 AS g, i // 50 AS ts, sin(i * 1.3) + 0.5 * sin(0.37 * i * i) AS x, cos(i * 0.7) AS y,
+         (i // 50) // 20 AS d, (i // 50) % 20 AS asset
+  FROM range(20000) t(i) ORDER BY hash(i);
+CREATE OR REPLACE MACRO sp_order_metrics() AS TABLE
+  SELECT g, fin_autocorr(x, ts, 2) AS a, fin_crosscorr(x, y, ts, 1) AS b, fin_hurst(x, ts) AS c,
+    fin_half_life_mean_reversion(x, ts) AS e, (fin_adf(x, ts, 2, 'ct')).stat AS f, (fin_ljung_box(x, ts, 4)).stat AS h,
+    fin_newey_west_tstat(y, x, ts, 2) AS k, fin_rolling_zscore(x, ts) AS l, fin_exp_decay_avg(x, ts, 5.0) AS m,
+    fin_rank_corr(x, y, 'kendall') AS n, (fin_ks_test(x, y)).pvalue AS o, fin_mutual_information(x, y) AS p,
+    fin_factor_turnover(d, asset, x) AS q, (fin_ols(y, [x, x * x])).beta[2] AS s
+  FROM sp_order_input GROUP BY g;
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE sp_order_one AS SELECT * FROM sp_order_metrics();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE sp_order_eight AS SELECT * FROM sp_order_metrics();
+RESET threads;
+SELECT assert_eq('statistics ordered results are thread invariant', count(*), 0::BIGINT)
+FROM (SELECT * FROM sp_order_one EXCEPT SELECT * FROM sp_order_eight);
+SELECT assert_eq('statistics ordered results are populated', count(*), 50::BIGINT)
+FROM sp_order_one WHERE a IS NOT NULL AND c IS NOT NULL AND f IS NOT NULL AND k IS NOT NULL AND q IS NOT NULL AND s IS NOT NULL;
 
 -- Complex invariant and edge-case regressions.
 CREATE OR REPLACE TEMP TABLE complex_option_surface(
@@ -1965,6 +3094,19 @@ SELECT
   assert_near('money round', fin_money_round(10.255, 2), 10.26, 1e-12),
   assert_near('cents to money', fin_cents_to_money(1234, 2), 12.34, 1e-12),
   assert_eq('money to cents', fin_money_to_cents(12.34), 1234::BIGINT),
+  assert_eq('money to cents exact decimal half', fin_money_to_cents(1.005::DOUBLE), 101::BIGINT),
+  assert_eq('money to cents negative half', fin_money_to_cents(-1.005), -101::BIGINT),
+  assert_eq('money to cents half even', fin_money_to_cents(0.125, 'half_even'), 12::BIGINT),
+  assert_eq('money to cents floor', fin_money_to_cents(-0.121, 'floor'), -13::BIGINT),
+  assert_eq('money round exact double literal', fin_money_round(1.005::DOUBLE, 2), 1.01::DECIMAL(38,2)),
+  assert_eq('money round type', typeof(fin_money_round(1.005, 2)), 'DECIMAL(38,2)'),
+  assert_eq('money round half even down', fin_money_round(2.345, 2, 'half_even'), 2.34::DECIMAL(38,2)),
+  assert_eq('money round half even up', fin_money_round(2.355, 2, 'half_even'), 2.36::DECIMAL(38,2)),
+  assert_eq('money round ceil negative', fin_money_round(-1.231, 2, 'ceil'), -1.23::DECIMAL(38,2)),
+  assert_eq('money round truncate', fin_money_round(-1.239, 2, 'truncate'), -1.23::DECIMAL(38,2)),
+  assert_eq('cents to money exact decimal', fin_cents_to_money(-5), -0.05::DECIMAL(38,2)),
+  assert_eq('cents to money scale type', typeof(fin_cents_to_money(1234, 3)), 'DECIMAL(38,3)'),
+  assert_near('money weighted sum avoids decimal overflow', fin_money_weighted_sum(123456789012345.67::DECIMAL(18,2), 0.123456::DECIMAL(18,6)), 15241481344308.146, 1e-2),
   assert_true('valid ohlc ok', fin_validate_ohlc(100.0, 101.0, 99.0, 100.0).ok),
   assert_true('invalid ohlc fails', NOT fin_validate_ohlc(100.0, 99.0, 98.0, 100.0).ok),
   assert_true('return validation ok', fin_validate_return(0.05)),
@@ -1998,6 +3140,19 @@ SELECT
   assert_eq('ts grid spec method', fin_ts_grid_spec(TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-01-01 00:01:00', INTERVAL '1 minute').method, 'last'),
   assert_eq('bar spec kind', fin_bar_spec('volume', 1000.0).kind, 'volume'),
   assert_eq('calendar spec kind', fin_calendar_spec('weekday').calendar, 'weekday'),
+  assert_eq('rate spec canonical names', fin_rate_spec(0.05, 'Semi-Annually', 2, 'act/360'), {'rate': 0.05, 'compounding': 'semiannual', 'frequency': 2, 'day_count': 'ACT/360'}),
+  assert_eq('validate rate spec percentage', fin_validate_rate_spec(fin_rate_spec(5.0)).reason, 'rate above 1 (100%) looks like a percentage; pass decimal rates'),
+  assert_eq('validate rate spec unknown compounding', fin_validate_rate_spec({'rate': 0.05, 'compounding': 'bogus', 'frequency': 1, 'day_count': 'ACT/360'}).reason, 'unknown compounding ''bogus'''),
+  assert_eq('validate rate spec unknown day count', fin_validate_rate_spec({'rate': 0.05, 'compounding': 'simple', 'frequency': 1, 'day_count': 'nope'}).ok, false),
+  assert_eq('validate rate spec frequency', fin_validate_rate_spec({'rate': 0.05, 'compounding': 'periodic', 'frequency': -3, 'day_count': 'ACT/360'}).reason, 'frequency must be a positive integer'),
+  assert_eq('validate rate spec rate floor', fin_validate_rate_spec(fin_rate_spec(-1.5)).reason, 'rate must be greater than -1'),
+  assert_eq('validate rate spec nonfinite', fin_validate_rate_spec(fin_rate_spec('NaN'::DOUBLE)).ok, false),
+  assert_eq('optimizer spec fixed types', typeof(fin_optimizer_spec('min_variance', target_return := 0.08)), 'STRUCT(objective VARCHAR, risk_free DOUBLE, long_only BOOLEAN, weight_min DOUBLE, weight_max DOUBLE, target_return DOUBLE, target_vol DOUBLE, risk_aversion DOUBLE)'),
+  assert_near('optimizer spec keeps decimal target', fin_optimizer_spec('target_return', target_return := 0.08).target_return, 0.08, 1e-15),
+  assert_eq('risk spec annualization double', fin_risk_spec(252).annualization, 252.0::DOUBLE),
+  assert_eq('bar spec threshold double', typeof(fin_bar_spec('volume', 1000).threshold), 'DOUBLE'),
+  assert_eq('calendar spec canonical', fin_calendar_spec('XNYS').calendar, 'nyse'),
+  assert_eq('portfolio vector typed', typeof(fin_portfolio_vector([1, 0], ['A', 'B']).weights), 'DOUBLE[]'),
   assert_true('business day', fin_is_business_day(DATE '2026-05-06', 'weekday')),
   assert_true('weekend not business day', NOT fin_is_business_day(DATE '2026-05-09', 'weekday')),
   assert_eq('next business day', fin_next_business_day(DATE '2026-05-08', 'weekday', 1), DATE '2026-05-11'),
@@ -2318,11 +3473,79 @@ FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
   [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
    [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5);
 
-SELECT assert_eq('optimizer full overload rows', count(*), 2::BIGINT)
+-- Bounded QP optimizer. References: exact KKT solves on the optimal active set
+-- (numpy), cross-checked against scipy SLSQP.
+SELECT
+  assert_eq('optimizer full overload rows', count(*), 2::BIGINT),
+  assert_near('optimizer 2 asset tangency', max(weight) FILTER (WHERE asset_idx = 0), 0.5, 1e-12)
 FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0);
 
-SELECT assert_eq('optimizer table rows', count(*), 2::BIGINT)
-FROM fin_portfolio_optimize_table('gold_current_weights', 'asset', 'weight', 'weight');
+SELECT
+  assert_near('optimizer min variance w0', list(weight ORDER BY asset_idx)[1], 0.14113065664025784, 1e-12),
+  assert_eq('optimizer min variance excluded', list(weight ORDER BY asset_idx)[2:3], [0.0, 0.0]),
+  assert_near('optimizer min variance w3', list(weight ORDER BY asset_idx)[4], 0.33785416946421376, 1e-12),
+  assert_near('optimizer min variance w4', list(weight ORDER BY asset_idx)[5], 0.5210151738955284, 1e-12)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]]);
+
+-- Unbounded tangency portfolio equals Sigma^-1 (mu - rf) normalized.
+SELECT
+  assert_near('optimizer tangency w0', list(weight ORDER BY asset_idx)[1], 0.25946089402163214, 1e-12),
+  assert_near('optimizer tangency w4', list(weight ORDER BY asset_idx)[5], 0.20135885408474086, 1e-12)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_sharpe', 0.02, false);
+
+SELECT
+  assert_eq('optimizer capped sharpe cap', list(weight ORDER BY asset_idx)[1], 0.25),
+  assert_near('optimizer capped sharpe w1', list(weight ORDER BY asset_idx)[2], 0.17355952868695226, 1e-12),
+  assert_near('optimizer capped sharpe w3', list(weight ORDER BY asset_idx)[4], 0.20290156573354723, 1e-12),
+  assert_near('optimizer capped sharpe sum', sum(weight), 1.0, 1e-14)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_sharpe', 0.02, true, NULL, 0.25);
+
+SELECT
+  assert_near('optimizer target vol w0', list(weight ORDER BY asset_idx)[1], 0.30960157447276515, 1e-11),
+  assert_near('optimizer target vol w3', list(weight ORDER BY asset_idx)[4], 0.08179736039649857, 1e-11),
+  assert_near('optimizer target vol floor', list(weight ORDER BY asset_idx)[5], 0.05, 1e-15)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'target_vol', 0.0, true, 0.05, 0.5, NULL, 0.15);
+
+SELECT
+  assert_near('optimizer target return w0', list(weight ORDER BY asset_idx)[1], 0.385131476729678, 1e-12),
+  assert_near('optimizer target return w3', list(weight ORDER BY asset_idx)[4], 0.004129099084253651, 1e-12),
+  assert_near('optimizer target return short floor', list(weight ORDER BY asset_idx)[5], -0.2, 1e-15),
+  assert_near('optimizer target return attained', sum(weight * [0.08, 0.12, 0.10, 0.06, 0.05][asset_idx + 1]), 0.11, 1e-14)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'target_return', 0.0, false, -0.2, NULL, 0.11);
+
+-- max_utility: max mu'w - risk_aversion / 2 w'Sigma w (scipy SLSQP reference).
+SELECT
+  assert_near('optimizer utility w0', list(weight ORDER BY asset_idx)[1], 0.30445442408957096, 1e-7),
+  assert_near('optimizer utility w4', list(weight ORDER BY asset_idx)[5], 0.05523801334225375, 1e-7)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_utility', 0.0, true, NULL, 0.6, NULL, NULL, 3.0);
+
+-- Table optimizer: sample means and pairwise covariance of the return history
+-- (pandas mean/cov, scipy SLSQP reference); asset keeps its source type.
+SELECT
+  assert_eq('optimizer table assets', list(asset ORDER BY asset_idx), ['A', 'B', 'C', 'D']),
+  assert_near('optimizer table sharpe w0', list(weight ORDER BY asset_idx)[1], 0.1594705003533707, 1e-7),
+  assert_near('optimizer table sharpe w3', list(weight ORDER BY asset_idx)[4], 0.2724011546600638, 1e-7)
+FROM fin_portfolio_optimize_table('(SELECT i // 4 AS d, chr(65 + (i % 4)::INTEGER) AS a, x / 10 + 0.01 * (i % 4) AS r FROM gold_stats)',
+  'a', 'd', 'r', 'max_sharpe', 0.0, true, NULL, 0.6);
+
+SELECT
+  assert_eq('optimizer table integer asset', typeof(any_value(asset)), 'BIGINT'),
+  assert_near('optimizer table min variance w0', list(weight ORDER BY asset_idx)[1], 0.20390342313284646, 1e-7),
+  assert_near('optimizer table min variance w2', list(weight ORDER BY asset_idx)[3], 0.2657306503042067, 1e-7)
+FROM fin_portfolio_optimize_table('(SELECT i // 4 AS d, i % 4 AS a, x / 10 + 0.01 * (i % 4) AS r FROM gold_stats)',
+  'a', 'd', 'r');
 
 SELECT assert_eq('factor report rows', count(*), 1::BIGINT)
 FROM fin_factor_report('gold_returns', 'd', 'asset', 'factor', 'forward_return', 2);
@@ -2340,21 +3563,74 @@ SELECT
   assert_eq('factor report observations', n_obs, 12::BIGINT)
 FROM fin_factor_report('gold_factor_panel', 'd', 'asset', 'factor', 'fwd', 2::BIGINT);
 
-SELECT assert_eq('fama macbeth rows', count(*), 5::BIGINT)
-FROM fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1);
+-- Fama-MacBeth: per-date OLS, then the time-series mean of each coefficient
+-- (numpy/statsmodels reference; Newey-West = OLS on a constant with
+-- cov_type='HAC', maxlags=L, use_correction=False).
+SELECT
+  assert_eq('fama macbeth terms', list(term ORDER BY term = 'intercept' DESC, term), ['intercept', 'f1', 'f2']),
+  assert_near('fama macbeth intercept', max(estimate) FILTER (WHERE term = 'intercept'), 0.4919074928170733, 1e-12),
+  assert_near('fama macbeth f1', max(estimate) FILTER (WHERE term = 'f1'), 1.1979860539704417, 1e-12),
+  assert_near('fama macbeth f2', max(estimate) FILTER (WHERE term = 'f2'), -0.6859207392729733, 1e-12),
+  assert_near('fama macbeth classic se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.017695044165216837, 1e-12),
+  assert_near('fama macbeth classic se f2', max(stderr) FILTER (WHERE term = 'f2'), 0.03212088857842378, 1e-12),
+  assert_eq('fama macbeth periods', min(n_periods), 8::BIGINT)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2']);
+
+SELECT
+  assert_near('fama macbeth nw2 se intercept', max(stderr) FILTER (WHERE term = 'intercept'), 0.0156725138345265, 1e-12),
+  assert_near('fama macbeth nw2 se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.009448102636082955, 1e-12),
+  assert_near('fama macbeth nw2 tstat f2', max(tstat) FILTER (WHERE term = 'f2'),
+    -0.6859207392729733 / 0.014347694072117443, 1e-9)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2'], 2);
+
+SELECT assert_near('fama macbeth nw0 se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.016552198177518674, 1e-12)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2'], 0);
 
 -- Grouping uses the date argument even when the source also has a column named date.
 SELECT
-  assert_eq('fama macbeth groups by date argument', count(*), 3::BIGINT),
-  assert_near('fama macbeth slope date 1', max(beta) FILTER (WHERE date = 1), 0.011, 1e-12)
+  assert_eq('fama macbeth groups by date argument', max(n_periods), 3::BIGINT),
+  assert_near('fama macbeth slope mean', max(estimate) FILTER (WHERE term = 'factor'),
+    (0.011000000000000005 + 0.016999999999999998 + 0.008888888888888887) / 3, 1e-12)
 FROM fin_fama_macbeth('(SELECT d, DATE ''2000-01-01'' AS date, asset, factor, fwd FROM gold_factor_panel)',
   'd', 'asset', 'fwd', ['factor']);
 
+-- GARCH(1,1) MLE on a simulated path stored out of order (scipy Nelder-Mead
+-- reference on the same likelihood, h_1 = sample variance).
 SELECT
   assert_eq('garch fit rows', count(*), 1::BIGINT),
-  assert_eq('garch fit omega type', typeof(any_value(omega)), 'DOUBLE'),
-  assert_eq('garch fit beta type', typeof(any_value(beta)), 'DOUBLE')
-FROM fin_garch_fit('gold_returns', 'r', 1, 1, 'normal');
+  assert_near('garch fit loglik', any_value(loglik), 857.213331159131, 1e-8),
+  assert_near('garch fit omega', any_value(omega), 9.667622579178341e-06, 1e-10),
+  assert_near('garch fit alpha', any_value(alpha), 0.11024234033021169, 1e-6),
+  assert_near('garch fit beta', any_value(beta), 0.8428890079171752, 1e-6),
+  assert_near('garch fit unconditional variance', any_value(unconditional_variance),
+    any_value(omega) / (1 - any_value(alpha) - any_value(beta)), 1e-15),
+  assert_eq('garch fit nobs', any_value(nobs), 300::BIGINT)
+FROM fin_garch_fit('gold_garch', 'r', 't', 1, 1, 'normal');
+
+-- Table-function estimators do not depend on threads or row order.
+CREATE OR REPLACE MACRO sp_tf_metrics() AS TABLE
+  SELECT 'garch' AS k, alpha AS v FROM fin_garch_fit('(SELECT ts, x / 10 AS r FROM sp_order_input WHERE g = 3)', 'r', 'ts')
+  UNION ALL
+  SELECT term, stderr FROM fin_fama_macbeth('(SELECT ts // 10 AS d, g AS a, y, x FROM sp_order_input)', 'd', 'a', 'y', ['x'], 2)
+  UNION ALL
+  SELECT asset::VARCHAR, weight FROM fin_portfolio_optimize_table(
+    '(SELECT ts AS d, g AS a, x / 100 + 0.001 * (g % 7) AS r FROM sp_order_input WHERE g < 10)', 'a', 'd', 'r', 'max_sharpe');
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE sp_tf_one AS SELECT * FROM sp_tf_metrics();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE sp_tf_eight AS SELECT * FROM sp_tf_metrics();
+RESET threads;
+SELECT
+  assert_eq('table estimators populated', count(*) FILTER (WHERE a.v IS NOT NULL), 13::BIGINT),
+  assert_true('table estimators are thread invariant', max(abs(a.v - b.v)) <= 1e-12)
+FROM sp_tf_one a JOIN sp_tf_eight b USING (k);
+
+SELECT assert_true('garch fit too short is null', omega IS NULL AND loglik IS NULL)
+FROM fin_garch_fit('(SELECT t, r FROM gold_garch WHERE t < 9)', 'r', 't');
+
+-- Fitted parameters plug into fin_garch11_forecast with the same recursion.
+SELECT assert_true('garch fit feeds forecast', fin_garch11_forecast(g.r, f.omega, f.alpha, f.beta ORDER BY g.t) > 0)
+FROM gold_garch g, fin_garch_fit('gold_garch', 'r', 't') f;
 
 SELECT assert_eq('normalize returns rows', count(*), 5::BIGINT)
 FROM fin_normalize_returns('gold_returns', 'd', 'asset', 'r');

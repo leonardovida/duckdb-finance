@@ -62,14 +62,17 @@ def spread(rows, buckets):
 
 
 def ema(values, period):
-    if not values:
+    # TA-Lib EMA: NULL until `period` values, seeded with their mean, then
+    # explicit geometric weights on the remaining values.
+    if len(values) < period:
         return None
     alpha = Decimal(2) / (decimal(period) + 1)
-    # Explicit geometric weights, rather than the native affine state/merger.
     decay = 1 - alpha
-    weights = [decay ** (len(values) - 1)]
-    weights += [alpha * decay ** (len(values) - 1 - i) for i in range(1, len(values))]
-    return sum(decimal(x) * w for x, w in zip(values, weights))
+    seed = sum(map(decimal, values[:period])) / decimal(period)
+    tail = values[period:]
+    result = seed * decay ** len(tail)
+    result += sum(alpha * decay ** (len(tail) - 1 - i) * decimal(x) for i, x in enumerate(tail))
+    return result
 
 
 def ewma_vol(values, decay, annualization):
@@ -211,12 +214,13 @@ def main():
                     checks += 1
 
     invalid = [
-        ("SELECT fin_ema(1,0)", "EMA period"),
-        ("SELECT fin_ema(1,1.5)", "EMA period"),
-        ("SELECT fin_ema(1,2147483648)", "EMA period"),
-        ("SELECT fin_ema(1,'Infinity'::DOUBLE)", "EMA period"),
-        ("SELECT fin_ema('NaN'::DOUBLE)", "EMA observations"),
-        ("SELECT fin_ema(x,p) FROM (VALUES (1,2),(2,3))t(x,p)", "EMA period must be constant"),
+        ("SELECT fin_ema(1,0)", "fin_ema: period must be an integer"),
+        ("SELECT fin_ema(1,1.5)", "fin_ema: period must be an integer"),
+        ("SELECT fin_ema(1,2147483648)", "fin_ema: period must be an integer"),
+        ("SELECT fin_ema(1,'Infinity'::DOUBLE)", "fin_ema: period must be an integer"),
+        ("SELECT fin_ema(1,NULL)", "fin_ema: period must not be NULL"),
+        ("SELECT fin_ema(x,p) FROM (VALUES (1,2),(2,3))t(x,p)", "fin_ema: parameters must be constant"),
+        ("SELECT fin_rsi(x,p) FROM (VALUES (1,2),(2,3))t(x,p)", "fin_rsi: parameters must be constant"),
         ("SELECT fin_ewma_vol(1,1)", "fin_ewma_vol: lambda"),
         ("SELECT fin_ewma_variance(1,.94,0)", "fin_ewma_variance: annualization"),
         ("SELECT fin_weighted_quantile(1,1,2)", "in [0, 1]"),
@@ -239,6 +243,8 @@ def main():
         "SELECT fin_sortino('NaN'::DOUBLE) AS v",
         "SELECT fin_sortino(1,'Infinity'::DOUBLE) AS v",
         "SELECT fin_ewma_vol('NaN'::DOUBLE) AS v",
+        "SELECT fin_ema('NaN'::DOUBLE, 1) AS v",
+        "SELECT fin_rsi(x, 1 ORDER BY i) AS v FROM (VALUES (1, 1.0), (2, 'Infinity'::DOUBLE), (3, 2.0)) t(i, x)",
         "SELECT fin_weighted_quantile(1,-1,.5) AS v",
     ]
     for sql in null_groups:

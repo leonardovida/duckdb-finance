@@ -1,10 +1,6 @@
 void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	RegisterValueAtKeyAggregates(loader);
-	AggregateFunctionSet ema_set(FinanceFunctionName("fin_ema"));
-	ema_set.AddFunction(OrderDependent(UnaryDoubleAggregate<EMAState, EMAUnaryOperation>("fin_ema")));
-	ema_set.AddFunction(OrderDependent(BinaryDoubleAggregate<EMAState, double, EMAOperation>(
-	    "fin_ema", FinanceLogicalType(LogicalTypeId::DOUBLE))));
-	loader.RegisterFunction(std::move(ema_set));
+	RegisterTechnicalAggregates(loader);
 	AggregateFunctionSet sortino_set(FinanceFunctionName("fin_sortino"));
 	auto sortino = UnaryDoubleAggregate<SortinoState, SortinoOperation>("fin_sortino");
 	sortino.SetStateSimpleUpdateCallback(SortinoSimpleUpdate);
@@ -53,13 +49,7 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	        "fin_bipower_variation", FinanceLogicalType(LogicalTypeId::DOUBLE)))));
 	loader.RegisterFunction(std::move(bipower_variation_set));
 
-	AggregateFunctionSet rsi_set(FinanceFunctionName("fin_rsi"));
-	rsi_set.AddFunction(OrderDependent(WithStateDestructor<RSIState, RSIOperation>(
-	    UnaryDoubleAggregate<RSIState, RSIOperation>("fin_rsi"))));
-	rsi_set.AddFunction(OrderDependent(WithStateDestructor<RSIState, RSIWithPeriodOperation>(
-	    BinaryDoubleAggregate<RSIState, int32_t, RSIWithPeriodOperation>("fin_rsi",
-	                                                                    FinanceLogicalType(LogicalTypeId::INTEGER)))));
-	loader.RegisterFunction(std::move(rsi_set));
 
 	RegisterReturnsRiskAggregates(loader);
+	RegisterStatisticsAggregates(loader);
 }
