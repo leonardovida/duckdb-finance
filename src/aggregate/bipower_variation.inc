@@ -6,6 +6,7 @@ struct BipowerVariationState {
 	double product_compensation;
 	double annualization;
 	idx_t count;
+	bool invalid;
 };
 
 struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVariationOperation> {
@@ -18,17 +19,16 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 		state.product_compensation = 0.0;
 		state.annualization = DEFAULT_ANNUALIZATION;
 		state.count = 0;
+		state.invalid = false;
 	}
 
 	template <class STATE>
 	static void AddProduct(STATE &state, double product) {
-		if (!std::isfinite(product)) {
-			throw InvalidInputException("Bipower variation products must be finite");
-		}
 		double adjusted = product - state.product_compensation;
 		double sum = state.product_sum + adjusted;
-		if (!std::isfinite(sum)) {
-			throw InvalidInputException("Bipower variation sum must be finite");
+		if (!std::isfinite(product) || !std::isfinite(sum)) {
+			state.invalid = true;
+			return;
 		}
 		state.product_compensation = (sum - state.product_sum) - adjusted;
 		state.product_sum = sum;
@@ -37,7 +37,8 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
 		if (!std::isfinite(value)) {
-			throw InvalidInputException("Bipower variation returns must be finite");
+			state.invalid = true;
+			return;
 		}
 		double absolute_return = std::fabs(value);
 		if (!state.isset) {
@@ -52,15 +53,18 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.invalid = target.invalid || source.invalid;
 		if (!source.isset) {
 			return;
 		}
 		if (!target.isset) {
+			auto invalid = target.invalid;
 			target = source;
+			target.invalid = invalid;
 			return;
 		}
 		if (target.annualization != source.annualization) {
-			throw InvalidInputException("Bipower variation annualization must be constant within a group");
+			throw InvalidInputException("fin_bipower_variation: annualization must be constant within a group");
 		}
 		AddProduct(target, target.last_absolute_return * source.first_absolute_return);
 		AddProduct(target, source.product_sum);
@@ -70,7 +74,7 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (state.count < 2) {
+		if (state.invalid || state.count < 2) {
 			finalize_data.ReturnNull();
 			return;
 		}
@@ -87,10 +91,10 @@ struct BipowerVariationWithAnnualizationOperation : public BipowerVariationOpera
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double annualization) {
 		if (!(annualization > 0.0) || !std::isfinite(annualization)) {
-			throw InvalidInputException("Bipower variation annualization must be positive and finite");
+			throw InvalidInputException("fin_bipower_variation: annualization must be positive and finite");
 		}
 		if (state.isset && state.annualization != annualization) {
-			throw InvalidInputException("Bipower variation annualization must be constant within a group");
+			throw InvalidInputException("fin_bipower_variation: annualization must be constant within a group");
 		}
 		state.annualization = annualization;
 		BipowerVariationOperation::UpdateValue(state, value);

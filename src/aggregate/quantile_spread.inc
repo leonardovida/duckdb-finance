@@ -2,6 +2,7 @@ struct QuantileSpreadState {
 	vector<std::pair<double, double>> *values;
 	int32_t buckets;
 	bool buckets_set;
+	bool invalid;
 	double scale;
 };
 
@@ -11,23 +12,26 @@ struct QuantileSpreadOperation {
 		state.values = new vector<std::pair<double, double>>();
 		state.buckets = 5;
 		state.buckets_set = false;
+		state.invalid = false;
 		state.scale = 0.0;
 	}
 
 	template <class STATE>
 	static void UpdateValue(STATE &state, double factor, double forward_return, double buckets = 5.0) {
-		if (!std::isfinite(factor) || !std::isfinite(forward_return)) {
-			return;
-		}
 		auto bucket_count = static_cast<int32_t>(std::llround(buckets));
 		if (bucket_count <= 1) {
-			throw InvalidInputException("Quantile spread buckets must be greater than 1");
+			throw InvalidInputException("fin_quantile_spread: buckets must be greater than 1");
 		}
 		if (state.buckets_set && state.buckets != bucket_count) {
-			throw InvalidInputException("Quantile spread buckets must be constant within a group");
+			throw InvalidInputException("fin_quantile_spread: buckets must be constant within a group");
 		}
 		state.buckets = bucket_count;
 		state.buckets_set = true;
+		if (!std::isfinite(factor) || !std::isfinite(forward_return)) {
+			// A non-finite factor or return makes the group's spread undefined.
+			state.invalid = true;
+			return;
+		}
 		state.values->push_back({factor, forward_return});
 		state.scale = std::max(state.scale, std::abs(forward_return));
 	}
@@ -44,8 +48,9 @@ struct QuantileSpreadOperation {
 			return;
 		}
 		if (target.buckets_set && target.buckets != source.buckets) {
-			throw InvalidInputException("Quantile spread buckets must be constant within a group");
+			throw InvalidInputException("fin_quantile_spread: buckets must be constant within a group");
 		}
+		target.invalid = target.invalid || source.invalid;
 		target.buckets = source.buckets;
 		target.buckets_set = true;
 		target.scale = std::max(target.scale, source.scale);
@@ -55,7 +60,7 @@ struct QuantileSpreadOperation {
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
 		auto n = state.values ? NumericCast<idx_t>(state.values->size()) : idx_t(0);
-		if (n == 0) {
+		if (state.invalid || n == 0) {
 			finalize_data.ReturnNull();
 			return;
 		}

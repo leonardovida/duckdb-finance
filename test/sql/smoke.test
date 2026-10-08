@@ -47,10 +47,95 @@ Weighted variance ddof must be constant within a group
 statement error
 SELECT fin_outlier_count('NaN'::DOUBLE, 0.0)
 ----
-Outlier threshold must be positive and finite
+fin_outlier_count: threshold must be positive and finite
 
 statement error
 SELECT fin_outlier_count(x, threshold ORDER BY seq)
 FROM (VALUES (1, 0.0, 1.0), (2, 'NaN'::DOUBLE, 2.0)) AS t(seq, x, threshold)
 ----
-Outlier threshold must be constant within a group
+fin_outlier_count: threshold must be constant within a group
+
+statement error
+SELECT fin_sortino(r, annualization := 12.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_sortino: named argument 'annualization := ...' is not supported
+
+statement error
+SELECT fin_volatility(r, ddof := 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_volatility: named argument 'ddof := ...' is not supported
+
+statement error
+SELECT fin_max_drawdown(r, initial_nav := 100.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_max_drawdown: named argument 'initial_nav := ...' is not supported
+
+statement error
+SELECT fin_var(r, 0.95, 'bogus') FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_var: unknown method 'bogus'
+
+statement error
+SELECT fin_var(r, 1.5) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_var: confidence must be finite and in (0, 1)
+
+statement error
+SELECT fin_var(r, 0.95, 'bogus') FROM (SELECT 0.01 AS r WHERE false)
+----
+fin_var: unknown method 'bogus'
+
+statement error
+SELECT fin_cvar(r, 0.95, 'cornish_fisher') FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_cvar: unknown method 'cornish_fisher'
+
+statement error
+SELECT fin_total_return(r, 'bogus') FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_total_return: unknown method 'bogus'
+
+statement error
+SELECT fin_return(102.0, 100.0, 'bogus')
+----
+fin_return: unknown method 'bogus'
+
+statement error
+SELECT fin_excess_return(0.01, 0.02, 252, 'monthly')
+----
+fin_excess_return: unknown rf_convention 'monthly'
+
+statement error
+SELECT fin_parametric_var(0.0, 0.2, 0.95, 1.0, 'cauchy')
+----
+fin_parametric_var: unknown distribution 'cauchy'
+
+statement error
+SELECT fin_parametric_var(0.0, 0.2, 0.95, 1.0, 't', 2)
+----
+fin_parametric_var: df must be finite and greater than 2
+
+statement error
+SELECT fin_parametric_cvar(0.0, 0.2, 1.5)
+----
+fin_parametric_cvar: confidence must be finite and in (0, 1)
+
+statement error
+SELECT fin_garch11_forecast(r, 0.000001, -0.05, 0.9 ORDER BY i) FROM (VALUES (1, 0.01), (2, -0.02)) AS t(i, r)
+----
+fin_garch11_forecast: omega, alpha and beta must be finite and non-negative
+
+statement error
+SELECT fin_volatility(r, 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_volatility: annualization must be positive and finite
+
+statement error
+SELECT fin_weighted_quantile(x, 1.0, 0.5, 'type7') FROM (VALUES (1.0), (2.0)) AS t(x)
+----
+fin_weighted_quantile: unknown method 'type7'
+
+statement error
+SELECT fin_drawdown_at_risk(r, 1.0 ORDER BY i) FROM (VALUES (1, 0.01), (2, -0.02)) AS t(i, r)
+----
+fin_drawdown_at_risk: confidence must be finite and in (0, 1)
