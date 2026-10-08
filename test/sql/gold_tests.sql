@@ -172,6 +172,16 @@ SELECT
   assert_near('bond ytm price roundtrip', fin_bond_price(coupon, fin_bond_ytm(reference, coupon, maturity, freq, face), maturity, freq, face), reference, 1e-9)
 FROM reconciled;
 
+-- Native scalars bind by position and reject `name := value` (test/sql/smoke.test);
+-- column references, select-list aliases, struct fields and lambda parameters
+-- whose names look like parameter names are ordinary positional arguments.
+SELECT
+  assert_near('bond select-list alias argument', bond, 104.49129250312109, 1e-9),
+  assert_near('bond struct field arguments', fin_bond_price(s.coupon, s.ytm, s.maturity, 2, 100.0), 104.49129250312109, 1e-9),
+  assert_near('bond lambda parameter argument', list_transform([0.04], lambda ytm: fin_bond_price(0.05, ytm, 5.0, 2, 100.0))[1],
+              104.49129250312109, 1e-9)
+FROM (SELECT {'coupon': 0.05, 'ytm': 0.04, 'maturity': 5.0} AS s, 0.05 AS coupon, fin_bond_price(coupon, 0.04, 5.0, 2, 100.0) AS bond);
+
 SELECT
   assert_near('bond high yield', fin_bond_ytm(0.01, 0, 1, 1, 100), 9999.0, 1e-7),
   assert_eq('bond out of range periods', fin_bond_price(0.05, 0.04, 1e30, 2), NULL),
@@ -443,7 +453,8 @@ CREATE OR REPLACE MACRO rr_order_metrics() AS TABLE
     fin_yang_zhang_vol(c, c * 1.01, c * 0.99, c * (1 + r / 10) ORDER BY ts) AS l,
     fin_calmar(r, ts) AS m, fin_recovery_factor(r, ts) AS n, fin_zscore_last(r, ts) AS o,
     fin_iv_rank(iv ORDER BY ts) AS p, fin_iv_percentile(iv ORDER BY ts) AS q,
-    fin_ewma_vol(r ORDER BY ts) AS s, fin_bipower_variation(r ORDER BY ts) AS u
+    fin_ewma_vol(r ORDER BY ts) AS s, fin_bipower_variation(r ORDER BY ts) AS u,
+    fin_ewma_variance(r, 0.9, 12.0 ORDER BY ts) AS v, fin_stability(r ORDER BY ts) AS w
   FROM rr_order_input GROUP BY g;
 SET threads = 1;
 CREATE OR REPLACE TEMP TABLE rr_order_one AS SELECT * FROM rr_order_metrics();
@@ -453,7 +464,40 @@ RESET threads;
 SELECT assert_eq('returns risk order-dependent results are thread invariant', count(*), 0::BIGINT)
 FROM (SELECT * FROM rr_order_one EXCEPT SELECT * FROM rr_order_eight);
 SELECT assert_eq('returns risk order-dependent results are populated', count(*), 97::BIGINT)
-FROM rr_order_one WHERE a IS NOT NULL AND k IS NOT NULL AND l IS NOT NULL AND m IS NOT NULL AND q IS NOT NULL;
+FROM rr_order_one WHERE a IS NOT NULL AND k IS NOT NULL AND l IS NOT NULL AND m IS NOT NULL AND q IS NOT NULL
+  AND v IS NOT NULL AND w IS NOT NULL;
+
+-- Order-dependent window frames are evaluated from the ordered frame rows (no
+-- merging of partial states): results are thread invariant and a running
+-- frame ends at the grouped value. Calls without an order are rejected in
+-- test/sql/smoke.test.
+CREATE OR REPLACE MACRO rr_order_windows() AS TABLE
+  SELECT g, ts, fin_max_drawdown(r) OVER w AS w_mdd, fin_ewma_vol(r) OVER w AS w_ewma,
+    fin_ewma_variance(r, 0.9, 12.0) OVER w AS w_ewv,
+    fin_garch11_forecast(r, 0.000001, 0.05, 0.9) OVER w AS w_garch, fin_iv_rank(iv) OVER w AS w_ivr,
+    fin_stability(r) OVER w AS w_stab, fin_bipower_variation(r) OVER w AS w_bpv,
+    fin_yang_zhang_vol(c, c * 1.01, c * 0.99, c * (1 + r / 10)) OVER w AS w_yz,
+    fin_max_drawdown(r) OVER s AS s_mdd, fin_ewma_vol(r) OVER s AS s_ewma,
+    fin_garch11_forecast(r, 0.000001, 0.05, 0.9) OVER s AS s_garch, fin_iv_rank(iv) OVER s AS s_ivr,
+    fin_stability(r) OVER s AS s_stab, fin_bipower_variation(r) OVER s AS s_bpv,
+    fin_yang_zhang_vol(c, c * 1.01, c * 0.99, c * (1 + r / 10)) OVER s AS s_yz
+  FROM rr_order_input
+  WINDOW w AS (PARTITION BY g ORDER BY ts ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+         s AS (PARTITION BY g ORDER BY ts ROWS BETWEEN 20 PRECEDING AND CURRENT ROW);
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE rr_window_one AS SELECT * FROM rr_order_windows();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE rr_window_eight AS SELECT * FROM rr_order_windows();
+RESET threads;
+SELECT assert_eq('returns risk order-dependent windows are thread invariant', count(*), 0::BIGINT)
+FROM (SELECT * FROM rr_window_one EXCEPT SELECT * FROM rr_window_eight);
+SELECT assert_eq('returns risk running frame ends at the grouped value', count(*) FILTER (
+    WHERE (w.w_mdd, w.w_ewma, w.w_ewv, w.w_garch, w.w_ivr, w.w_stab, w.w_bpv, w.w_yz)
+      IS DISTINCT FROM (o.b, o.s, o.v, o.k, o.p, o.w, o.u, o.l)), 0::BIGINT),
+  assert_eq('returns risk running frame groups', count(*), 97::BIGINT)
+FROM rr_window_one w
+JOIN (SELECT g, max(ts) AS ts FROM rr_order_input GROUP BY g) last_row USING (g, ts)
+JOIN rr_order_one o USING (g);
 
 -- Non-finite observations make only their own group NULL (no query abort).
 WITH observations(g, i, r, b) AS (
@@ -3213,6 +3257,15 @@ SELECT
   assert_near('two asset max sharpe', fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])[1], 0.5, 1e-12),
   assert_near('black litterman single view', fin_black_litterman_returns([0.6, 0.4], [[0.04, 0.01], [0.01, 0.09]], [[1.0, 0.0]], [0.1])[1],
               0.085, 1e-12);
+
+-- The portfolio macros accept named macro parameters and any input that casts
+-- implicitly to DOUBLE lists; other types fail with the macro's own name
+-- (test/sql/smoke.test).
+SELECT
+  assert_near('max sharpe named macro parameters',
+              fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], risk_free := 0.0, long_only := true)[1], 0.5, 1e-12),
+  assert_near('risk parity integer covariance', fin_risk_parity_weights([[4, 0], [0, 9]], [1, 1], 1e-12, 1000)[1], 0.6, 1e-9),
+  assert_near('min variance array covariance', fin_min_variance_weights([[0.04, 0.01], [0.01, 0.09]]::DOUBLE[2][2])[1], 0.8 / 1.1, 1e-12);
 
 -- Portfolio construction against closed forms / KKT-verified numpy solutions
 -- (see docs: long-only solves use an exact active-set QP). S is a 4-asset

@@ -22,35 +22,19 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	sortino_set.AddFunction(sortino_mar_annualization);
 	loader.RegisterFunction(std::move(sortino_set));
 
-	AggregateFunctionSet ewma_variance_set(FinanceFunctionName("fin_ewma_variance"));
-	ewma_variance_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    UnaryDoubleAggregate<EWMAState, EWMAOperation<false>>("fin_ewma_variance"))));
-	ewma_variance_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    BinaryDoubleAggregate<EWMAState, double, EWMAWithLambdaOperation<false>>("fin_ewma_variance",
-	                                                                            FinanceLogicalType(LogicalTypeId::DOUBLE)))));
-	ewma_variance_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    TernaryDoubleAggregate<EWMAState, double, double, double, EWMAWithLambdaAnnualizationOperation<false>>(
-	        "fin_ewma_variance", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)))));
-	loader.RegisterFunction(std::move(ewma_variance_set));
-
-	AggregateFunctionSet ewma_vol_set(FinanceFunctionName("fin_ewma_vol"));
-	ewma_vol_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    UnaryDoubleAggregate<EWMAState, EWMAOperation<true>>("fin_ewma_vol"))));
-	ewma_vol_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    BinaryDoubleAggregate<EWMAState, double, EWMAWithLambdaOperation<true>>("fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE)))));
-	ewma_vol_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    TernaryDoubleAggregate<EWMAState, double, double, double, EWMAWithLambdaAnnualizationOperation<true>>(
-	        "fin_ewma_vol", FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)))));
-	loader.RegisterFunction(std::move(ewma_vol_set));
-
-	AggregateFunctionSet bipower_variation_set(FinanceFunctionName("fin_bipower_variation"));
-	bipower_variation_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    UnaryDoubleAggregate<BipowerVariationState, BipowerVariationOperation>("fin_bipower_variation"))));
-	bipower_variation_set.AddFunction(WithNamedArgumentsBind(OrderDependent(
-	    BinaryDoubleAggregate<BipowerVariationState, double, BipowerVariationWithAnnualizationOperation>(
-	        "fin_bipower_variation", FinanceLogicalType(LogicalTypeId::DOUBLE)))));
-	loader.RegisterFunction(std::move(bipower_variation_set));
-
+	FinRegisterSet(loader, "fin_ewma_variance",
+	               {FinWindowAggregate<EWMAState, EWMAOperation<false>>("fin_ewma_variance", FinDoubles(1)),
+	                FinWindowAggregate<EWMAState, EWMAOperation<false>>("fin_ewma_variance", FinDoubles(2)),
+	                FinWindowAggregate<EWMAState, EWMAOperation<false>>("fin_ewma_variance", FinDoubles(3))});
+	FinRegisterSet(loader, "fin_ewma_vol",
+	               {FinWindowAggregate<EWMAState, EWMAOperation<true>>("fin_ewma_vol", FinDoubles(1)),
+	                FinWindowAggregate<EWMAState, EWMAOperation<true>>("fin_ewma_vol", FinDoubles(2)),
+	                FinWindowAggregate<EWMAState, EWMAOperation<true>>("fin_ewma_vol", FinDoubles(3))});
+	FinRegisterSet(loader, "fin_bipower_variation",
+	               {FinWindowAggregate<BipowerVariationState, BipowerVariationOperation>("fin_bipower_variation",
+	                                                                                     FinDoubles(1)),
+	                FinWindowAggregate<BipowerVariationState, BipowerVariationOperation>("fin_bipower_variation",
+	                                                                                     FinDoubles(2))});
 
 	RegisterReturnsRiskAggregates(loader);
 	RegisterStatisticsAggregates(loader);

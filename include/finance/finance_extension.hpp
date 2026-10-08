@@ -28,6 +28,9 @@ void RegisterFinanceScalars(ExtensionLoader &loader);
 void RegisterFinanceMacros(ExtensionLoader &loader);
 void RegisterFinanceAggregates(ExtensionLoader &loader);
 void RegisterFinanceTableFunctions(ExtensionLoader &loader);
+//! Throws InvalidInputException "<function_name>: unknown calendar ..." for a calendar name the scalar
+//! calendar functions do not support.
+void FinanceValidateCalendar(const string &function_name, const string &calendar);
 
 #if FINANCE_HAS_DUCKDB_IDENTIFIER
 inline Identifier FinanceFunctionName(const string &name) {

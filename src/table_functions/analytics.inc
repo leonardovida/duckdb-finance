@@ -206,7 +206,10 @@ static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFun
 static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFunctionBindInput &input) {
 	const string function_name = "fin_calendar";
 	RequireInputCountBetween(input, 1, 3, "fin_calendar expects calendar, start_date, end_date");
-	auto calendar = SqlStringLiteral(RequireString(input.inputs[0], function_name, "calendar"));
+	auto calendar_name = RequireString(input.inputs[0], function_name, "calendar");
+	// Validate here so an unknown calendar names fin_calendar, not the generated fin_is_business_day call.
+	FinanceValidateCalendar(function_name, calendar_name);
+	auto calendar = SqlStringLiteral(calendar_name);
 	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(RequireArgument(input, 1, function_name, "start_date"))
 	                                           : CurrentDateSql(context);
 	auto end_date =

@@ -15,6 +15,8 @@ FROM (
         (1.0, 1.0, 2),
         (2.0, 2.0, 5)
 ) AS t(factor, forward_return, buckets)
+----
+fin_quantile_spread: buckets must be constant within a group
 
 statement error
 SELECT fin_sortino(r, mar, annualization)
@@ -23,6 +25,8 @@ FROM (
         (0.10, 0.0, 252.0),
         (-0.05, 0.0, 365.0)
 ) AS t(r, mar, annualization)
+----
+fin_sortino: annualization must be constant within a group
 
 statement error
 SELECT fin_outlier_count(x, method, threshold)
@@ -31,6 +35,8 @@ FROM (
         (0.0, 'zscore', 1.0),
         (10.0, 'zscore', 10.0)
 ) AS t(x, method, threshold)
+----
+fin_outlier_count: threshold must be constant within a group
 
 statement error
 SELECT fin_weighted_var(x, w, ddof)
@@ -153,6 +159,42 @@ SELECT fin_max_drawdown(r, initial_nav := 100.0) FROM (VALUES (0.01), (-0.02)) A
 ----
 fin_max_drawdown: named argument 'initial_nav := ...' is not supported
 
+# Native scalars reject named arguments instead of binding them by position.
+statement error
+SELECT fin_bond_price(ytm := 0.04, coupon := 0.05, maturity := 5.0, frequency := 2, face := 100.0)
+----
+fin_bond_price: named argument 'ytm := ...' is not supported; native scalar arguments bind by position
+
+statement error
+SELECT fin_bond_price(0.05, 0.04, 5.0, frequency := 2)
+----
+fin_bond_price: named argument 'frequency := ...' is not supported
+
+statement error
+SELECT fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', day_count := 'ACT/365')
+----
+fin_yearfrac: named argument 'day_count := ...' is not supported
+
+statement error
+SELECT fin_trade_sign(1.0, 0.9, 1.1, 0.95, method := 'emo')
+----
+fin_trade_sign: named argument 'method := ...' is not supported
+
+statement error
+SELECT fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, vol := 0.2)
+----
+fin_bsm_price: named argument 'vol := ...' is not supported
+
+statement error
+SELECT fin_mid(bid := 99.0, ask := 101.0)
+----
+fin_mid: named argument 'bid := ...' is not supported
+
+query R
+SELECT round(fin_bond_price(0.05, 0.04, 5.0, 2, 100.0), 9)
+----
+104.491292503
+
 statement error
 SELECT fin_var(r, 0.95, 'bogus') FROM (VALUES (0.01), (-0.02)) AS t(r)
 ----
@@ -184,6 +226,31 @@ SELECT fin_return(102.0, 100.0, 'bogus')
 fin_return: unknown method 'bogus'
 
 statement error
+SELECT fin_price_from_return(100.0, 0.02, 'bogus')
+----
+fin_price_from_return: unknown method 'bogus'
+
+statement error
+SELECT fin_cum_return(r, 'bogus') FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_cum_return: unknown method 'bogus'
+
+statement error
+SELECT fin_aggregate_return(r, 'bogus') FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_aggregate_return: unknown method 'bogus'
+
+statement error
+SELECT fin_cum_return(r, NULL) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_cum_return: method must not be NULL
+
+query RR
+SELECT round(fin_cum_return(r, 'LOG'), 12), round(fin_aggregate_return(r, method := 'pct'), 12) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+-0.009950166251	-0.0102
+
+statement error
 SELECT fin_excess_return(0.01, 0.02, 252, 'monthly')
 ----
 fin_excess_return: unknown rf_convention 'monthly'
@@ -208,6 +275,95 @@ SELECT fin_garch11_forecast(r, 0.000001, -0.05, 0.9 ORDER BY i) FROM (VALUES (1,
 ----
 fin_garch11_forecast: omega, alpha and beta must be finite and non-negative
 
+# Order-dependent aggregates reject partial states merged in an undefined
+# order. Each UNION ALL branch feeds its own partial state, so the merge is
+# deterministic even with one thread.
+
+statement error
+SELECT fin_max_drawdown(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_max_drawdown: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_avg_drawdown(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_avg_drawdown: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_drawdown(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_drawdown: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_drawdown_duration(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_drawdown_duration: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_drawdown_at_risk(r, 0.9) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_drawdown_at_risk: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_conditional_drawdown_at_risk(r, 0.9) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_conditional_drawdown_at_risk: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_ulcer_index(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_ulcer_index: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_ewma_variance(r, 0.94, 252.0) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_ewma_variance: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_ewma_vol(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_ewma_vol: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_garch11_forecast(r, 0.000001, 0.05, 0.9) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_garch11_forecast: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_iv_rank(abs(r)) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_iv_rank: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_iv_percentile(abs(r)) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_iv_percentile: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_stability(r) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_stability: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_bipower_variation(r, 252) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_bipower_variation: rows reached the aggregate in an undefined order
+
+statement error
+SELECT fin_yang_zhang_vol(1.0, 1.0 + abs(r), 1.0 - abs(r), 1.0 + r / 2) FROM (SELECT (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT -0.01 * i FROM range(10) t(i))
+----
+fin_yang_zhang_vol: rows reached the aggregate in an undefined order
+
+statement error
+SELECT g, fin_ewma_vol(r) FROM (SELECT 1 AS g, (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT 1, -0.01 * i FROM range(10) t(i)) GROUP BY g
+----
+fin_ewma_vol: rows reached the aggregate in an undefined order
+
+query I
+SELECT round(fin_max_drawdown(r ORDER BY i), 12) FROM (SELECT i, (i % 5) * 0.01 - 0.02 AS r FROM range(10) t(i) UNION ALL SELECT i + 10, -0.01 * i FROM range(10) t(i))
+----
+-0.372471439688
+
 statement error
 SELECT fin_volatility(r, 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
 ----
@@ -222,8 +378,6 @@ statement error
 SELECT fin_drawdown_at_risk(r, 1.0 ORDER BY i) FROM (VALUES (1, 0.01), (2, -0.02)) AS t(i, r)
 ----
 fin_drawdown_at_risk: confidence must be finite and in (0, 1)
-
-Outlier threshold must be constant within a group
 
 statement error
 SELECT fin_rate(x, t, 'fortnight') FROM (VALUES (1.0, TIMESTAMP '2026-01-01')) AS v(x, t)
@@ -471,6 +625,31 @@ statement error
 SELECT fin_exp_decay_avg(x, ts, INTERVAL '-1 minute') FROM (VALUES (TIMESTAMP '2026-01-01', 1.0)) AS t(ts, x)
 ----
 fin_exp_decay_avg: halflife must be positive and finite
+
+statement error
+SELECT fin_ema_halflife(x, ts, INTERVAL '-1 hour') FROM (VALUES (TIMESTAMP '2026-01-01', 1.0)) AS t(ts, x)
+----
+fin_ema_halflife: halflife must be positive and finite
+
+statement error
+SELECT fin_ema_halflife(x, ts, -1.0) FROM (VALUES (1.0, 1.0)) AS t(ts, x)
+----
+fin_ema_halflife: halflife must be positive and finite
+
+statement error
+SELECT * FROM fin_calendar('LSE', DATE '2026-01-01', DATE '2026-01-05')
+----
+fin_calendar: unknown calendar 'LSE'
+
+statement error
+SELECT fin_max_sharpe_weights(0.0, [[0.04, 0.01], [0.01, 0.09]])
+----
+fin_max_sharpe_weights: mu must be a vector (LIST of DOUBLE), got DECIMAL(2,1)
+
+statement error
+SELECT fin_min_variance_weights([0.04, 0.01], true)
+----
+fin_min_variance_weights: cov_matrix must be a matrix (LIST of LIST of DOUBLE)
 
 statement error
 SELECT fin_money_round(1.0, 2, 'bankers')

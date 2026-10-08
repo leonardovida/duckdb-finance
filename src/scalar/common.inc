@@ -2953,6 +2953,36 @@ static scalar_function_t WithFunctionName(const string &name, scalar_function_t 
 	};
 }
 
+//! DuckDB binds native scalar arguments by position and drops `name := value` names, so a named argument would be
+//! applied silently to the parameter at its position. The name survives as the argument expression's alias, so
+//! reject it at bind. Column, reference and lambda-parameter expressions carry their own name as alias and cannot be
+//! distinguished from a named argument, so they are not checked. Macro parameters substitute the caller's argument
+//! without its name, so SQL macros may call native functions with named macro parameters.
+static void RejectNamedScalarArguments(const ScalarFunction &function, const vector<unique_ptr<Expression>> &arguments) {
+	for (auto &argument : arguments) {
+		switch (argument->GetExpressionClass()) {
+		case ExpressionClass::BOUND_COLUMN_REF:
+		case ExpressionClass::BOUND_REF:
+		case ExpressionClass::BOUND_LAMBDA_REF:
+			continue;
+		default:
+			break;
+		}
+		if (argument->GetAlias().empty()) {
+			continue;
+		}
+		throw InvalidInputException("%s: named argument '%s := ...' is not supported; native scalar arguments bind by "
+		                            "position, so pass every argument positionally",
+		                            function.name, argument->GetAlias());
+	}
+}
+
+static unique_ptr<FunctionData> BindPositionalArguments(ClientContext &, ScalarFunction &bound_function,
+                                                        vector<unique_ptr<Expression>> &arguments) {
+	RejectNamedScalarArguments(bound_function, arguments);
+	return nullptr;
+}
+
 //! Temporal overloads are declared as ANY with a high cast score so DATE (and TIMESTAMP for session functions)
 //! keep winning for DATE values, NULLs and string literals; separate TIMESTAMP and TIMESTAMPTZ overloads would
 //! make '2026-01-02' literals ambiguous. The score also tells the bind which shape the position expects.
@@ -2983,6 +3013,7 @@ static bool IsTemporalArgument(const LogicalType &type) {
 //! Instant positions accept TIMESTAMPTZ only.
 static unique_ptr<FunctionData> BindTemporalArguments(ClientContext &, ScalarFunction &bound_function,
                                                       vector<unique_ptr<Expression>> &arguments) {
+	RejectNamedScalarArguments(bound_function, arguments);
 	for (idx_t i = 0; i < bound_function.arguments.size() && i < arguments.size(); i++) {
 		auto &declared = bound_function.arguments[i];
 		if (declared.id() != LogicalTypeId::ANY) {
@@ -3012,12 +3043,14 @@ static void AddScalar(ExtensionLoader &loader, const string &name, vector<Logica
                       scalar_function_t func) {
 	ScalarFunction scalar(FinanceFunctionName(name), std::move(args), std::move(ret), WithFunctionName(name, func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+	scalar.SetBindCallback(BindPositionalArguments);
 	loader.RegisterFunction(std::move(scalar));
 }
 
 static void AddOverload(ScalarFunctionSet &set, vector<LogicalType> args, LogicalType ret, scalar_function_t func) {
 	ScalarFunction scalar(std::move(args), std::move(ret), WithFunctionName(set.name, func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+	scalar.SetBindCallback(BindPositionalArguments);
 	set.AddFunction(std::move(scalar));
 }
 

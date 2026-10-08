@@ -26,7 +26,9 @@ struct DecayState {
 	bool invalid;
 };
 
-template <DecayKind KIND>
+// EMA_HALFLIFE registers the AVG kernel under the fin_ema_halflife name, so its
+// errors name the function the user called.
+template <DecayKind KIND, bool EMA_HALFLIFE = false>
 struct DecayOperation : public FinOperationDefaults {
 	static constexpr bool HAS_VALUE = KIND != DecayKind::COUNT;
 	static constexpr idx_t REQUIRED_ARGS = HAS_VALUE ? 3 : 2;
@@ -34,6 +36,9 @@ struct DecayOperation : public FinOperationDefaults {
 	static constexpr bool WINDOW_INCREMENTAL = true;
 
 	static const char *Name() {
+		if (EMA_HALFLIFE) {
+			return "fin_ema_halflife";
+		}
 		switch (KIND) {
 		case DecayKind::SUM:
 			return "fin_exp_decay_sum";
@@ -215,9 +220,9 @@ static unique_ptr<FunctionData> DecayBind(ClientContext &context, AggregateFunct
 	return nullptr;
 }
 
-template <DecayKind KIND>
+template <DecayKind KIND, bool EMA_HALFLIFE = false>
 static void RegisterDecaySet(ExtensionLoader &loader, const string &name) {
-	using OP = DecayOperation<KIND>;
+	using OP = DecayOperation<KIND, EMA_HALFLIFE>;
 	const auto DOUBLE = FinanceLogicalType(LogicalTypeId::DOUBLE);
 	vector<vector<LogicalType>> signatures = {
 	    {FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::INTERVAL)},
@@ -862,7 +867,7 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 	// Public windowable natives.
 	RegisterDecaySet<DecayKind::SUM>(loader, "fin_exp_decay_sum");
 	RegisterDecaySet<DecayKind::AVG>(loader, "fin_exp_decay_avg");
-	RegisterDecaySet<DecayKind::AVG>(loader, "fin_ema_halflife");
+	RegisterDecaySet<DecayKind::AVG, true>(loader, "fin_ema_halflife");
 	RegisterDecaySet<DecayKind::COUNT>(loader, "fin_exp_decay_count");
 	RegisterDecaySet<DecayKind::MAX>(loader, "fin_exp_decay_max");
 	{
