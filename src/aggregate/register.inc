@@ -53,4 +53,5 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 
 
 	RegisterReturnsRiskAggregates(loader);
+	RegisterStatisticsAggregates(loader);
 }

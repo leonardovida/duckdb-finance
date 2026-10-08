@@ -551,6 +551,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(portfolio_sharpe, {double_list, double_list, matrix_type, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            PortfolioSharpeFunction);
 	loader.RegisterFunction(std::move(portfolio_sharpe));
+	RegisterPortfolioOptimizerScalars(loader);
 
 	AddScalar(loader, "fin_validate_ohlc",
 	          {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, ValidationType(),

@@ -639,8 +639,7 @@ FROM gold_returns;
 -- Explicit-axis trend: hand-calculated noisy fit (Sxx=10, Sxy=6, SSE=2.4).
 WITH points(x, y) AS (
   VALUES (1.0, 2.0), (2.0, 4.0), (3.0, 5.0), (4.0, 4.0), (5.0, 5.0),
-         (NULL, 900.0), (900.0, NULL), ('Infinity'::DOUBLE, 8.0),
-         (8.0, 'NaN'::DOUBLE)
+         (NULL, 900.0), (900.0, NULL), (NULL, 'NaN'::DOUBLE)
 ), fitted AS (SELECT fin_linear_trend(y, x := x) AS t FROM points)
 SELECT assert_near('trend noisy slope', t.slope, 0.6, 1e-12),
        assert_near('trend noisy intercept', t.intercept, 2.2, 1e-12),
@@ -680,21 +679,16 @@ SELECT assert_near('trend two point slope', t.slope, 2.0, 1e-12),
        assert_eq('trend two point stderr', t.stderr, NULL)
 FROM fitted;
 
-WITH fitted AS (
-  SELECT fin_linear_trend(y) AS t FROM (VALUES (2.0), (4.0), (NULL)) p(y)
-)
-SELECT assert_eq('trend fallback slope', t.slope, NULL),
-       assert_near('trend fallback mean', t.intercept, 3.0, 1e-12),
-       assert_eq('trend fallback r2', t.r2, NULL),
-       assert_eq('trend fallback stderr', t.stderr, NULL)
-FROM fitted;
+-- A complete NaN/inf pair makes the whole trend NULL (0.3.0 non-finite policy).
+SELECT assert_eq('trend nonfinite pair is NULL', fin_linear_trend(y, x), NULL)
+FROM (VALUES (1.0, 2.0), (2.0, 4.0), (3.0, 5.0), ('Infinity'::DOUBLE, 8.0)) p(x, y);
 
 WITH fitted AS (
   SELECT fin_linear_trend(y, x := x) AS t
   FROM (VALUES (NULL::DOUBLE, 2.0), (NULL, 4.0), (NULL, NULL)) p(x, y)
 )
 SELECT assert_eq('trend all null axis slope', t.slope, NULL),
-       assert_near('trend all null axis mean', t.intercept, 3.0, 1e-12),
+       assert_eq('trend all null axis intercept', t.intercept, NULL),
        assert_eq('trend all null axis r2', t.r2, NULL),
        assert_eq('trend all null axis stderr', t.stderr, NULL)
 FROM fitted;
@@ -875,19 +869,64 @@ SELECT
   assert_not_null('trimmed mean alias', fin_trimmed_mean(r)),
   assert_not_null('mad', fin_mad(r)),
   assert_near('zscore last', fin_zscore_last(r, seq), -0.5738045840530311, 1e-12),
-  assert_eq('ks placeholder', fin_ks_test(r, benchmark_r), NULL),
-  assert_eq('mann whitney placeholder', fin_mann_whitney_u(r, benchmark_r), NULL),
-  assert_eq('anova placeholder', fin_anova_oneway(r, asset), NULL),
-  assert_not_null('ttest 1 sample stat', (fin_ttest_1samp(r, 0.0)).stat),
-  assert_not_null('ttest 2 sample stat', (fin_ttest_2samp(r, benchmark_r)).stat),
-  assert_not_null('welch ttest stat', (fin_welch_ttest(r, benchmark_r)).stat),
-  assert_not_null('ztest mean', fin_ztest_mean(r, 0.0)),
-  assert_not_null('entropy', fin_entropy(asset)),
-  assert_not_null('rank corr', fin_rank_corr(r, benchmark_r)),
-  assert_eq('mutual information placeholder', fin_mutual_information(r, benchmark_r), NULL),
-  assert_eq('cramers v placeholder', fin_cramers_v(asset, asset), NULL),
-  assert_eq('theils u placeholder', fin_theils_u(asset, asset), NULL)
+  assert_near('entropy of a single category', fin_entropy(asset), 0.0, 1e-12)
 FROM gold_returns;
+
+-- Statistical tests and association measures on gold_stats. Expected values:
+-- scipy 1.16 (ttest_1samp, ttest_ind, ks_2samp statistic, kstwobign with
+-- Stephens' correction, mannwhitneyu(method='asymptotic'), f_oneway,
+-- spearmanr, kendalltau, contingency.association), sklearn mutual_info_score
+-- on numpy histogram2d counts, and the Bergsma bias-corrected Cramer's V.
+SELECT
+  assert_near('ttest 1samp stat', (fin_ttest_1samp(x, 0.1)).stat, 0.05931848307317688, 1e-12),
+  assert_near('ttest 1samp pvalue', (fin_ttest_1samp(x, 0.1)).pvalue, 0.9528862023830069, 1e-12),
+  assert_eq('ttest 1samp df', (fin_ttest_1samp(x, 0.1)).df, 63.0::DOUBLE),
+  assert_near('ttest 2samp pooled stat', (fin_ttest_2samp(x, y)).stat, 0.34314108933029613, 1e-12),
+  assert_near('ttest 2samp pooled pvalue', (fin_ttest_2samp(x, y)).pvalue, 0.732064168020113, 1e-12),
+  assert_eq('ttest 2samp pooled df', (fin_ttest_2samp(x, y)).df, 126.0::DOUBLE),
+  assert_near('welch stat', (fin_welch_ttest(x, y)).stat, 0.3431410893302961, 1e-12),
+  assert_near('welch pvalue', (fin_welch_ttest(x, y)).pvalue, 0.7320642879871965, 1e-12),
+  assert_near('welch satterthwaite df', (fin_welch_ttest(x, y)).df, 125.97354285382625, 1e-9),
+  assert_near('ttest unequal var named', (fin_ttest_2samp(x, y, equal_var := false)).df, 125.97354285382625, 1e-9),
+  assert_eq('ttest df type', typeof((fin_ttest_2samp(x, y)).df), 'DOUBLE'),
+  assert_near('ztest sample sigma stat', (fin_ztest_mean(x, 0.1)).stat, 0.05931848307317688, 1e-12),
+  assert_near('ztest sample sigma pvalue', (fin_ztest_mean(x, 0.1)).pvalue, 0.9526984396725346, 1e-12),
+  assert_near('ztest known sigma stat', (fin_ztest_mean(x, 0.1, 0.8)).stat, 0.058103649502982135, 1e-12),
+  assert_near('ztest known sigma pvalue', (fin_ztest_mean(x, 0.1, 0.8)).pvalue, 0.9536660674235217, 1e-12),
+  assert_near('ks stat', (fin_ks_test(x, y)).stat, 0.140625, 1e-15),
+  assert_near('ks asymptotic pvalue', (fin_ks_test(x, y)).pvalue, 0.5197741925453158, 1e-12),
+  assert_near('mann whitney u', (fin_mann_whitney_u(x, y)).stat, 2179.5, 1e-9),
+  assert_near('mann whitney pvalue', (fin_mann_whitney_u(x, y)).pvalue, 0.53243413305854, 1e-12),
+  assert_near('anova f', (fin_anova_oneway(x, g)).f_stat, 0.04221959435491558, 1e-12),
+  assert_near('anova pvalue', (fin_anova_oneway(x, g)).pvalue, 0.9586872290712113, 1e-12),
+  assert_eq('anova df', [(fin_anova_oneway(x, g)).df_between, (fin_anova_oneway(x, g)).df_within], [2.0, 61.0]),
+  assert_near('anova varchar groups', (fin_anova_oneway(x, 'g' || g)).f_stat, 0.04221959435491558, 1e-12),
+  assert_near('spearman rank corr', fin_rank_corr(x, y), 0.3975640191453417, 1e-12),
+  assert_near('kendall tau-b', fin_rank_corr(x, y, 'kendall'), 0.29436592920776256, 1e-12),
+  assert_near('factor ic spearman default', fin_factor_ic(x, y), 0.3975640191453417, 1e-12),
+  assert_near('factor ic pearson', fin_factor_ic(x, y, 'pearson'), 0.4350683747600051, 1e-12),
+  assert_near('rank ic', fin_rank_ic(x, y), 0.3975640191453417, 1e-12),
+  assert_near('mutual information 5 bins', fin_mutual_information(x, y, 5), 0.30273720906793783, 1e-12),
+  assert_near('cramers v uncorrected', fin_cramers_v(g, h, false), 0.33686123029444703, 1e-12),
+  assert_near('cramers v bias corrected', fin_cramers_v(g, h), 0.2905324612645811, 1e-12),
+  assert_near('theils u', fin_theils_u(g, h), 0.10850540650785828, 1e-12),
+  assert_near('cramers v perfect association', fin_cramers_v(g, 'k' || g, false), 1.0, 1e-12),
+  assert_eq('theils u constant x is NULL', fin_theils_u(1, h), NULL),
+  assert_eq('ttest nonfinite input is NULL', fin_ttest_1samp(CASE WHEN i = 3 THEN 'NaN'::DOUBLE ELSE x END, 0.0), NULL),
+  assert_eq('rank corr nonfinite input is NULL', fin_rank_corr(CASE WHEN i = 3 THEN 'Infinity'::DOUBLE ELSE x END, y), NULL)
+FROM gold_stats;
+
+SELECT
+  assert_eq('ttest single row is NULL', fin_ttest_1samp(x, 0.0), NULL),
+  assert_eq('two-sample ttest one row per sample is NULL', fin_ttest_2samp(x, x), NULL),
+  assert_eq('ks empty sample is NULL', fin_ks_test(x, NULL::DOUBLE), NULL),
+  assert_eq('anova single group is NULL', fin_anova_oneway(x, 1), NULL)
+FROM (VALUES (1.0)) t(x);
+
+-- Two-sample tests take independent NULLs in x and y.
+SELECT assert_near('ks with independent nulls', (fin_ks_test(x, y)).stat, 1.0, 1e-15),
+       assert_near('mann whitney with independent nulls', (fin_mann_whitney_u(x, y)).stat, 0.0, 1e-15)
+FROM (VALUES (1.0, NULL), (2.0, 5.0), (NULL, 6.0), (3.0, 7.0)) t(x, y);
 
 -- Weighted, robust, and tail statistics must honor every public parameter.
 SELECT
@@ -1092,19 +1131,15 @@ SELECT
   assert_eq('delta return type', typeof(fin_delta(close, ts)), 'DOUBLE'),
   assert_eq('changes return type', typeof(fin_changes(close, ts)), 'BIGINT'),
   assert_eq('ema warm-up before period rows', fin_ema(close ORDER BY seq), NULL),
-  assert_near('ema halflife alias', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
-  assert_near('exp decay sum alias', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 508.0, 1e-12),
-  assert_near('exp decay avg alias', fin_exp_decay_avg(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
-  assert_eq('exp decay count alias', fin_exp_decay_count(ts, INTERVAL '1 minute'), 5::BIGINT),
-  assert_eq('exp decay max alias', fin_exp_decay_max(close, ts, INTERVAL '1 minute'), 104.0),
-  assert_not_null('rolling zscore', fin_rolling_zscore(close, seq)),
-  assert_not_null('autocorr alias', fin_autocorr(close)),
-  assert_not_null('crosscorr alias', fin_crosscorr(close, volume)),
-  assert_near('hurst placeholder', fin_hurst(close), 0.5, 1e-12),
-  assert_eq('half life placeholder', fin_half_life_mean_reversion(close), NULL),
-  assert_eq('linear trend omitted axis compatibility', (fin_linear_trend(close)).slope, NULL),
-  assert_eq('adf placeholder', fin_adf(close), NULL),
-  assert_eq('ljung box placeholder', fin_ljung_box(close), NULL)
+  -- closes 100, 102, 99, 104, 103 one minute apart; weights 2^-(4 - k) with a 1-minute half-life.
+  assert_near('ema halflife', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 198.75 / 1.9375, 1e-12),
+  assert_near('exp decay sum', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 198.75, 1e-12),
+  assert_near('exp decay avg', fin_exp_decay_avg(close, ts, INTERVAL '1 minute'), 198.75 / 1.9375, 1e-12),
+  assert_near('exp decay count', fin_exp_decay_count(ts, INTERVAL '1 minute'), 1.9375, 1e-15),
+  assert_near('exp decay max', fin_exp_decay_max(close, ts, INTERVAL '1 minute'), 103.0, 1e-12),
+  assert_near('exp decay numeric axis', fin_exp_decay_sum(close, epoch(ts), 60.0), 198.75, 1e-12),
+  assert_near('rolling zscore', fin_rolling_zscore(close, ts), 0.6751399510385797, 1e-12),
+  assert_near('rolling zscore matches zscore_last', fin_rolling_zscore(close, ts) - fin_zscore_last(close, ts), 0.0, 1e-15)
 FROM gold_prices;
 
 -- Technical indicators are native TA-Lib-compatible aggregates. Expected values
@@ -3166,23 +3201,165 @@ SELECT
   assert_near('marginal risk second', fin_marginal_risk([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])[2], 0.05, 1e-12),
   assert_not_null('component risk', fin_component_risk([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])),
   assert_not_null('risk contribution', fin_risk_contribution([0.5, 0.5], [[0.04, 0.01], [0.01, 0.09]])),
-  assert_eq('min variance weights placeholder', fin_min_variance_weights([[0.04, 0.01], [0.01, 0.09]]), [0.5, 0.5]),
-  assert_eq('risk parity weights placeholder', fin_risk_parity_weights([[0.04, 0.01], [0.01, 0.09]]), [0.5, 0.5]),
-  assert_eq('max sharpe weights placeholder', fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]), [0.5, 0.5]),
-  assert_eq('black litterman returns placeholder', fin_black_litterman_returns([0.6, 0.4], [[0.04, 0.01], [0.01, 0.09]], [[1.0, 0.0]], [0.1]), [0.6, 0.4]);
+  assert_near('two asset min variance', fin_min_variance_weights([[0.04, 0.01], [0.01, 0.09]])[1], 0.8 / 1.1, 1e-12),
+  assert_near('two asset risk parity', fin_risk_parity_weights([[0.04, 0.0], [0.0, 0.09]])[1], 0.6, 1e-9),
+  assert_near('two asset max sharpe', fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])[1], 0.5, 1e-12),
+  assert_near('black litterman single view', fin_black_litterman_returns([0.6, 0.4], [[0.04, 0.01], [0.01, 0.09]], [[1.0, 0.0]], [0.1])[1],
+              0.085, 1e-12);
+
+-- Portfolio construction against closed forms / KKT-verified numpy solutions
+-- (see docs: long-only solves use an exact active-set QP). S is a 4-asset
+-- covariance whose unconstrained minimum-variance and maximum-Sharpe
+-- portfolios short asset 2.
+WITH inputs AS (
+  SELECT [[0.04, 0.006, 0.012, 0.0], [0.006, 0.09, 0.018, 0.009], [0.012, 0.018, 0.0625, -0.005], [0.0, 0.009, -0.005, 0.01]] AS s,
+         [0.08, 0.03, 0.10, 0.025] AS mu
+), w AS (
+  SELECT s, mu,
+    fin_min_variance_weights(s, false) AS mv_free, fin_min_variance_weights(s) AS mv_long,
+    fin_max_sharpe_weights(mu, s, 0.02, false) AS ms_free, fin_max_sharpe_weights(mu, s, 0.02) AS ms_long,
+    fin_risk_parity_weights(s, [0.4, 0.3, 0.2, 0.1]) AS rp_budget, fin_risk_parity_weights(s) AS rp_equal,
+    fin_black_litterman_returns([0.3, 0.3, 0.2, 0.2], s, [[1, -1, 0, 0], [0, 0, 1, 0.0]], [0.02, 0.09]) AS bl,
+    fin_black_litterman_returns([0.3, 0.3, 0.2, 0.2], s, [[1, -1, 0, 0], [0, 0, 1, 0.0]], [0.02, 0.09], 0.05, [[0.001, 0], [0, 0.002]]) AS bl_omega
+  FROM inputs
+)
+SELECT
+  assert_true('min variance unconstrained', list_reduce(list_transform(list_zip(mv_free, [0.12277312854459042, -0.04343908457547364, 0.15427470980736274, 0.7663912462235204]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('min variance long only', list_reduce(list_transform(list_zip(mv_long, [0.12367491166077739, 0.0, 0.14134275618374556, 0.734982332155477]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_near('max sharpe unconstrained shorts asset 2', ms_free[2], -0.10416449, 1e-8),
+  assert_true('max sharpe long only', list_reduce(list_transform(list_zip(ms_long, [0.3430599369085173, 0.0, 0.3391167192429022, 0.31782334384858046]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('max sharpe beats equal weight', fin_portfolio_sharpe(ms_long, mu, s, 0.02) > fin_portfolio_sharpe([0.25, 0.25, 0.25, 0.25], mu, s, 0.02)),
+  assert_true('risk parity hits budgets', list_reduce(list_transform(list_zip(fin_risk_contribution(rp_budget, s), [0.4, 0.3, 0.2, 0.1]), p -> abs(p[1] - p[2]) < 1e-8), (a, b) -> a AND b)),
+  assert_true('risk parity reference', list_reduce(list_transform(list_zip(rp_equal, [0.21355818119019918, 0.12264755883586934, 0.17976156921275435, 0.4840326907611773]), p -> abs(p[1] - p[2]) < 1e-7), (a, b) -> a AND b)),
+  assert_true('black litterman default omega', list_reduce(list_transform(list_zip(bl, [0.054027525115395054, 0.0674983708932935, 0.06977404629378224, 0.005079062584849304]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('black litterman explicit omega', list_reduce(list_transform(list_zip(bl_omega, [0.06199549932667091, 0.05176940250903677, 0.07373378694450353, 0.0028184669359982957]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_eq('min variance non-PD covariance is NULL', fin_min_variance_weights([[1.0, 2.0], [2.0, 1.0]]), NULL),
+  assert_eq('max sharpe needs positive excess return long only', fin_max_sharpe_weights([0.01, 0.0], [[0.04, 0.0], [0.0, 0.09]], 0.02), NULL),
+  assert_eq('risk parity budget length mismatch is NULL', fin_risk_parity_weights(s, [0.5, 0.5]), NULL),
+  assert_eq('risk parity non-convergence is NULL', fin_risk_parity_weights(s, NULL, 1e-12, 1), NULL),
+  assert_eq('black litterman view shape mismatch is NULL', fin_black_litterman_returns([0.5, 0.5], [[0.04, 0.0], [0.0, 0.09]], [[1.0, 0.0, 0.0]], [0.1]), NULL)
+FROM w;
 
 SELECT
-  assert_not_null('cov matrix placeholder', fin_cov_matrix(asset, r)),
-  assert_not_null('corr matrix placeholder', fin_corr_matrix(asset, r)),
-  assert_eq('ols beta placeholder', (fin_ols(r, [factor])).beta, NULL),
-  assert_eq('ols no intercept beta placeholder', (fin_ols_no_intercept(r, [factor])).beta, NULL),
-  assert_not_null('rolling beta', fin_rolling_beta(r, benchmark_r)),
-  assert_not_null('factor alpha', fin_factor_alpha(r, benchmark_r)),
-  assert_not_null('factor ic', fin_factor_ic(factor, forward_return)),
-  assert_not_null('rank ic', fin_rank_ic(factor, forward_return)),
-  assert_not_null('factor turnover', fin_factor_turnover(factor)),
-  assert_eq('newey west placeholder', fin_newey_west_tstat(r, factor), NULL)
+  assert_near('ols single factor beta', (fin_ols(r, [benchmark_r])).beta[1], 1.6964285714285716, 1e-12),
+  assert_near('ols single factor intercept', (fin_ols(r, [benchmark_r])).intercept, -0.005535714285714281, 1e-12),
+  assert_near('ols single factor r2', (fin_ols(r, [benchmark_r])).r2, 0.9647716229348883, 1e-12),
+  assert_near('ols single factor stderr', (fin_ols(r, [benchmark_r])).stderr[1], 0.18715826412901804, 1e-12),
+  assert_near('ols intercept stderr', (fin_ols(r, [benchmark_r])).intercept_stderr, 0.002252129137603524, 1e-12),
+  assert_eq('ols nobs', (fin_ols(r, [benchmark_r])).nobs, 5::BIGINT),
+  assert_near('rolling beta grouped equals beta', fin_rolling_beta(r, benchmark_r), 1.6964285714285716, 1e-12),
+  assert_near('factor alpha', fin_factor_alpha(r, benchmark_r), fin_alpha(r, benchmark_r), 1e-15),
+  assert_near('factor ic spearman', fin_factor_ic(factor, forward_return), 0.1, 1e-12),
+  assert_near('factor ic pearson', fin_factor_ic(factor, forward_return, 'pearson'), 0.12873121026029494, 1e-12),
+  assert_near('factor ic kendall', fin_factor_ic(factor, forward_return, 'kendall'), 0.0, 1e-12),
+  assert_near('rank ic', fin_rank_ic(factor, forward_return), 0.1, 1e-12)
 FROM gold_returns;
+
+-- Regression, matrix and ordered diagnostics on gold_stats. References:
+-- statsmodels 0.15 OLS (bse, uncentered R^2 without a constant), HAC with
+-- maxlags 3 and use_correction=False, adfuller(autolag=None), acorr_ljungbox,
+-- pandas autocorr/corr(shift), DataFrame.cov/corr (pairwise complete), the
+-- alphalens rank autocorrelation, and a numpy R/S Hurst implementation.
+SELECT
+  assert_near('ols two factor beta 1', (fin_ols(oy, [f1, f2])).beta[1], 1.2019142848429625, 1e-12),
+  assert_near('ols two factor beta 2', (fin_ols(oy, [f1, f2])).beta[2], -0.704929823348132, 1e-12),
+  assert_near('ols two factor intercept', (fin_ols(oy, [f1, f2])).intercept, 0.5013749754795397, 1e-12),
+  assert_near('ols two factor r2', (fin_ols(oy, [f1, f2])).r2, 0.9583237680170038, 1e-12),
+  assert_near('ols two factor stderr 2', (fin_ols(oy, [f1, f2])).stderr[2], 0.037875113018565054, 1e-12),
+  assert_near('ols two factor intercept stderr', (fin_ols(oy, [f1, f2])).intercept_stderr, 0.026894285705937666, 1e-12),
+  assert_near('ols no intercept beta 1', (fin_ols_no_intercept(oy, [f1, f2])).beta[1], 1.2206889185338872, 1e-12),
+  assert_near('ols no intercept uncentered r2', (fin_ols_no_intercept(oy, [f1, f2])).r2, 0.7741168572435024, 1e-12),
+  assert_near('ols no intercept stderr 2', (fin_ols_no_intercept(oy, [f1, f2])).stderr[2], 0.09710677139336973, 1e-12),
+  assert_eq('ols no intercept has no intercept stderr', (fin_ols_no_intercept(oy, [f1, f2])).intercept_stderr, NULL),
+  assert_eq('ols collinear design is NULL', fin_ols(oy, [f1, 2 * f1]), NULL),
+  assert_near('newey west tstat', fin_newey_west_tstat(y, x, i, 3), 3.132567893408392, 1e-10),
+  assert_near('autocorr lag 1', fin_autocorr(x, i), -0.11833985791502655, 1e-12),
+  assert_near('autocorr lag 2', fin_autocorr(x, i, 2), -0.7844807623772095, 1e-12),
+  assert_near('crosscorr lag 1', fin_crosscorr(x, y, i, 1), -0.07694083267100597, 1e-12),
+  assert_near('crosscorr lag 0 is pearson', fin_crosscorr(x, y, i), 0.4350683747600051, 1e-12),
+  assert_near('hurst rescaled range', fin_hurst(x, i), 0.29204213557909403, 1e-12),
+  assert_near('half life ar1', fin_half_life_mean_reversion(ar, i), 1.7302267683904657, 1e-10),
+  assert_near('adf constant stat', (fin_adf(ar, i)).stat, -3.092598291133777, 1e-10),
+  assert_near('adf constant pvalue', (fin_adf(ar, i)).pvalue, 0.02710581929864506, 1e-10),
+  assert_eq('adf nobs', (fin_adf(ar, i)).nobs, 62.0::DOUBLE),
+  assert_near('adf trend stat', (fin_adf(ar, i, 0, 'ct')).stat, -3.7708138093687005, 1e-10),
+  assert_near('adf trend pvalue', (fin_adf(ar, i, 0, 'ct')).pvalue, 0.0180974415334357, 1e-10),
+  assert_near('adf no constant stat', (fin_adf(ar, i, max_lag := 2, regression := 'n')).stat, -2.212652001840801, 1e-10),
+  assert_near('adf no constant pvalue', (fin_adf(ar, i, max_lag := 2, regression := 'n')).pvalue, 0.025867889872054003, 1e-10),
+  assert_near('ljung box stat', (fin_ljung_box(x, i, 5)).stat, 80.26708456678584, 1e-9),
+  assert_near('ljung box pvalue', (fin_ljung_box(x, i, 5)).pvalue, 7.378660165348503e-16, 1e-20),
+  assert_near('factor turnover', fin_factor_turnover(i // 8, i % 8, x), 0.5034013605442176, 1e-12),
+  assert_near('factor turnover period 2', fin_factor_turnover(i // 8, 'a' || (i % 8), x, 2), 1.376984126984127, 1e-12),
+  assert_eq('factor turnover duplicate asset is NULL', fin_factor_turnover(i // 8, i % 4, x), NULL),
+  assert_near('exp decay sum numeric', fin_exp_decay_sum(x, i, 10.0), 0.9625694363858702, 1e-12),
+  assert_near('exp decay avg pandas ewm times', fin_exp_decay_avg(x, TIMESTAMP '2026-01-01' + i * INTERVAL 1 MINUTE, INTERVAL 10 MINUTE), 0.06523285274589181, 1e-12),
+  assert_near('exp decay count numeric', fin_exp_decay_count(i::DOUBLE, 10.0), 14.755899763198531, 1e-12),
+  assert_near('exp decay max numeric', fin_exp_decay_max(x, i, 10.0), 1.2139238480000343, 1e-12)
+FROM gold_stats;
+
+WITH long_returns AS (
+  SELECT i, 'x' AS asset, x AS r FROM gold_stats UNION ALL
+  SELECT i, 'y', y FROM gold_stats UNION ALL
+  SELECT i, 'oy', oy FROM gold_stats WHERE i % 7 <> 0
+), m AS (
+  SELECT fin_cov_matrix(i, asset, r) AS cov, fin_corr_matrix(i, asset, r) AS corr FROM long_returns
+)
+SELECT
+  assert_eq('cov matrix labels sorted', cov.labels, ['oy', 'x', 'y']),
+  assert_near('cov matrix pairwise variance', cov.matrix[1][1], 0.8646536020002162, 1e-12),
+  assert_near('cov matrix pairwise covariance', cov.matrix[1][2], -0.02726141315817192, 1e-12),
+  assert_near('cov matrix symmetric', cov.matrix[2][3] - cov.matrix[3][2], 0.0, 0),
+  assert_near('cov matrix full pair', cov.matrix[2][3], 0.27105568867940405, 1e-12),
+  assert_near('corr matrix pairwise', corr.matrix[1][3], -0.0316212523808466, 1e-12),
+  assert_near('corr matrix diagonal', corr.matrix[2][2], 1.0, 0),
+  assert_near('corr matrix full pair', corr.matrix[3][2], 0.4350683747600051, 1e-12)
+FROM m;
+
+SELECT assert_eq('cov matrix duplicate key and asset is NULL', fin_cov_matrix(d, a, r), NULL)
+FROM (VALUES (1, 1, 0.1), (1, 1, 0.2), (2, 1, 0.3)) t(d, a, r);
+
+SELECT assert_eq('cov matrix integer labels cast to varchar', fin_cov_matrix(d, a, r).labels, ['10', '2'])
+FROM (VALUES (1, 10, 0.1), (1, 2, 0.2), (2, 10, 0.3), (2, 2, 0.1)) t(d, a, r);
+
+-- Window use: rolling beta and z-score over explicit frames equal grouped
+-- results over the same rows.
+WITH framed AS (
+  SELECT i,
+    fin_rolling_beta(y, x) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS rb,
+    fin_rolling_zscore(x, i) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS rz,
+    fin_exp_decay_avg(x, i, 3.0) OVER (ORDER BY i ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS ed
+  FROM gold_stats
+), grouped AS (
+  SELECT f.i, fin_beta(s.y, s.x) AS rb, fin_zscore_last(s.x, s.i) AS rz, fin_exp_decay_avg(s.x, s.i, 3.0) AS ed
+  FROM gold_stats f JOIN gold_stats s ON s.i BETWEEN f.i - 9 AND f.i GROUP BY f.i
+)
+SELECT
+  assert_true('rolling beta window equals grouped', bool_and(abs(framed.rb - grouped.rb) < 1e-12 OR (framed.rb IS NULL AND grouped.rb IS NULL))),
+  assert_true('rolling zscore window equals grouped', bool_and(abs(framed.rz - grouped.rz) < 1e-12 OR (framed.rz IS NULL AND grouped.rz IS NULL))),
+  assert_true('exp decay window equals grouped', bool_and(abs(framed.ed - grouped.ed) < 1e-12))
+FROM framed JOIN grouped USING (i);
+
+-- Ordered statistics depend only on the ordering key, never on threads or row order.
+CREATE OR REPLACE TEMP TABLE sp_order_input AS
+  SELECT i % 50 AS g, i // 50 AS ts, sin(i * 1.3) + 0.5 * sin(0.37 * i * i) AS x, cos(i * 0.7) AS y,
+         (i // 50) // 20 AS d, (i // 50) % 20 AS asset
+  FROM range(20000) t(i) ORDER BY hash(i);
+CREATE OR REPLACE MACRO sp_order_metrics() AS TABLE
+  SELECT g, fin_autocorr(x, ts, 2) AS a, fin_crosscorr(x, y, ts, 1) AS b, fin_hurst(x, ts) AS c,
+    fin_half_life_mean_reversion(x, ts) AS e, (fin_adf(x, ts, 2, 'ct')).stat AS f, (fin_ljung_box(x, ts, 4)).stat AS h,
+    fin_newey_west_tstat(y, x, ts, 2) AS k, fin_rolling_zscore(x, ts) AS l, fin_exp_decay_avg(x, ts, 5.0) AS m,
+    fin_rank_corr(x, y, 'kendall') AS n, (fin_ks_test(x, y)).pvalue AS o, fin_mutual_information(x, y) AS p,
+    fin_factor_turnover(d, asset, x) AS q, (fin_ols(y, [x, x * x])).beta[2] AS s
+  FROM sp_order_input GROUP BY g;
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE sp_order_one AS SELECT * FROM sp_order_metrics();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE sp_order_eight AS SELECT * FROM sp_order_metrics();
+RESET threads;
+SELECT assert_eq('statistics ordered results are thread invariant', count(*), 0::BIGINT)
+FROM (SELECT * FROM sp_order_one EXCEPT SELECT * FROM sp_order_eight);
+SELECT assert_eq('statistics ordered results are populated', count(*), 50::BIGINT)
+FROM sp_order_one WHERE a IS NOT NULL AND c IS NOT NULL AND f IS NOT NULL AND k IS NOT NULL AND q IS NOT NULL AND s IS NOT NULL;
 
 -- Complex invariant and edge-case regressions.
 CREATE OR REPLACE TEMP TABLE complex_option_surface(
@@ -3471,6 +3648,19 @@ SELECT
   assert_near('money round', fin_money_round(10.255, 2), 10.26, 1e-12),
   assert_near('cents to money', fin_cents_to_money(1234, 2), 12.34, 1e-12),
   assert_eq('money to cents', fin_money_to_cents(12.34), 1234::BIGINT),
+  assert_eq('money to cents exact decimal half', fin_money_to_cents(1.005::DOUBLE), 101::BIGINT),
+  assert_eq('money to cents negative half', fin_money_to_cents(-1.005), -101::BIGINT),
+  assert_eq('money to cents half even', fin_money_to_cents(0.125, 'half_even'), 12::BIGINT),
+  assert_eq('money to cents floor', fin_money_to_cents(-0.121, 'floor'), -13::BIGINT),
+  assert_eq('money round exact double literal', fin_money_round(1.005::DOUBLE, 2), 1.01::DECIMAL(38,2)),
+  assert_eq('money round type', typeof(fin_money_round(1.005, 2)), 'DECIMAL(38,2)'),
+  assert_eq('money round half even down', fin_money_round(2.345, 2, 'half_even'), 2.34::DECIMAL(38,2)),
+  assert_eq('money round half even up', fin_money_round(2.355, 2, 'half_even'), 2.36::DECIMAL(38,2)),
+  assert_eq('money round ceil negative', fin_money_round(-1.231, 2, 'ceil'), -1.23::DECIMAL(38,2)),
+  assert_eq('money round truncate', fin_money_round(-1.239, 2, 'truncate'), -1.23::DECIMAL(38,2)),
+  assert_eq('cents to money exact decimal', fin_cents_to_money(-5), -0.05::DECIMAL(38,2)),
+  assert_eq('cents to money scale type', typeof(fin_cents_to_money(1234, 3)), 'DECIMAL(38,3)'),
+  assert_near('money weighted sum avoids decimal overflow', fin_money_weighted_sum(123456789012345.67::DECIMAL(18,2), 0.123456::DECIMAL(18,6)), 15241481344308.146, 1e-2),
   assert_true('valid ohlc ok', fin_validate_ohlc(100.0, 101.0, 99.0, 100.0).ok),
   assert_true('invalid ohlc fails', NOT fin_validate_ohlc(100.0, 99.0, 98.0, 100.0).ok),
   assert_true('return validation ok', fin_validate_return(0.05)),
@@ -3504,6 +3694,19 @@ SELECT
   assert_eq('ts grid spec method', fin_ts_grid_spec(TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-01-01 00:01:00', INTERVAL '1 minute').method, 'last'),
   assert_eq('bar spec kind', fin_bar_spec('volume', 1000.0).kind, 'volume'),
   assert_eq('calendar spec kind', fin_calendar_spec('weekday').calendar, 'weekday'),
+  assert_eq('rate spec canonical names', fin_rate_spec(0.05, 'Semi-Annually', 2, 'act/360'), {'rate': 0.05, 'compounding': 'semiannual', 'frequency': 2, 'day_count': 'ACT/360'}),
+  assert_eq('validate rate spec percentage', fin_validate_rate_spec(fin_rate_spec(5.0)).reason, 'rate above 1 (100%) looks like a percentage; pass decimal rates'),
+  assert_eq('validate rate spec unknown compounding', fin_validate_rate_spec({'rate': 0.05, 'compounding': 'bogus', 'frequency': 1, 'day_count': 'ACT/360'}).reason, 'unknown compounding ''bogus'''),
+  assert_eq('validate rate spec unknown day count', fin_validate_rate_spec({'rate': 0.05, 'compounding': 'simple', 'frequency': 1, 'day_count': 'nope'}).ok, false),
+  assert_eq('validate rate spec frequency', fin_validate_rate_spec({'rate': 0.05, 'compounding': 'periodic', 'frequency': -3, 'day_count': 'ACT/360'}).reason, 'frequency must be a positive integer'),
+  assert_eq('validate rate spec rate floor', fin_validate_rate_spec(fin_rate_spec(-1.5)).reason, 'rate must be greater than -1'),
+  assert_eq('validate rate spec nonfinite', fin_validate_rate_spec(fin_rate_spec('NaN'::DOUBLE)).ok, false),
+  assert_eq('optimizer spec fixed types', typeof(fin_optimizer_spec('min_variance', target_return := 0.08)), 'STRUCT(objective VARCHAR, risk_free DOUBLE, long_only BOOLEAN, weight_min DOUBLE, weight_max DOUBLE, target_return DOUBLE, target_vol DOUBLE, risk_aversion DOUBLE)'),
+  assert_near('optimizer spec keeps decimal target', fin_optimizer_spec('target_return', target_return := 0.08).target_return, 0.08, 1e-15),
+  assert_eq('risk spec annualization double', fin_risk_spec(252).annualization, 252.0::DOUBLE),
+  assert_eq('bar spec threshold double', typeof(fin_bar_spec('volume', 1000).threshold), 'DOUBLE'),
+  assert_eq('calendar spec canonical', fin_calendar_spec('XNYS').calendar, 'nyse'),
+  assert_eq('portfolio vector typed', typeof(fin_portfolio_vector([1, 0], ['A', 'B']).weights), 'DOUBLE[]'),
   assert_true('business day', fin_is_business_day(DATE '2026-05-06', 'weekday')),
   assert_true('weekend not business day', NOT fin_is_business_day(DATE '2026-05-09', 'weekday')),
   assert_eq('next business day', fin_next_business_day(DATE '2026-05-08', 'weekday', 1), DATE '2026-05-11'),
@@ -3771,11 +3974,79 @@ FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
   [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
    [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5);
 
-SELECT assert_eq('optimizer full overload rows', count(*), 2::BIGINT)
+-- Bounded QP optimizer. References: exact KKT solves on the optimal active set
+-- (numpy), cross-checked against scipy SLSQP.
+SELECT
+  assert_eq('optimizer full overload rows', count(*), 2::BIGINT),
+  assert_near('optimizer 2 asset tangency', max(weight) FILTER (WHERE asset_idx = 0), 0.5, 1e-12)
 FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0);
 
-SELECT assert_eq('optimizer table rows', count(*), 2::BIGINT)
-FROM fin_portfolio_optimize_table('gold_current_weights', 'asset', 'weight', 'weight');
+SELECT
+  assert_near('optimizer min variance w0', list(weight ORDER BY asset_idx)[1], 0.14113065664025784, 1e-12),
+  assert_eq('optimizer min variance excluded', list(weight ORDER BY asset_idx)[2:3], [0.0, 0.0]),
+  assert_near('optimizer min variance w3', list(weight ORDER BY asset_idx)[4], 0.33785416946421376, 1e-12),
+  assert_near('optimizer min variance w4', list(weight ORDER BY asset_idx)[5], 0.5210151738955284, 1e-12)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]]);
+
+-- Unbounded tangency portfolio equals Sigma^-1 (mu - rf) normalized.
+SELECT
+  assert_near('optimizer tangency w0', list(weight ORDER BY asset_idx)[1], 0.25946089402163214, 1e-12),
+  assert_near('optimizer tangency w4', list(weight ORDER BY asset_idx)[5], 0.20135885408474086, 1e-12)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_sharpe', 0.02, false);
+
+SELECT
+  assert_eq('optimizer capped sharpe cap', list(weight ORDER BY asset_idx)[1], 0.25),
+  assert_near('optimizer capped sharpe w1', list(weight ORDER BY asset_idx)[2], 0.17355952868695226, 1e-12),
+  assert_near('optimizer capped sharpe w3', list(weight ORDER BY asset_idx)[4], 0.20290156573354723, 1e-12),
+  assert_near('optimizer capped sharpe sum', sum(weight), 1.0, 1e-14)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_sharpe', 0.02, true, NULL, 0.25);
+
+SELECT
+  assert_near('optimizer target vol w0', list(weight ORDER BY asset_idx)[1], 0.30960157447276515, 1e-11),
+  assert_near('optimizer target vol w3', list(weight ORDER BY asset_idx)[4], 0.08179736039649857, 1e-11),
+  assert_near('optimizer target vol floor', list(weight ORDER BY asset_idx)[5], 0.05, 1e-15)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'target_vol', 0.0, true, 0.05, 0.5, NULL, 0.15);
+
+SELECT
+  assert_near('optimizer target return w0', list(weight ORDER BY asset_idx)[1], 0.385131476729678, 1e-12),
+  assert_near('optimizer target return w3', list(weight ORDER BY asset_idx)[4], 0.004129099084253651, 1e-12),
+  assert_near('optimizer target return short floor', list(weight ORDER BY asset_idx)[5], -0.2, 1e-15),
+  assert_near('optimizer target return attained', sum(weight * [0.08, 0.12, 0.10, 0.06, 0.05][asset_idx + 1]), 0.11, 1e-14)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'target_return', 0.0, false, -0.2, NULL, 0.11);
+
+-- max_utility: max mu'w - risk_aversion / 2 w'Sigma w (scipy SLSQP reference).
+SELECT
+  assert_near('optimizer utility w0', list(weight ORDER BY asset_idx)[1], 0.30445442408957096, 1e-7),
+  assert_near('optimizer utility w4', list(weight ORDER BY asset_idx)[5], 0.05523801334225375, 1e-7)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_utility', 0.0, true, NULL, 0.6, NULL, NULL, 3.0);
+
+-- Table optimizer: sample means and pairwise covariance of the return history
+-- (pandas mean/cov, scipy SLSQP reference); asset keeps its source type.
+SELECT
+  assert_eq('optimizer table assets', list(asset ORDER BY asset_idx), ['A', 'B', 'C', 'D']),
+  assert_near('optimizer table sharpe w0', list(weight ORDER BY asset_idx)[1], 0.1594705003533707, 1e-7),
+  assert_near('optimizer table sharpe w3', list(weight ORDER BY asset_idx)[4], 0.2724011546600638, 1e-7)
+FROM fin_portfolio_optimize_table('(SELECT i // 4 AS d, chr(65 + (i % 4)::INTEGER) AS a, x / 10 + 0.01 * (i % 4) AS r FROM gold_stats)',
+  'a', 'd', 'r', 'max_sharpe', 0.0, true, NULL, 0.6);
+
+SELECT
+  assert_eq('optimizer table integer asset', typeof(any_value(asset)), 'BIGINT'),
+  assert_near('optimizer table min variance w0', list(weight ORDER BY asset_idx)[1], 0.20390342313284646, 1e-7),
+  assert_near('optimizer table min variance w2', list(weight ORDER BY asset_idx)[3], 0.2657306503042067, 1e-7)
+FROM fin_portfolio_optimize_table('(SELECT i // 4 AS d, i % 4 AS a, x / 10 + 0.01 * (i % 4) AS r FROM gold_stats)',
+  'a', 'd', 'r');
 
 SELECT assert_eq('factor report rows', count(*), 1::BIGINT)
 FROM fin_factor_report('gold_returns', 'd', 'asset', 'factor', 'forward_return', 2);
@@ -3793,21 +4064,74 @@ SELECT
   assert_eq('factor report observations', n_obs, 12::BIGINT)
 FROM fin_factor_report('gold_factor_panel', 'd', 'asset', 'factor', 'fwd', 2::BIGINT);
 
-SELECT assert_eq('fama macbeth rows', count(*), 5::BIGINT)
-FROM fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1);
+-- Fama-MacBeth: per-date OLS, then the time-series mean of each coefficient
+-- (numpy/statsmodels reference; Newey-West = OLS on a constant with
+-- cov_type='HAC', maxlags=L, use_correction=False).
+SELECT
+  assert_eq('fama macbeth terms', list(term ORDER BY term = 'intercept' DESC, term), ['intercept', 'f1', 'f2']),
+  assert_near('fama macbeth intercept', max(estimate) FILTER (WHERE term = 'intercept'), 0.4919074928170733, 1e-12),
+  assert_near('fama macbeth f1', max(estimate) FILTER (WHERE term = 'f1'), 1.1979860539704417, 1e-12),
+  assert_near('fama macbeth f2', max(estimate) FILTER (WHERE term = 'f2'), -0.6859207392729733, 1e-12),
+  assert_near('fama macbeth classic se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.017695044165216837, 1e-12),
+  assert_near('fama macbeth classic se f2', max(stderr) FILTER (WHERE term = 'f2'), 0.03212088857842378, 1e-12),
+  assert_eq('fama macbeth periods', min(n_periods), 8::BIGINT)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2']);
+
+SELECT
+  assert_near('fama macbeth nw2 se intercept', max(stderr) FILTER (WHERE term = 'intercept'), 0.0156725138345265, 1e-12),
+  assert_near('fama macbeth nw2 se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.009448102636082955, 1e-12),
+  assert_near('fama macbeth nw2 tstat f2', max(tstat) FILTER (WHERE term = 'f2'),
+    -0.6859207392729733 / 0.014347694072117443, 1e-9)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2'], 2);
+
+SELECT assert_near('fama macbeth nw0 se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.016552198177518674, 1e-12)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2'], 0);
 
 -- Grouping uses the date argument even when the source also has a column named date.
 SELECT
-  assert_eq('fama macbeth groups by date argument', count(*), 3::BIGINT),
-  assert_near('fama macbeth slope date 1', max(beta) FILTER (WHERE date = 1), 0.011, 1e-12)
+  assert_eq('fama macbeth groups by date argument', max(n_periods), 3::BIGINT),
+  assert_near('fama macbeth slope mean', max(estimate) FILTER (WHERE term = 'factor'),
+    (0.011000000000000005 + 0.016999999999999998 + 0.008888888888888887) / 3, 1e-12)
 FROM fin_fama_macbeth('(SELECT d, DATE ''2000-01-01'' AS date, asset, factor, fwd FROM gold_factor_panel)',
   'd', 'asset', 'fwd', ['factor']);
 
+-- GARCH(1,1) MLE on a simulated path stored out of order (scipy Nelder-Mead
+-- reference on the same likelihood, h_1 = sample variance).
 SELECT
   assert_eq('garch fit rows', count(*), 1::BIGINT),
-  assert_eq('garch fit omega type', typeof(any_value(omega)), 'DOUBLE'),
-  assert_eq('garch fit beta type', typeof(any_value(beta)), 'DOUBLE')
-FROM fin_garch_fit('gold_returns', 'r', 1, 1, 'normal');
+  assert_near('garch fit loglik', any_value(loglik), 857.213331159131, 1e-8),
+  assert_near('garch fit omega', any_value(omega), 9.667622579178341e-06, 1e-10),
+  assert_near('garch fit alpha', any_value(alpha), 0.11024234033021169, 1e-6),
+  assert_near('garch fit beta', any_value(beta), 0.8428890079171752, 1e-6),
+  assert_near('garch fit unconditional variance', any_value(unconditional_variance),
+    any_value(omega) / (1 - any_value(alpha) - any_value(beta)), 1e-15),
+  assert_eq('garch fit nobs', any_value(nobs), 300::BIGINT)
+FROM fin_garch_fit('gold_garch', 'r', 't', 1, 1, 'normal');
+
+-- Table-function estimators do not depend on threads or row order.
+CREATE OR REPLACE MACRO sp_tf_metrics() AS TABLE
+  SELECT 'garch' AS k, alpha AS v FROM fin_garch_fit('(SELECT ts, x / 10 AS r FROM sp_order_input WHERE g = 3)', 'r', 'ts')
+  UNION ALL
+  SELECT term, stderr FROM fin_fama_macbeth('(SELECT ts // 10 AS d, g AS a, y, x FROM sp_order_input)', 'd', 'a', 'y', ['x'], 2)
+  UNION ALL
+  SELECT asset::VARCHAR, weight FROM fin_portfolio_optimize_table(
+    '(SELECT ts AS d, g AS a, x / 100 + 0.001 * (g % 7) AS r FROM sp_order_input WHERE g < 10)', 'a', 'd', 'r', 'max_sharpe');
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE sp_tf_one AS SELECT * FROM sp_tf_metrics();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE sp_tf_eight AS SELECT * FROM sp_tf_metrics();
+RESET threads;
+SELECT
+  assert_eq('table estimators populated', count(*) FILTER (WHERE a.v IS NOT NULL), 13::BIGINT),
+  assert_true('table estimators are thread invariant', max(abs(a.v - b.v)) <= 1e-12)
+FROM sp_tf_one a JOIN sp_tf_eight b USING (k);
+
+SELECT assert_true('garch fit too short is null', omega IS NULL AND loglik IS NULL)
+FROM fin_garch_fit('(SELECT t, r FROM gold_garch WHERE t < 9)', 'r', 't');
+
+-- Fitted parameters plug into fin_garch11_forecast with the same recursion.
+SELECT assert_true('garch fit feeds forecast', fin_garch11_forecast(g.r, f.omega, f.alpha, f.beta ORDER BY g.t) > 0)
+FROM gold_garch g, fin_garch_fit('gold_garch', 'r', 't') f;
 
 SELECT assert_eq('normalize returns rows', count(*), 5::BIGINT)
 FROM fin_normalize_returns('gold_returns', 'd', 'asset', 'r');

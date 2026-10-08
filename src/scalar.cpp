@@ -53,6 +53,8 @@ static void FinanceFlatten(Vector &vector, idx_t count) {
 #include "scalar/rates.inc"
 #include "scalar/options.inc"
 #include "scalar/market_data.inc"
+#include "portfolio_qp.inc"
+#include "scalar/portfolio_optimizers.inc"
 
 } // namespace
 
