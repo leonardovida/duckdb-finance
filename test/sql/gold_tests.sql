@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.2.22');
+SELECT assert_eq('release version', fin_version(), 'finance 0.3.0');
 
 -- Repository sweep regressions: NULLs must never be read as native values.
 SELECT
@@ -2658,6 +2658,13 @@ SELECT
   assert_eq('missing count', fin_missing_count(r), 0::BIGINT),
   assert_eq('data quality n', (fin_data_quality_report(r)).n, 5::BIGINT)
 FROM gold_returns;
+
+SELECT
+  assert_eq('data quality finite', (fin_data_quality_report(x)).finite, 3::BIGINT),
+  assert_eq('data quality min ignores non-finite', (fin_data_quality_report(x)).min, -1.0::DOUBLE),
+  assert_eq('data quality max ignores non-finite', (fin_data_quality_report(x)).max, 2.0::DOUBLE),
+  assert_eq('data quality max type', typeof((fin_data_quality_report(x)).max), 'DOUBLE')
+FROM (VALUES (1.0), (NULL), ('nan'::DOUBLE), ('inf'::DOUBLE), (-1.0), (2.0)) t(x);
 
 WITH iv_path(seq, iv) AS (VALUES (1, 0.10), (2, 0.20), (3, 0.15))
 SELECT

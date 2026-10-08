@@ -32,7 +32,8 @@ make test
 make check
 ```
 
-`make test` runs both smoke and gold SQL through:
+`make test` runs the smoke SQL, the gold SQL, and every function example in
+`docs/function_examples.sql` through:
 
 ```sh
 make test DUCKDB_ROOT=/path/to/duckdb
@@ -53,8 +54,8 @@ failures, crashes, and nonzero exits as failures.
 - Use `apply_patch` for manual edits.
 - Do not run destructive git commands or clean untracked files unless explicitly
   requested.
-- Do not rely on `duckdb_functions()` for local introspection; this local DuckDB
-  debug build has been observed to crash on that path.
+- `duckdb_functions()` works on DuckDB v1.5.6 (`make function-examples` uses
+  it); an older local debug build was observed to crash on that path.
 - When adding or changing a `fin_*` function, add focused coverage in
   `test/sql/gold_tests.sql` and keep the fixture small in
   `test/sql/gold_dataset.sql`.
@@ -72,6 +73,14 @@ Update `docs/function_reference.md` when the callable surface changes. At a
 minimum, every registered `fin_*` function should have a usage row, purpose, and
 return/notes entry. Keep examples executable with the local DuckDB extension
 where practical.
+
+Every registered `fin_*` function also needs exactly one self-contained example
+in `docs/function_examples.sql` (inline `VALUES`, `range()`, literals, or CTEs;
+no fixture tables or files). Native functions list their parameter names in the
+example header. The purpose cell and the example become the
+`duckdb_functions()` description and example, so regenerate
+`src/function_metadata.inc` with `python3 scripts/generate_function_metadata.py`
+after editing either file.
 
 ## Verification Checklist
 

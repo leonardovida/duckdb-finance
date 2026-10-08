@@ -86,6 +86,21 @@ DOC_QUALITY_FUNCTIONS = {
     "fin_portfolio_variance_table",
 }
 
+GENERIC_PURPOSE = re.compile(
+    r"\bfor SQL finance workflows\b|^Predicate helper\b|^Normalize and validate a finance convention string",
+    re.IGNORECASE,
+)
+GENERIC_NOTES = {
+    "DOUBLE unless noted by DuckDB overloads.",
+    "Aggregate or scalar SQL macro result.",
+    "Table result.",
+    "LIST.",
+    "STRUCT.",
+    "DOUBLE.",
+    "VARCHAR.",
+    "BOOLEAN.",
+}
+
 EQUAL_WEIGHT_PLACEHOLDERS = {
     "fin_max_sharpe_weights",
     "fin_min_variance_weights",
@@ -191,6 +206,13 @@ def main() -> int:
     unregistered_doc_entries = sorted(experimental_doc_functions - registered)
     for name in unregistered_doc_entries:
         failures.append(f"{name} is documented in docs/experimental_functions.md but is not registered")
+
+    # duckdb_functions() shows the purpose cell as the function description.
+    for name, (_, purpose, notes) in sorted(rows.items()):
+        if GENERIC_PURPOSE.search(purpose):
+            failures.append(f"{name} reference purpose is generic boilerplate")
+        if notes in GENERIC_NOTES:
+            failures.append(f"{name} reference return notes are too generic")
 
     for name in sorted(DOC_QUALITY_FUNCTIONS):
         if name not in registered:

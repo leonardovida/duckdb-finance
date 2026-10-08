@@ -11,7 +11,7 @@ nav_order: 11
 DuckDB Finance releases are tag-driven. Development lands on `main`; when `main`
 is ready, create a semantic version tag from that commit.
 
-The current release line is `0.2.x`. Patch releases should keep the public SQL
+The current release line is `0.3.x`. Patch releases should keep the public SQL
 surface backward-compatible unless the release notes explicitly call out a
 breaking change.
 
