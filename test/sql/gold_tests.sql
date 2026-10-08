@@ -24,7 +24,7 @@ SELECT
   assert_eq('npv invalid periodic base', fin_npv(-2, [-100, 110]), NULL),
   assert_eq('mirr invalid finance base', fin_mirr([-100, 110], -2, 0.1), NULL),
   assert_eq('mirr invalid reinvest base', fin_mirr([-100, 110], 0.1, -2), NULL),
-  assert_eq('annuity invalid timing', fin_annuity_payment(0.05, 10, 100, 0, 'typo'), NULL),
+  assert_near('annuity due timing', fin_annuity_payment(0.05, 10, 100, 0, 'begin'), -12.333769044329202, 1e-10),
   assert_eq('annuity invalid rate', fin_annuity_payment(-2, 10, 100), NULL),
   assert_near('annuity tiny rate long term', fin_annuity_payment(1e-15, 1e9, 100), -1.0000005000000838e-7, 1e-19);
 
@@ -176,7 +176,6 @@ SELECT
   assert_near('bond high yield', fin_bond_ytm(0.01, 0, 1, 1, 100), 9999.0, 1e-7),
   assert_eq('bond out of range periods', fin_bond_price(0.05, 0.04, 1e30, 2), NULL),
   assert_eq('bond duration invalid frequency', fin_bond_duration(0.05, 0.04, 5, 0), NULL),
-  assert_eq('bond unknown duration kind', fin_bond_duration(0.05, 0.04, 5, 2, 100, 'typo'), NULL),
   assert_eq('bond convexity out of range periods', fin_bond_convexity(0.05, 0.04, 1e30, 2), NULL),
   assert_near('bond convexity large period count', fin_bond_convexity(0, 0, 25000, 2), 50000.0 * 50001.0 / 4.0, 1e-6),
   assert_near('bond convexity large frequency', fin_bond_convexity(0, 0, 0.00002, 50000), 2.0 / 2500000000.0, 1e-18);
@@ -556,7 +555,10 @@ SELECT
   assert_near('round to tick', fin_round_to_tick(100.037, 0.05), 100.05, 1e-12);
 
 SELECT
-  assert_eq('round to tick rejects unknown mode', fin_round_to_tick(100.037, 0.05, 'typo'), NULL),
+  assert_near('round to tick keeps on-grid price down', fin_round_to_tick(1.13, 0.01, 'down'), 1.13, 0),
+  assert_near('round to tick keeps on-grid price up', fin_round_to_tick(1.13, 0.01, 'up'), 1.13, 0),
+  assert_near('round to tick down', fin_round_to_tick(1.137, 0.01, 'down'), 1.13, 0),
+  assert_near('round to tick up', fin_round_to_tick(1.131, 0.01, 'up'), 1.14, 0),
   assert_eq('discount rejects invalid simple base', fin_discount_factor(-1.0, 1.0, 'simple'), NULL),
   assert_eq('discount rejects invalid periodic base', fin_discount_factor(-2.0, 1.0, 'periodic', 2), NULL);
 
@@ -1378,7 +1380,7 @@ SELECT
   assert_not_null('bond duration', fin_bond_duration(0.05, 0.04, 5.0, 2, 100.0, 'modified')),
   assert_not_null('bond convexity', fin_bond_convexity(0.05, 0.04, 5.0, 2, 100.0)),
   assert_not_null('dv01', fin_dv01(0.05, 0.04, 5.0, 2, 100.0)),
-  assert_near('accrued interest half period', fin_accrued_interest(DATE '2026-04-01', DATE '2026-01-01', DATE '2026-07-01', 0.04, 100.0, 'ACT/365F'), 1.9889502762430937, 1e-12),
+  assert_near('accrued interest half period', fin_accrued_interest(DATE '2026-04-01', DATE '2026-01-01', DATE '2026-07-01', 0.04, 100.0, 'ACT/365F'), 0.9863013698630136, 1e-12),
   assert_near('npv timed periodic', fin_npv([-100.0, 60.0, 60.0], [0.0, 1.0, 2.0], 0.1, 'periodic'), 4.132231404958667, 1e-12),
   assert_near('irr', fin_irr([-100.0, 60.0, 60.0]), 0.1306623862918075, 1e-10),
   assert_near('irr multiple roots default guess', fin_irr([-100.0, 230.0, -132.0]), 0.1, 1e-10),
@@ -1473,6 +1475,90 @@ SELECT
   assert_not_null('svi vol', fin_svi_vol(0.0, 1.0, 0.02, 0.1, -0.3, 0.0, 0.2)),
   assert_near('black76 iv roundtrip', fin_black76_implied_vol('call', fin_black76_price('call', 100.0, 100.0, 1.0, 0.05, 0.2), 100.0, 100.0, 1.0, 0.05, 0.3, 1e-8), 0.2, 1e-8),
   assert_near('bachelier iv roundtrip', fin_bachelier_implied_vol('call', fin_bachelier_price('call', 100.0, 100.0, 1.0, 0.05, 5.0), 100.0, 100.0, 1.0, 0.05, 4.0, 1e-8), 5.0, 1e-7);
+
+-- 0.3.0 scalar contract: tails, units, conventions and calendars against independent references
+-- (scipy, QuantLib, numpy and exchange_calendars XNYS).
+SELECT
+  assert_near('t cdf deep tail', fin_student_t_cdf(-40, 3) / 1.7190340394579253e-05, 1.0, 1e-10),
+  assert_near('t inv deep tail', fin_student_t_inv(1e-10, 5), -156.8255927088943, 1e-8),
+  assert_near('chi2 cdf deep tail', fin_chi2_cdf(1e-4, 10) / 2.604058162047335e-24, 1.0, 1e-10),
+  assert_near('chi2 inv deep tail', fin_chi2_inv(1e-10, 5), 0.0003233557146249697, 1e-15),
+  assert_near('norm inv deep tail', fin_norm_inv(1e-300), -37.0470962993612, 1e-10),
+  assert_eq('clip inverted bounds', fin_clip(1.0, 2.0, 0.0), NULL);
+
+SELECT
+  assert_near('vega raw', fin_bsm_vega('call', 100, 95, 1, 0.05, 0.2, 0.02), 34.397280608802596, 1e-9),
+  assert_near('vega market', fin_bsm_vega('call', 100, 95, 1, 0.05, 0.2, 0.02, 'market'), 0.34397280608802596, 1e-11),
+  assert_near('rho raw put', fin_bsm_rho('put', 100, 95, 1, 0.05, 0.2, 0.02), -34.305472264900565, 1e-9),
+  assert_near('rho market is per 1pct', fin_bsm_rho('call', 100, 95, 1, 0.05, 0.2, 0.02, 'market'), 0.5606132306266723, 1e-11),
+  assert_near('theta year', fin_bsm_theta('call', 100, 95, 1, 0.05, 0.2, 0.02), -4.882797197108126, 1e-9),
+  assert_near('theta day', fin_bsm_theta('put', 100, 95, 1, 0.05, 0.2, 0.02, 'day'), -0.006369465143406135, 1e-12),
+  assert_near('charm calendar decay', fin_bsm_charm('call', 100, 95, 1, 0.05, 0.2, 0.02), 0.014712115644632817, 1e-8),
+  assert_near('color calendar decay', fin_bsm_color('put', 100, 95, 1, 0.05, 0.2, 0.02), 0.008915129790631332, 1e-8),
+  assert_near('touch up reflection', fin_bsm_prob_touch('call', 100, 110, 0.5, 0.05, 0.25, 0.01), 0.5976395361093655, 1e-12),
+  assert_near('touch down reflection', fin_bsm_prob_touch('put', 100, 90, 0.5, 0.05, 0.25, 0.01), 0.5430377590342794, 1e-12),
+  assert_eq('touch already crossed', fin_bsm_prob_touch('call', 120, 110, 0.5, 0.05, 0.25), 1.0);
+
+SELECT
+  assert_near('iv spec overload', fin_bsm_implied_vol(fin_option_spec('call', 100, 100, 1, 0.05, 0.2), 14.231254785985843), 0.3, 1e-10),
+  assert_near('theta spec overload', fin_bsm_theta(spec, 'day'), fin_bsm_theta('call', 100, 95, 1, 0.05, 0.2, 0.02, 'day'), 1e-15),
+  assert_near('rho spec overload', fin_bsm_rho(spec), fin_bsm_rho('call', 100, 95, 1, 0.05, 0.2, 0.02), 1e-12),
+  assert_near('vanna spec overload', fin_bsm_vanna(spec), fin_bsm_vanna('call', 100, 95, 1, 0.05, 0.2, 0.02), 1e-15),
+  assert_near('digital spec payout', fin_digital_price(spec, 10.0), 10 * fin_digital_price('call', 100, 95, 1, 0.05, 0.2, 0.02), 1e-12),
+  assert_eq('digital at expiry', fin_digital_price('call', 105, 100, 0, 0.05, 0.2), 1.0),
+  assert_eq('prob itm at expiry', fin_bsm_prob_itm('put', 105, 100, 0, 0.05, 0.2), 0.0),
+  assert_eq('asset or nothing at expiry', fin_asset_or_nothing_price('call', 105, 100, 0, 0.05, 0.2), 105.0),
+  assert_true('validate spec rejects nan', NOT fin_validate_option_spec(fin_option_spec('call', 'NaN'::DOUBLE, 100, 1, 0.05, 0.2)).ok),
+  assert_eq('validate spec null', fin_validate_option_spec(NULL).reason, 'missing option spec'),
+  assert_eq('spec model normalized', fin_option_spec('call', 100, 100, 1, 0.05, 0.2, model := 'Black76').model, 'black76')
+FROM (SELECT fin_option_spec('call', 100, 95, 1, 0.05, 0.2, 0.02) AS spec);
+
+SELECT
+  assert_near('30U/360 february end', fin_yearfrac(DATE '2026-02-28', DATE '2026-08-31', '30U/360'), 0.5, 1e-15),
+  assert_near('30/360 bond basis', fin_yearfrac(DATE '2026-02-28', DATE '2026-08-31', '30/360'), 0.5083333333333333, 1e-15),
+  assert_near('30E/360', fin_yearfrac(DATE '2026-02-28', DATE '2026-08-31', '30E/360'), 0.5055555555555555, 1e-15),
+  assert_near('act/act isda', fin_yearfrac(DATE '2025-10-15', DATE '2026-03-15', 'ACT/ACT ISDA'), 0.4136986301369863, 1e-15),
+  assert_eq('parse 30U/360', fin_parse_day_count('30U/360'), '30U/360'),
+  assert_near('yearfrac timestamp inputs', fin_yearfrac(TIMESTAMP '2026-01-01 09:00', TIMESTAMP '2026-07-01 17:00', 'ACT/360'), 181.0 / 360, 1e-15),
+  assert_near('yearfrac string literals', fin_yearfrac('2026-01-01', '2026-07-01', 'ACT/360'), 181.0 / 360, 1e-15),
+  assert_near('accrued act/act icma', fin_accrued_interest(DATE '2026-03-01', DATE '2026-01-15', DATE '2026-07-15', 0.05, 100, 'ACT/ACT ICMA'), 0.6215469613259669, 1e-12),
+  assert_eq('accrued settle before coupon', fin_accrued_interest(DATE '2026-01-01', DATE '2026-01-15', DATE '2026-07-15', 0.05), NULL),
+  assert_near('npv times default periodic', fin_npv([-100.0, 110.0], [0.0, 1.0], 0.1), 0.0, 1e-12),
+  assert_near('bond ytm round trip', fin_bond_ytm(fin_bond_price(0.05, 0.0712345, 30, 2), 0.05, 30, 2), 0.0712345, 1e-12),
+  assert_eq('swap rate unsorted maturities', fin_swap_rate([2.0, 1.0], [0.95, 0.97]), NULL),
+  assert_eq('swap rate non-positive discount', fin_swap_rate([1.0, 2.0], [0.97, 0.0]), NULL),
+  assert_eq('curve discount negative time', fin_curve_discount_factor([1.0, 2.0], [0.03, 0.04], -0.5), NULL),
+  assert_near('xirr timestamp dates', fin_xirr([-100.0, 110.0], [TIMESTAMP '2026-01-01 12:00', TIMESTAMP '2027-01-01 08:00']), 0.1, 1e-10);
+
+SELECT
+  assert_eq('matrix mul', fin_matrix_mul([[1.0, 2, 3], [4.0, 5, 6]], [[7.0, 8], [9.0, 10], [11.0, 12]]), [[58.0, 64.0], [139.0, 154.0]]),
+  assert_true('is psd relative tolerance', fin_matrix_is_psd([[1e10, 0.0], [0.0, 1e-3]])),
+  assert_true('is psd rejects indefinite', NOT fin_matrix_is_psd([[1.0, 2.0], [2.0, 1.0]])),
+  assert_true('nearest psd clip', list_max(list_transform(list_zip(flatten(fin_nearest_psd([[1.0, 0.9, -0.9], [0.9, 1.0, 0.9], [-0.9, 0.9, 1.0]], 'clip')),
+    [1.2666666666666664, 0.6333333333333335, -0.6333333333333333, 0.6333333333333334, 1.2666666666666673, 0.6333333333333331, -0.6333333333333333, 0.6333333333333331, 1.266666666666666]),
+    lambda p: abs(p[1] - p[2]))) < 1e-12),
+  assert_true('nearest psd default is clip', fin_nearest_psd([[1.0, 2.0], [2.0, 1.0]]) = fin_nearest_psd([[1.0, 2.0], [2.0, 1.0]], 'clip')),
+  assert_true('nearest correlation higham', list_max(list_transform(list_zip(flatten(fin_nearest_psd([[1.0, 2.0], [2.0, 1.0]], 'higham')), [1.0, 1.0, 1.0, 1.0]), lambda p: abs(p[1] - p[2]))) < 1e-8),
+  assert_eq('portfolio variance empty', fin_portfolio_variance([]::DOUBLE[], []::DOUBLE[][]), NULL),
+  assert_true('validate return total loss', fin_validate_return(-1.0)),
+  assert_true('validate ohlc non-positive', NOT fin_validate_ohlc(0.0, 1.0, 0.0, 0.5).ok);
+
+SELECT
+  assert_eq('nyse 2026 sessions', fin_business_days_between(DATE '2026-01-01', DATE '2027-01-01', 'NYSE'), 251),
+  assert_eq('weekday 2026 days', fin_business_days_between(DATE '2026-01-01', DATE '2027-01-01'), 261),
+  assert_true('nyse good friday', NOT fin_is_business_day(DATE '2026-04-03', 'NYSE')),
+  assert_true('nyse juneteenth', NOT fin_is_business_day(DATE '2026-06-19', 'NYSE')),
+  assert_true('nyse observed independence day', NOT fin_is_business_day(DATE '2026-07-03', 'NYSE')),
+  assert_eq('nyse next business day over christmas', fin_next_business_day(DATE '2026-12-24', 'NYSE'), DATE '2026-12-28'),
+  assert_eq('next business day bigint offset', fin_next_business_day(TIMESTAMP '2026-12-24 10:00', 2::BIGINT), DATE '2026-12-28'),
+  assert_eq('prev business day nyse offset', fin_prev_business_day(DATE '2026-01-05', 'NYSE', 2), DATE '2025-12-31'),
+  assert_true('nyse dst open utc', fin_is_regular_session(TIMESTAMPTZ '2026-03-09 13:30:00+00', 'NYSE')),
+  assert_true('nyse pre dst open utc', NOT fin_is_regular_session(TIMESTAMPTZ '2026-03-06 13:30:00+00', 'NYSE')),
+  assert_true('nyse close exclusive', NOT fin_is_regular_session(TIMESTAMP '2026-07-06 16:00:00', 'NYSE')),
+  assert_true('nyse early close', NOT fin_is_regular_session(TIMESTAMP '2026-11-27 13:00:00', 'NYSE')),
+  assert_true('nyse before early close', fin_is_regular_session(TIMESTAMP '2026-11-27 12:59:00', 'NYSE')),
+  assert_true('session wall clock in utc', fin_is_regular_session(TIMESTAMP '2026-07-06 14:00:00', 'NYSE', 'UTC')),
+  assert_eq('session date of utc instant', fin_session_date(TIMESTAMPTZ '2026-07-07 02:00:00+00', 'NYSE'), DATE '2026-07-06');
 
 -- Price transforms and microstructure scalars.
 SELECT
@@ -1879,11 +1965,8 @@ SELECT
 
 SELECT
   assert_eq('currency rejects non-letters', fin_normalize_currency('12!'), NULL),
-  assert_eq('binomial rejects unsupported exercise', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'bermudan', 'crr'), NULL),
-  assert_eq('binomial zero vol rejects unsupported exercise', fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'bermudan', 'crr'), NULL),
-  assert_eq('binomial rejects unknown tree', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'typo'), NULL),
-  assert_eq('binomial zero vol rejects unknown tree', fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'european', 'typo'), NULL),
-  assert_eq('binomial caps excessive work', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 4097), NULL);
+  assert_near('binomial accepts more than 4096 steps', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20000), 10.450583572185565, 1e-3),
+  assert_near('binomial accepts BIGINT steps', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 200::BIGINT), fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 200), 0);
 
 -- Window aggregation must combine states exactly, not treat each segment as a
 -- fresh history.
