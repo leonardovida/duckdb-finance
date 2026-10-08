@@ -231,23 +231,18 @@
       "replacement": "use an external optimizer and validate the resulting weights in SQL"
     },
     {
-      "name": "fin_hrp_weights",
-      "reason": "returns equal weights without hierarchical clustering or risk allocation",
-      "replacement": "use an external HRP implementation and validate its portfolio risk in SQL"
-    },
-    {
-      "name": "fin_efficient_frontier",
-      "reason": "pairs interpolated target returns with constant equal-weight volatility instead of optimized portfolios",
-      "replacement": "solve each target-return portfolio externally and compute its risk in SQL"
-    },
-    {
       "name": "fin_bootstrap_curve",
       "reason": "treats every quoted rate as a zero rate instead of bootstrapping instrument cash flows",
       "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
     },
     {
+      "name": "fin_curve_bootstrap",
+      "reason": "alias of fin_bootstrap_curve that treats every quoted rate as a zero rate",
+      "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
+    },
+    {
       "name": "fin_garch_fit",
-      "reason": "returns fixed omega alpha and beta rather than fitting a GARCH model",
+      "reason": "returns fixed omega alpha and beta (only p=1, q=1, normal accepted) rather than fitting a GARCH model",
       "replacement": "fit GARCH parameters externally before forecasting in SQL"
     },
     {

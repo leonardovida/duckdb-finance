@@ -1020,14 +1020,61 @@ SELECT
   assert_eq('empty var', fin_var(x), NULL)
 FROM (SELECT 1.0::DOUBLE AS x WHERE false);
 
+-- Physical row order must not matter; equal timestamps are ordered by value.
 SELECT
-  assert_near('delta aggregate', fin_delta(close), 3.0, 1e-12),
-  assert_near('pct change aggregate', fin_pct_change(close), 0.03, 1e-12),
-  assert_not_null('rate aggregate', fin_rate(close, ts)),
-  assert_eq('changes aggregate', fin_changes(close), 4::BIGINT),
-  assert_eq('resets aggregate', fin_resets(close - 100.0), 1::BIGINT),
-  assert_eq('last non null', fin_last_non_null(close), 103.0),
-  assert_eq('first non null', fin_first_non_null(close), 100.0),
+  assert_near('delta ignores row order', fin_delta(x, t), 2.0, 1e-12),
+  assert_eq('last tie takes largest value', fin_last_non_null(x, t), 7.0),
+  assert_eq('first skips null value', fin_first_non_null(x, t), 5.0),
+  assert_near('pct change ignores row order', fin_pct_change(x, t), 0.4, 1e-12),
+  assert_eq('changes skips nulls', fin_changes(x, t), 2::BIGINT),
+  assert_eq('resets counts decreases', fin_resets(x, t), 1::BIGINT),
+  assert_near('rate uses non-null span', fin_rate(x, t, 'second'), 1.0, 1e-12)
+FROM (VALUES
+  (TIMESTAMP '2026-01-01 00:00:02', 7.0),
+  (TIMESTAMP '2026-01-01 00:00:00', NULL),
+  (TIMESTAMP '2026-01-01 00:00:02', 3.0),
+  (TIMESTAMP '2026-01-01 00:00:00', 5.0)
+) AS t(t, x);
+
+SELECT
+  assert_eq('changes empty is zero', fin_changes(x, t), 0::BIGINT),
+  assert_eq('resets empty is zero', fin_resets(x, t), 0::BIGINT),
+  assert_eq('delta empty is null', fin_delta(x, t), NULL)
+FROM (SELECT 1.0 AS x, TIMESTAMP '2026-01-01' AS t WHERE false);
+
+CREATE TEMP TABLE gold_ts_order AS
+SELECT i AS g, TIMESTAMP '2026-01-01' + to_seconds(i) AS t, ((i * 7919) % 101)::DOUBLE AS x
+FROM range(20000) r(i)
+ORDER BY hash(i);
+SET threads = 1;
+CREATE TEMP TABLE gold_ts_order_t1 AS
+SELECT g % 7 AS k, fin_delta(x, t) AS d, fin_pct_change(x, t) AS p, fin_rate(x, t) AS r, fin_changes(x, t) AS c,
+  fin_resets(x, t) AS z, fin_first_non_null(x, t) AS f, fin_last_non_null(x, t) AS l
+FROM gold_ts_order GROUP BY 1;
+SET threads = 8;
+SELECT assert_eq('ordered time-series macros thread determinism', count(*), 0::BIGINT)
+FROM (
+  SELECT g % 7 AS k, fin_delta(x, t) AS d, fin_pct_change(x, t) AS p, fin_rate(x, t) AS r, fin_changes(x, t) AS c,
+    fin_resets(x, t) AS z, fin_first_non_null(x, t) AS f, fin_last_non_null(x, t) AS l
+  FROM gold_ts_order GROUP BY 1
+  EXCEPT SELECT * FROM gold_ts_order_t1
+);
+RESET threads;
+
+-- Ordered time-series macros take an explicit ordering column; closes are
+-- 100, 102, 99, 104, 103 at one-minute steps (independent hand computation).
+SELECT
+  assert_near('delta aggregate', fin_delta(close, ts), 3.0, 1e-12),
+  assert_near('pct change aggregate', fin_pct_change(close, ts), 0.03, 1e-12),
+  assert_near('rate aggregate per second', fin_rate(close, ts), 3.0 / 240.0, 1e-15),
+  assert_near('rate aggregate per minute', fin_rate(close, ts, 'minute'), 0.75, 1e-12),
+  assert_near('rate aggregate per hour', fin_rate(close, ts, 'hours'), 45.0, 1e-12),
+  assert_eq('changes aggregate', fin_changes(close, ts), 4::BIGINT),
+  assert_eq('resets aggregate', fin_resets(close, ts), 2::BIGINT),
+  assert_eq('last non null', fin_last_non_null(close, ts), 103.0),
+  assert_eq('first non null', fin_first_non_null(close, ts), 100.0),
+  assert_eq('delta return type', typeof(fin_delta(close, ts)), 'DOUBLE'),
+  assert_eq('changes return type', typeof(fin_changes(close, ts)), 'BIGINT'),
   assert_near('ema default recurrence', fin_ema(close ORDER BY seq), 100.69349705112582, 1e-12),
   assert_near('ema halflife alias', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
   assert_near('exp decay sum alias', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 508.0, 1e-12),
@@ -2015,8 +2062,23 @@ FROM actual JOIN expected USING (i);
 SELECT assert_eq('schema template rows', count(*), 7::BIGINT)
 FROM fin_schema_template('ohlcv');
 
-SELECT assert_eq('validate schema rows', count(*), 7::BIGINT)
+SELECT assert_eq('schema template kind is case-insensitive', count(*), 3::BIGINT)
+FROM fin_schema_template(' Returns ');
+
+SELECT
+  assert_eq('validate schema rows', count(*), 7::BIGINT),
+  assert_true('validate schema all valid', bool_and(valid)),
+  assert_eq('validate schema optional missing', max(status) FILTER (WHERE column_name = 'asset_id'), 'missing_optional'),
+  assert_eq('validate schema present rows', count(*) FILTER (WHERE present AND compatible AND status = 'ok'), 6::BIGINT),
+  assert_eq('validate schema reports actual type', max(actual_type) FILTER (WHERE column_name = 'ts'), 'TIMESTAMP')
 FROM fin_validate_schema('gold_prices', 'ohlcv');
+
+SELECT
+  assert_eq('validate schema missing required', count(*) FILTER (WHERE status = 'missing'), 1::BIGINT),
+  assert_eq('validate schema type mismatch', max(status) FILTER (WHERE column_name = 'asset_id'), 'type_mismatch'),
+  assert_eq('validate schema compatible numeric', max(status) FILTER (WHERE column_name = 'return_decimal'), 'ok'),
+  assert_eq('validate schema invalid rows', count(*) FILTER (WHERE NOT valid), 2::BIGINT)
+FROM fin_validate_schema('(SELECT seq AS asset_id, r::DECIMAL(10, 4) AS return_decimal FROM gold_returns)', 'returns');
 
 SELECT assert_eq('option chain rows', count(*), 2::BIGINT)
 FROM fin_option_chain('gold_options', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol', 'dividend_yield');
@@ -2153,8 +2215,55 @@ FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06');
 SELECT assert_eq('hrp weight rows', count(*), 2::BIGINT)
 FROM fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]], ['AAA', 'BBB'], 'single');
 
+-- HRP reference: PyPortfolioOpt-style recursion with scipy.cluster.hierarchy linkage.
+SELECT
+  assert_near('hrp weight 0', list(weight ORDER BY asset_idx)[1], 0.18574376670909412, 1e-12),
+  assert_near('hrp weight 1', list(weight ORDER BY asset_idx)[2], 0.07151635870486522, 1e-12),
+  assert_near('hrp weight 2', list(weight ORDER BY asset_idx)[3], 0.08551510965720086, 1e-12),
+  assert_near('hrp weight 3', list(weight ORDER BY asset_idx)[4], 0.28606543481946095, 1e-12),
+  assert_near('hrp weight 4', list(weight ORDER BY asset_idx)[5], 0.3711593301093789, 1e-12),
+  assert_near('hrp weights sum to one', sum(weight), 1.0, 1e-12),
+  assert_eq('hrp labels', list(asset ORDER BY asset_idx), ['A', 'B', 'C', 'D', 'E'])
+FROM fin_hrp_weights(
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]],
+  ['A', 'B', 'C', 'D', 'E'], 'ward');
+
+SELECT assert_near('hrp two assets inverse variance', max(weight) FILTER (WHERE asset_idx = 0), 0.09 / 0.13, 1e-12)
+FROM fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]]);
+
 SELECT assert_eq('frontier default rows', count(*), 25::BIGINT)
 FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
+
+SELECT
+  assert_eq('frontier bigint points', count(*), 3000::BIGINT),
+  assert_near('frontier last target', max(expected_return), 0.2, 1e-12)
+FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 3000::BIGINT);
+
+-- Unconstrained frontier: closed form sigma^2 = (A m^2 - 2 B m + C) / D (Merton 1972, numpy reference).
+SELECT
+  assert_near('frontier short gmv return', list(expected_return ORDER BY point_idx)[1], 0.05472224591838816, 1e-12),
+  assert_near('frontier short gmv vol', list(volatility ORDER BY point_idx)[1], 0.09091231166889194, 1e-12),
+  assert_near('frontier short mid vol', list(volatility ORDER BY point_idx)[3], 0.13492180447927882, 1e-12),
+  assert_near('frontier short top vol', list(volatility ORDER BY point_idx)[5], 0.21913563849094408, 1e-12),
+  assert_near('frontier short weights sum', list_sum(list(weights ORDER BY point_idx)[4]), 1.0, 1e-12)
+FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5, true);
+
+-- Long-only frontier (scipy SLSQP reference, tolerance limited by SLSQP).
+SELECT
+  assert_near('frontier long gmv return', list(expected_return ORDER BY point_idx)[1], 0.057612461393783336, 1e-9),
+  assert_near('frontier long gmv vol', list(volatility ORDER BY point_idx)[1], 0.09167876144517254, 1e-9),
+  assert_near('frontier long mid vol', list(volatility ORDER BY point_idx)[3], 0.13821531956459598, 1e-9),
+  assert_near('frontier long upper vol', list(volatility ORDER BY point_idx)[4], 0.18116017671525664, 1e-9),
+  assert_eq('frontier long top is best asset', list(weights ORDER BY point_idx)[5], [0.0, 1.0, 0.0, 0.0, 0.0]),
+  assert_true('frontier long weights non-negative', bool_and(list_min(weights) >= 0.0)),
+  assert_eq('frontier long gmv support', list_transform(list(weights ORDER BY point_idx)[1], lambda w: w > 0),
+    [true, false, false, true, true])
+FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5);
 
 SELECT assert_eq('optimizer full overload rows', count(*), 2::BIGINT)
 FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0);
@@ -2165,10 +2274,33 @@ FROM fin_portfolio_optimize_table('gold_current_weights', 'asset', 'weight', 'we
 SELECT assert_eq('factor report rows', count(*), 1::BIGINT)
 FROM fin_factor_report('gold_returns', 'd', 'asset', 'factor', 'forward_return', 2);
 
+-- Per-date cross-sectional IC averaged over dates (scipy pearsonr/spearmanr reference).
+SELECT
+  assert_near('factor report mean ic', ic, 0.8602260468752781, 1e-12),
+  assert_near('factor report ic std', ic_std, 0.047163893068661984, 1e-12),
+  assert_near('factor report ic ir', ic_ir, 18.239080595466255, 1e-9),
+  assert_near('factor report ic tstat', ic_tstat, 31.591014274691165, 1e-9),
+  assert_near('factor report rank ic', rank_ic, 0.8495610993501712, 1e-12),
+  assert_near('factor report mean return', mean_return, 0.013333333333333334, 1e-15),
+  assert_near('factor report quantile spread', quantile_spread, 0.018333333333333337, 1e-15),
+  assert_eq('factor report dates', n_dates, 3::BIGINT),
+  assert_eq('factor report observations', n_obs, 12::BIGINT)
+FROM fin_factor_report('gold_factor_panel', 'd', 'asset', 'factor', 'fwd', 2::BIGINT);
+
 SELECT assert_eq('fama macbeth rows', count(*), 5::BIGINT)
 FROM fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1);
 
-SELECT assert_eq('garch fit rows', count(*), 1::BIGINT)
+-- Grouping uses the date argument even when the source also has a column named date.
+SELECT
+  assert_eq('fama macbeth groups by date argument', count(*), 3::BIGINT),
+  assert_near('fama macbeth slope date 1', max(beta) FILTER (WHERE date = 1), 0.011, 1e-12)
+FROM fin_fama_macbeth('(SELECT d, DATE ''2000-01-01'' AS date, asset, factor, fwd FROM gold_factor_panel)',
+  'd', 'asset', 'fwd', ['factor']);
+
+SELECT
+  assert_eq('garch fit rows', count(*), 1::BIGINT),
+  assert_eq('garch fit omega type', typeof(any_value(omega)), 'DOUBLE'),
+  assert_eq('garch fit beta type', typeof(any_value(beta)), 'DOUBLE')
 FROM fin_garch_fit('gold_returns', 'r', 1, 1, 'normal');
 
 SELECT assert_eq('normalize returns rows', count(*), 5::BIGINT)
@@ -2176,6 +2308,20 @@ FROM fin_normalize_returns('gold_returns', 'd', 'asset', 'r');
 
 SELECT assert_eq('normalize ohlcv rows', count(*), 5::BIGINT)
 FROM fin_normalize_ohlcv('gold_prices', 'ts', 'open', 'high', 'low', 'close', 'volume');
+
+-- Normalizers pass non-consumed source columns through after the canonical ones.
+SELECT
+  assert_eq('normalize ohlcv passes extra columns', list(column_name),
+    ['ts', 'asset_id', 'open', 'high', 'low', 'close', 'volume', 'seq', 'bid', 'ask', 'bid_size', 'ask_size'])
+FROM (DESCRIBE SELECT * FROM fin_normalize_ohlcv('gold_prices', 'ts', 'open', 'high', 'low', 'close', 'volume'));
+
+SELECT
+  assert_eq('normalize returns keeps identifiers', list(column_name),
+    ['date', 'asset_id', 'return_decimal', 'seq', 'benchmark_r', 'factor', 'forward_return'])
+FROM (DESCRIBE SELECT * FROM fin_normalize_returns('gold_returns', 'd', 'asset', 'r'));
+
+SELECT assert_eq('normalize returns all columns consumed', count(*), 5::BIGINT)
+FROM fin_normalize_returns('(SELECT d, asset, r FROM gold_returns)', 'd', 'asset', 'r');
 
 SELECT assert_near('normalize option spec price', fin_bsm_price(option_spec), 10.450583572185565, 1e-10)
 FROM fin_normalize_option_chain(
@@ -2194,8 +2340,24 @@ WHERE option_kind = 'call';
 SELECT assert_eq('rebalance trade rows', count(*), 2::BIGINT)
 FROM fin_rebalance_trades('gold_current_weights', 'gold_target_weights', 'gold_asset_prices', 100000.0);
 
+SELECT
+  assert_near('rebalance named columns quantity', sum(quantity_delta) FILTER (WHERE asset_id = 'BBB'), 200.0, 1e-12),
+  assert_near('rebalance named columns notional', sum(notional_delta), 0.0, 1e-9)
+FROM fin_rebalance_trades(
+  '(SELECT asset AS asset_id, weight AS w FROM gold_current_weights)',
+  '(SELECT asset AS asset_id, weight AS w FROM gold_target_weights)',
+  '(SELECT asset AS asset_id, price AS px FROM gold_asset_prices)',
+  100000.0, asset_col := 'asset_id', weight_col := 'w', price_col := 'px');
+
 SELECT assert_near('portfolio return table', portfolio_return, 0.14, 1e-12)
 FROM fin_portfolio_return_table('gold_weighted_returns', 'asset', 'weight', 'expected_return');
+
+SELECT
+  assert_eq('portfolio return table per date rows', count(*), 3::BIGINT),
+  assert_near('portfolio return table date 2', max(portfolio_return) FILTER (WHERE d = 2),
+    0.25 * (0.040 - 0.010 + 0.000 - 0.020), 1e-15),
+  assert_eq('portfolio return table per date assets', min(asset_count), 4::BIGINT)
+FROM fin_portfolio_return_table('(SELECT *, 0.25 AS w FROM gold_factor_panel)', 'asset', 'w', 'fwd', 'd');
 
 SELECT assert_near('portfolio variance table', portfolio_variance, 0.0336, 1e-12)
 FROM fin_portfolio_variance_table(
@@ -2208,6 +2370,21 @@ FROM fin_portfolio_variance_table(
   'covariance'
 );
 
+-- Upper-triangle covariance storage is mirrored; w'Cw = 0.36*0.04 + 2*0.24*0.01 + 0.16*0.09.
+SELECT
+  assert_near('portfolio variance upper triangle', portfolio_variance, 0.0336, 1e-12),
+  assert_near('portfolio volatility upper triangle', portfolio_volatility, sqrt(0.0336), 1e-12)
+FROM fin_portfolio_variance_table(
+  'gold_weighted_returns', 'asset', 'weight',
+  '(FROM gold_covariance WHERE asset_i <= asset_j)', 'asset_i', 'asset_j', 'covariance');
+
+SELECT
+  assert_eq('portfolio variance empty weights', portfolio_variance, NULL),
+  assert_eq('portfolio volatility empty weights', portfolio_volatility, NULL)
+FROM fin_portfolio_variance_table(
+  '(FROM gold_weighted_returns WHERE false)', 'asset', 'weight',
+  'gold_covariance', 'asset_i', 'asset_j', 'covariance');
+
 SELECT assert_eq('tick bars default rows', count(*), 1::BIGINT)
 FROM fin_tick_bars('gold_prices', 'ts', 'close');
 
@@ -2217,50 +2394,104 @@ FROM fin_volume_bars('gold_prices', 'ts', 'close', 'volume', 1000.0);
 SELECT assert_eq('dollar bars rows', count(*), 5::BIGINT)
 FROM fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 100000.0);
 
-SELECT assert_eq('imbalance bars rows', count(*), 5::BIGINT)
-FROM fin_imbalance_bars('gold_prices', 'ts', 'close', 'volume', 'signed');
+-- AFML tick-rule imbalance: signs 0, +, -, +, - give signed volumes 0, 1500, -2000, 1800, -1200;
+-- with threshold 1500 the accumulator closes after rows 2, 3 and 4 and resets to zero.
+SELECT
+  assert_eq('imbalance bars rows', count(*), 4::BIGINT),
+  assert_eq('imbalance bars tick rule', list(imbalance ORDER BY bar_id), [1500.0, -2000.0, 1800.0, -1200.0]),
+  assert_eq('imbalance bars traded volume', list(volume ORDER BY bar_id), [2500.0, 2000.0, 1800.0, 1200.0])
+FROM fin_imbalance_bars('gold_prices', 'ts', 'close', 'volume', 1500.0, 'tick_rule');
 
--- Full rows protect threshold bucketing, time order, OHLC, volume and VWAP.
+-- AFML reset-accumulator bars (Lopez de Prado 2018, ch. 2.3): the overshoot does not carry into the next bar.
+-- Volumes 1000, 1500, 2000, 1800, 1200 with threshold 3000 close after rows 3 and 5; dollar values
+-- 100000, 153000, 198000, 187200, 123600 with threshold 300000 give the same bars.
 WITH actual AS (
-  SELECT 'tick' AS kind, row_number() OVER (ORDER BY start_ts, end_ts) AS seq, *
+  SELECT 'tick' AS kind, bar_id, start_ts, end_ts, open, high, low, close, volume, vwap, ticks
   FROM fin_tick_bars('gold_prices', 'ts', 'close', 2::BIGINT)
   UNION ALL
-  SELECT 'volume', row_number() OVER (ORDER BY start_ts, end_ts), *
+  SELECT 'volume', bar_id, start_ts, end_ts, open, high, low, close, volume, vwap, ticks
   FROM fin_volume_bars('gold_prices', 'ts', 'close', 'volume', 3000.0)
   UNION ALL
-  SELECT 'dollar', row_number() OVER (ORDER BY start_ts, end_ts), *
+  SELECT 'dollar', bar_id, start_ts, end_ts, open, high, low, close, volume, vwap, ticks
   FROM fin_dollar_bars('gold_prices', 'ts', 'close', 'volume', 300000.0)
-), expected(kind, seq, start_ts, end_ts, open, high, low, close, volume, vwap) AS (
+), expected(kind, bar_id, start_ts, end_ts, open, high, low, close, volume, vwap, ticks) AS (
   VALUES
-    ('tick', 1, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
-     100.0, 102.0, 100.0, 102.0, 2.0, 101.0),
-    ('tick', 2, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:33:00',
-     99.0, 104.0, 99.0, 104.0, 2.0, 101.5),
-    ('tick', 3, TIMESTAMP '2026-01-02 09:34:00', TIMESTAMP '2026-01-02 09:34:00',
-     103.0, 103.0, 103.0, 103.0, 1.0, 103.0),
-    ('volume', 1, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
-     100.0, 102.0, 100.0, 102.0, 2500.0, 101.2),
-    ('volume', 2, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:32:00',
-     99.0, 99.0, 99.0, 99.0, 2000.0, 99.0),
-    ('volume', 3, TIMESTAMP '2026-01-02 09:33:00', TIMESTAMP '2026-01-02 09:34:00',
-     104.0, 104.0, 103.0, 103.0, 3000.0, 103.6),
-    ('dollar', 1, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
-     100.0, 102.0, 100.0, 102.0, 2500.0, 101.2),
-    ('dollar', 2, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:32:00',
-     99.0, 99.0, 99.0, 99.0, 2000.0, 99.0),
-    ('dollar', 3, TIMESTAMP '2026-01-02 09:33:00', TIMESTAMP '2026-01-02 09:34:00',
-     104.0, 104.0, 103.0, 103.0, 3000.0, 103.6)
+    ('tick', 0, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:31:00',
+     100.0, 102.0, 100.0, 102.0, NULL, NULL, 2),
+    ('tick', 1, TIMESTAMP '2026-01-02 09:32:00', TIMESTAMP '2026-01-02 09:33:00',
+     99.0, 104.0, 99.0, 104.0, NULL, NULL, 2),
+    ('tick', 2, TIMESTAMP '2026-01-02 09:34:00', TIMESTAMP '2026-01-02 09:34:00',
+     103.0, 103.0, 103.0, 103.0, NULL, NULL, 1),
+    ('volume', 0, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:32:00',
+     100.0, 102.0, 99.0, 99.0, 4500.0, 451000.0 / 4500.0, 3),
+    ('volume', 1, TIMESTAMP '2026-01-02 09:33:00', TIMESTAMP '2026-01-02 09:34:00',
+     104.0, 104.0, 103.0, 103.0, 3000.0, 103.6, 2),
+    ('dollar', 0, TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:32:00',
+     100.0, 102.0, 99.0, 99.0, 4500.0, 451000.0 / 4500.0, 3),
+    ('dollar', 1, TIMESTAMP '2026-01-02 09:33:00', TIMESTAMP '2026-01-02 09:34:00',
+     104.0, 104.0, 103.0, 103.0, 3000.0, 103.6, 2)
 )
 SELECT
-  assert_eq('bar full row count', (SELECT count(*) FROM actual), 9::BIGINT),
-  assert_eq('bar full row keys', count(*), 9::BIGINT),
+  assert_eq('bar full row count', (SELECT count(*) FROM actual), 7::BIGINT),
+  assert_eq('bar full row keys', count(*), 7::BIGINT),
   assert_true('bar full row values', bool_and(
     a.start_ts IS NOT DISTINCT FROM e.start_ts AND a.end_ts IS NOT DISTINCT FROM e.end_ts
     AND a.open IS NOT DISTINCT FROM e.open AND a.high IS NOT DISTINCT FROM e.high
     AND a.low IS NOT DISTINCT FROM e.low AND a.close IS NOT DISTINCT FROM e.close
-    AND a.volume IS NOT DISTINCT FROM e.volume
-    AND a.vwap IS NOT NULL AND abs(a.vwap - e.vwap) <= 1e-12))
-FROM actual a JOIN expected e USING (kind, seq);
+    AND a.volume IS NOT DISTINCT FROM e.volume AND a.ticks = e.ticks
+    AND ((a.vwap IS NULL AND e.vwap IS NULL) OR abs(a.vwap - e.vwap) <= 1e-12)))
+FROM actual a JOIN expected e USING (kind, bar_id);
+
+-- Bars per asset: equal timestamps are ordered by seq_col when given, else by price then volume.
+SELECT
+  assert_eq('tick bars per asset count', count(*), 5::BIGINT),
+  assert_eq('tick bars tie order without seq', list(close ORDER BY bar_id) FILTER (WHERE sym = 'X'), [11.0, 11.5, 11.0]),
+  assert_near('tick bars volume and vwap', max(vwap) FILTER (WHERE sym = 'X' AND bar_id = 0), 155.0 / 15.0, 1e-12)
+FROM fin_tick_bars('gold_ticks', 'ts', 'price', 2, asset_col := 'sym', volume_col := 'volume');
+
+SELECT assert_eq('tick bars tie order with seq', list(close ORDER BY bar_id), [12.0, 11.5, 11.0])
+FROM fin_tick_bars('(FROM gold_ticks WHERE sym = ''X'')', 'ts', 'price', 2, seq_col := 'seq');
+
+SELECT
+  assert_eq('volume bars per asset', list(volume ORDER BY sym, bar_id), [35.0, 40.0, 5.0, 6.0]),
+  assert_near('volume bars per asset vwap', min(vwap) FILTER (WHERE sym = 'X' AND bar_id = 0), 395.0 / 35.0, 1e-12)
+FROM fin_volume_bars('gold_ticks', 'ts', 'price', 'volume', 25, asset_col := 'sym');
+
+SELECT
+  assert_eq('signed imbalance bars', list(imbalance ORDER BY bar_id), [25.0, -40.0, 5.0]),
+  assert_eq('signed imbalance traded volume', list(volume ORDER BY bar_id), [35.0, 40.0, 5.0])
+FROM fin_imbalance_bars('(FROM gold_ticks WHERE sym = ''X'')', 'ts', 'price', 'signed_volume', 15);
+
+SELECT assert_eq('tick rule imbalance bars', list(imbalance ORDER BY bar_id), [25.0, -40.0, -5.0])
+FROM fin_imbalance_bars('(FROM gold_ticks WHERE sym = ''X'')', 'ts', 'price', 'volume', 15, 'tick_rule');
+
+-- Exact multiples use a relative tolerance: ten volumes of 0.1 close a bar of 1.0.
+SELECT assert_eq('volume bars relative epsilon', list(ticks ORDER BY bar_id), [10::BIGINT, 10, 10])
+FROM fin_volume_bars('(SELECT TIMESTAMP ''2026-01-01'' + to_seconds(i) AS ts, 1.0 AS price, 0.1 AS volume FROM range(30) r(i))',
+  'ts', 'price', 'volume', 1.0);
+
+-- NULL timestamps and prices are skipped.
+SELECT assert_eq('bars skip null rows', sum(ticks), 3::BIGINT)
+FROM fin_tick_bars('(SELECT * FROM (VALUES (TIMESTAMP ''2026-01-01'', 1.0), (NULL, 2.0), (TIMESTAMP ''2026-01-02'', NULL), (TIMESTAMP ''2026-01-03'', 3.0), (TIMESTAMP ''2026-01-04'', 4.0)) t(ts, p))',
+  'ts', 'p', 10);
+
+CREATE TEMP TABLE gold_bar_order AS
+SELECT (i % 13)::VARCHAR AS sym, TIMESTAMP '2026-01-01' + to_seconds(i // 40) AS ts,
+  (100 + (i * 7919) % 1000 / 100.0)::DOUBLE AS price, (1 + (i * 104729) % 9)::DOUBLE AS volume
+FROM range(30000) r(i)
+ORDER BY hash(i);
+SET threads = 1;
+CREATE TEMP TABLE gold_bar_order_t1 AS
+SELECT * FROM fin_volume_bars('gold_bar_order', 'ts', 'price', 'volume', 333, asset_col := 'sym');
+SET threads = 8;
+SELECT assert_eq('volume bars thread determinism', count(*), 0::BIGINT)
+FROM (SELECT * FROM fin_volume_bars('gold_bar_order', 'ts', 'price', 'volume', 333, asset_col := 'sym')
+      EXCEPT SELECT * FROM gold_bar_order_t1);
+SELECT assert_eq('imbalance bars thread determinism', count(*), 0::BIGINT)
+FROM (SELECT * FROM fin_imbalance_bars('gold_bar_order', 'ts', 'price', 'volume', 50, 'tick_rule', asset_col := 'sym')
+      EXCEPT SELECT * FROM fin_imbalance_bars('(FROM gold_bar_order ORDER BY ts DESC)', 'ts', 'price', 'volume', 50,
+        'tick_rule', asset_col := 'sym'));
+RESET threads;
 
 SELECT assert_eq('tick threshold overload equivalence',
   (SELECT list(struct_pack(start_ts, end_ts, open, high, low, close, volume, vwap) ORDER BY start_ts)
@@ -2339,5 +2570,69 @@ FROM fin_predict_linear_to_grid(
   'gold_prices', 'ts', 'close',
   TIMESTAMP '2026-01-02 09:30:00',
   TIMESTAMP '2026-01-02 09:34:00',
-  INTERVAL '1 minute'
+  INTERVAL '1 minute',
+  INTERVAL '3 minutes'
 );
+
+-- Least-squares fit over (g - 3 minutes, g], predicted one minute ahead (numpy.polyfit reference).
+SELECT
+  assert_eq('predict linear needs two samples', list(value ORDER BY ts)[1], NULL),
+  assert_near('predict linear two samples', list(value ORDER BY ts)[2], 104.0, 1e-9),
+  assert_near('predict linear three samples', list(value ORDER BY ts)[3], 99.33333333333333, 1e-9),
+  assert_near('predict linear window slides', list(value ORDER BY ts)[4], 103.66666666666666, 1e-9),
+  assert_near('predict linear last', list(value ORDER BY ts)[5], 106.0, 1e-9)
+FROM fin_predict_linear_to_grid(
+  'gold_prices', 'ts', 'close',
+  TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute',
+  INTERVAL '3 minutes', INTERVAL '1 minute'
+);
+
+-- Grid siblings compare consecutive grid samples; the first sample has no predecessor.
+SELECT
+  assert_eq('delta grid values', (SELECT list(value ORDER BY ts) FROM fin_delta_to_grid('gold_prices', 'ts', 'close',
+    TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute')), [NULL, 2.0, -3.0, 5.0, -1.0]),
+  assert_near('rate grid per second', (SELECT list(value ORDER BY ts)[3] FROM fin_rate_to_grid('gold_prices', 'ts', 'close',
+    TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute')), -3.0 / 60.0, 1e-15),
+  assert_eq('changes grid values', (SELECT list(value ORDER BY ts) FROM fin_changes_to_grid('gold_prices', 'ts', 'close',
+    TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute')), [NULL, 1.0, 1.0, 1.0, 1.0]),
+  assert_eq('resets grid values', (SELECT list(value ORDER BY ts) FROM fin_resets_to_grid('gold_prices', 'ts', 'close',
+    TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute')), [NULL, 0.0, 1.0, 0.0, 1.0]),
+  assert_eq('changes grid type', (SELECT typeof(any_value(value)) FROM fin_changes_to_grid('gold_prices', 'ts', 'close',
+    TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:34:00', INTERVAL '1 minute')), 'DOUBLE');
+
+-- Per-asset grids; duplicate timestamps keep the largest seq_col, else the largest value.
+SELECT
+  assert_eq('grid per asset rows', count(*), 10::BIGINT),
+  assert_eq('grid duplicate ts without seq', list(value ORDER BY ts) FILTER (WHERE sym = 'X'), [10.0, 12.0, 12.0, 11.5, 11.0]),
+  assert_eq('grid asset keyed asof', list(value ORDER BY ts) FILTER (WHERE sym = 'Y'), [50.0, 50.0, 49.0, 49.0, 51.0])
+FROM fin_resample_grid('gold_ticks', 'ts', 'price',
+  TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:30:04', INTERVAL '1 second', asset_col := 'sym');
+
+SELECT assert_eq('grid duplicate ts with seq', list(value ORDER BY ts), [10.0, 11.0, 11.0, 11.5, 11.0])
+FROM fin_last_to_grid('(FROM gold_ticks WHERE sym = ''X'')', 'ts', 'price',
+  TIMESTAMP '2026-01-02 09:30:00', TIMESTAMP '2026-01-02 09:30:04', INTERVAL '1 second', seq_col := 'seq');
+
+-- Month steps are anchored at start_ts (start + i * step).
+SELECT assert_eq('grid month anchored', list(ts ORDER BY ts),
+  [TIMESTAMP '2026-01-31', TIMESTAMP '2026-02-28', TIMESTAMP '2026-03-31'])
+FROM fin_resample_grid('gold_prices', 'ts', 'close', TIMESTAMP '2026-01-31', TIMESTAMP '2026-03-31', INTERVAL '1 month');
+
+-- NULL values do not overwrite the carried sample.
+SELECT assert_eq('grid skips null values', list(value ORDER BY ts), [1.0, 1.0])
+FROM fin_resample_grid('(SELECT * FROM (VALUES (TIMESTAMP ''2026-01-01 00:00:00'', 1.0), (TIMESTAMP ''2026-01-01 00:00:01'', NULL)) t(ts, v))',
+  'ts', 'v', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-01-01 00:00:01', INTERVAL '1 second');
+
+CREATE TEMP TABLE gold_grid_order AS
+SELECT (i % 5)::VARCHAR AS sym, TIMESTAMP '2026-01-01' + to_seconds(i // 20) AS ts, ((i * 7919) % 1000)::DOUBLE AS x
+FROM range(20000) r(i)
+ORDER BY hash(i);
+SET threads = 1;
+CREATE TEMP TABLE gold_grid_order_t1 AS
+SELECT * FROM fin_delta_to_grid('gold_grid_order', 'ts', 'x', TIMESTAMP '2026-01-01', TIMESTAMP '2026-01-01 00:16:39',
+  INTERVAL '1 second', asset_col := 'sym');
+SET threads = 8;
+SELECT assert_eq('grid thread determinism', count(*), 0::BIGINT)
+FROM (SELECT * FROM fin_delta_to_grid('gold_grid_order', 'ts', 'x', TIMESTAMP '2026-01-01', TIMESTAMP '2026-01-01 00:16:39',
+        INTERVAL '1 second', asset_col := 'sym')
+      EXCEPT SELECT * FROM gold_grid_order_t1);
+RESET threads;
