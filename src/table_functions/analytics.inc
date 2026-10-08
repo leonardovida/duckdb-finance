@@ -222,7 +222,7 @@ static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFun
 	RequireInputCountBetween(input, 1, 3, "fin_calendar expects calendar, start_date, end_date");
 	auto calendar = SqlStringLiteral(RequireString(input.inputs[0], function_name, "calendar"));
 	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(RequireArgument(input, 1, function_name, "start_date"))
-	                                           : CurrentDateLiteral();
+	                                           : CurrentDateSql(context);
 	auto end_date =
 	    input.inputs.size() >= 3 ? SqlLiteral(RequireArgument(input, 2, function_name, "end_date")) : start_date;
 	auto query = StringUtil::Format(

@@ -129,19 +129,13 @@ static string SqlLiteral(const Value &value) {
 	return value.ToSQLString();
 }
 
-static string CurrentDateLiteral() {
-	auto now = std::time(nullptr);
-	std::tm tm_value;
-#if defined(_WIN32)
-	localtime_s(&tm_value, &now);
-#else
-	localtime_r(&now, &tm_value);
-#endif
-	char buffer[sizeof("YYYY-MM-DD")];
-	if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d", &tm_value) == 0) {
-		throw InternalException("Failed to format current local date");
+//! SQL for "today" in the session time zone: current_date when ICU is loaded (it honors the TimeZone setting),
+//! otherwise the UTC date, which is DuckDB's time zone without ICU. Never the host's local time zone.
+static string CurrentDateSql(ClientContext &context) {
+	if (DatabaseInstance::GetDatabase(context).ExtensionIsLoaded("icu")) {
+		return "current_date";
 	}
-	return "DATE '" + string(buffer) + "'";
+	return "DATE '" + Date::ToString(Timestamp::GetDate(Timestamp::GetCurrentTimestamp())) + "'";
 }
 
 static void RequireInputCountExactly(const TableFunctionBindInput &input, idx_t expected_count, const string &message) {
