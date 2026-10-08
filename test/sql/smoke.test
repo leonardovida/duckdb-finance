@@ -54,3 +54,95 @@ SELECT fin_outlier_count(x, threshold ORDER BY seq)
 FROM (VALUES (1, 0.0, 1.0), (2, 'NaN'::DOUBLE, 2.0)) AS t(seq, x, threshold)
 ----
 Outlier threshold must be constant within a group
+
+# Scalar configuration strings are validated and errors name the function.
+
+statement error
+SELECT fin_future_value(100.0, 0.05, 2.0, 'fortnightly')
+----
+fin_future_value: unknown compounding convention 'fortnightly'
+
+statement error
+SELECT fin_yearfrac(DATE '2026-01-01', DATE '2026-07-01', 'ACT/999')
+----
+fin_yearfrac: unknown day-count convention 'ACT/999'
+
+statement error
+SELECT fin_bsm_price('straddle', 100.0, 100.0, 1.0, 0.05, 0.2)
+----
+fin_bsm_price: unknown option kind 'straddle'
+
+statement error
+SELECT fin_bsm_theta('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 'week')
+----
+fin_bsm_theta: unknown theta unit 'week'
+
+statement error
+SELECT fin_round_to_tick(1.234, 0.01, 'sideways')
+----
+fin_round_to_tick: unknown tick rounding mode 'sideways'
+
+statement error
+SELECT fin_annuity_payment(0.05, 10, 100, 0, 'middle')
+----
+fin_annuity_payment: unknown annuity payment timing 'middle'
+
+statement error
+SELECT fin_bond_duration(0.05, 0.05, 10, 2, 100.0, 'effective')
+----
+fin_bond_duration: unknown bond duration kind 'effective'
+
+statement error
+SELECT fin_binomial_price('put', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 50, 'bermudan', 'crr')
+----
+fin_binomial_price: unknown exercise style 'bermudan'
+
+statement error
+SELECT fin_binomial_price('put', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 50, 'american', 'trinomial')
+----
+fin_binomial_price: unknown binomial tree 'trinomial'
+
+statement error
+SELECT fin_binomial_price('put', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 100001, 'american', 'crr')
+----
+fin_binomial_price: steps must be between 1 and 100000, got 100001
+
+statement error
+SELECT fin_is_business_day(DATE '2026-01-02', 'LSE')
+----
+fin_is_business_day: unknown calendar 'LSE'
+
+statement error
+SELECT fin_is_regular_session(TIMESTAMP '2026-01-02 10:00:00', 'NYSE', 'Europe/London')
+----
+fin_is_regular_session: unsupported time zone 'Europe/London'
+
+statement error
+SELECT fin_bsm_price(fin_option_spec('put', 100.0, 100.0, 1.0, 0.05, 0.2, exercise := 'american'))
+----
+fin_bsm_price: option spec exercise 'american' is not supported
+
+statement error
+SELECT fin_bsm_delta(fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.2, model := 'black76'))
+----
+fin_bsm_delta: option spec model 'black76' is not supported
+
+statement error
+SELECT fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.2, model := 'heston')
+----
+fin_option_spec: unknown model 'heston'
+
+statement error
+SELECT fin_next_business_day(DATE '2026-01-02', -1)
+----
+fin_next_business_day: business-day offset must be non-negative, got -1
+
+statement error
+SELECT fin_nearest_psd([[1.0, 0.0], [0.0, 1.0]], 'spectral')
+----
+fin_nearest_psd: unknown nearest-PSD method 'spectral'
+
+statement error
+SELECT fin_yearfrac(1, 2)
+----
+fin_yearfrac: argument 1 must be DATE, TIMESTAMP or TIMESTAMPTZ, got INTEGER
