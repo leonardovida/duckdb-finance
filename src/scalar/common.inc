@@ -1283,9 +1283,28 @@ static bool IsNyseHoliday(date_t date) {
 }
 
 //! Scheduled NYSE 13:00 early closes: July 3 (Mon-Thu), the day after Thanksgiving, December 24 (Mon-Thu).
+//! 13:00 closes. Rules plus historical exceptions match exchange_calendars XNYS for 1990-2030.
 static bool IsNyseEarlyClose(date_t date) {
 	int32_t y, m, d;
 	Date::Convert(date, y, m, d);
+	auto key = y * 10000 + m * 100 + d;
+	switch (key) {
+	case 19960705:
+	case 19971226:
+	case 19991231:
+	case 20020705:
+	case 20031226:
+		return true;
+	case 19900703:
+	case 19901123:
+	case 19910703:
+	case 19911129:
+	case 19960703:
+	case 20020703:
+		return false;
+	default:
+		break;
+	}
 	auto dow = Date::ExtractISODayOfTheWeek(date);
 	if (m == 7 && d == 3 && dow >= 1 && dow <= 4) {
 		return true;
@@ -1509,7 +1528,8 @@ static bool IsRegularSession(int64_t local_micros, BusinessCalendar calendar) {
 	const int64_t open = 9 * MICROS_PER_HOUR + 30 * 60LL * 1000000LL;
 	int64_t close = 16 * MICROS_PER_HOUR;
 	if (calendar == BusinessCalendar::NYSE && IsNyseEarlyClose(date)) {
-		close = 13 * MICROS_PER_HOUR;
+		// Early closes were at 14:00 through 1992 and at 13:00 since.
+		close = (Date::ExtractYear(date) <= 1992 ? 14 : 13) * MICROS_PER_HOUR;
 	}
 	return time_of_day >= open && time_of_day < close;
 }
