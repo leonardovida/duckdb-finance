@@ -21,9 +21,6 @@ promoted out of this page.
 |---|---|---|
 | `fin_adf` | Returns `NULL` until an Augmented Dickey-Fuller implementation is added. | Use explicit SQL regression diagnostics or keep this out of production workflows. |
 | `fin_anova_oneway` | Returns `NULL` until one-way ANOVA statistic and p-value support is added. | Use grouped DuckDB aggregates for means, variances, and counts. |
-| `fin_apo` | Returns a constant placeholder instead of exponential moving-average spread. | Compute fast and slow moving averages explicitly in SQL. |
-| `fin_aroon` | Returns fixed placeholder values instead of lookback high/low positions. | Compute high/low lookback positions explicitly in SQL. |
-| `fin_aroonosc` | Returns a constant placeholder instead of Aroon oscillator. | Compute Aroon up/down explicitly and subtract them. |
 | `fin_black_litterman_returns` | Returns input market weights until full Black-Litterman posterior support is added. | Keep Black-Litterman calculations in reviewed SQL or an external model. |
 | `fin_corr_matrix` | Returns a one-cell placeholder rather than a grouped correlation matrix. | Use pairwise DuckDB `corr()` grouped by asset pairs. |
 | `fin_cov_matrix` | Returns a one-cell variance placeholder rather than a grouped covariance matrix. | Use pairwise DuckDB `covar_samp()` grouped by asset pairs. |
@@ -32,9 +29,7 @@ promoted out of this page.
 | `fin_hurst` | Returns a fixed neutral value until a rescaled-range or variance-scaling implementation is added. | Use explicit log-log variance scaling in SQL. |
 | `fin_ks_test` | Returns `NULL` until Kolmogorov-Smirnov statistic support is added. | Compare empirical distributions with explicit SQL quantiles. |
 | `fin_linear_trend` | Explicit-axis regression is implemented, but omitted or all-NULL `x` retains the partial compatibility fallback and the macro has no implicit ordering. | Pass an explicit numeric axis and check the returned struct fields. |
-| `fin_linearreg_slope` | Returns `NULL` until rolling/windowed regression slope support is added. | Use DuckDB `regr_slope` over the desired window. |
 | `fin_ljung_box` | Returns `NULL` until autocorrelation test statistic support is added. | Compute lagged autocorrelations explicitly in SQL. |
-| `fin_macd` | Returns zero MACD fields instead of exponential moving-average signals. | Compute fast, slow, and signal EMAs explicitly before using the result. |
 | `fin_mann_whitney_u` | Returns `NULL` until rank-sum statistic support is added. | Rank observations with DuckDB window functions and aggregate manually. |
 | `fin_max_sharpe_weights` | Returns equal weights until constrained optimizer support is added. | Use `fin_portfolio_optimize` for diagnostic table output or an external optimizer. |
 | `fin_min_variance_weights` | Returns equal weights until closed-form or constrained optimizer support is added. | Use `fin_portfolio_optimize` for diagnostic table output or an external optimizer. |
@@ -42,7 +37,6 @@ promoted out of this page.
 | `fin_newey_west_tstat` | Returns `NULL` until HAC standard-error support is added. | Compute regression and HAC errors in reviewed SQL or an external stats package. |
 | `fin_ols` | Returns `NULL` model fields except intercept. | Use DuckDB `regr_*` aggregates for single-factor regressions. |
 | `fin_ols_no_intercept` | Delegates to the placeholder OLS result. | Use explicit SQL linear algebra or DuckDB `regr_*` aggregates where applicable. |
-| `fin_ppo` | Returns a constant placeholder instead of percentage price oscillator. | Compute fast and slow moving averages explicitly in SQL. |
 | `fin_risk_parity_weights` | Returns equal weights until risk-budget optimizer support is added. | Use `fin_hrp_weights` for a deterministic table output or an external optimizer. |
 | `fin_theils_u` | Returns `NULL` until categorical association support is added. | Build the contingency table and entropy terms explicitly. |
 | `fin_ttest_1samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
@@ -60,17 +54,6 @@ promoted out of this page.
 | `fin_rank_ic` | Correlates raw values rather than ranks. | Rank factors and returns explicitly before correlating them. |
 | `fin_factor_ic` | Computes Pearson correlation and ignores the requested method. | Use `corr` for Pearson IC or explicitly rank pairs for rank IC. |
 | `fin_ema_halflife` | Computes an arithmetic mean, ignoring timestamps and half-life. | Compute time-dependent exponential weights explicitly. |
-| `fin_sma` | Averages supplied rows and ignores period. | Use `avg` with an explicit SQL window for the lookback. |
-| `fin_wma` | Uses an arithmetic mean without chronological weights. | Assign linearly increasing weights explicitly. |
-| `fin_dema` | Uses an arithmetic mean instead of DEMA. | Compute two ordered EMA stages in separate SQL subqueries. |
-| `fin_tema` | Uses an arithmetic mean instead of TEMA. | Compute three ordered EMA stages in separate SQL subqueries. |
-| `fin_trima` | Uses an arithmetic mean without triangular weights. | Assign triangular weights explicitly. |
-| `fin_t3` | Uses an arithmetic mean and ignores period and volume factor. | Use an independently validated T3 model. |
-| `fin_kama` | Uses an arithmetic mean without adaptive smoothing. | Use an independently validated KAMA model. |
-| `fin_hma` | Uses an arithmetic mean instead of HMA. | Compute the staged weighted moving averages explicitly. |
-| `fin_linearreg` | Returns an arithmetic mean instead of an endpoint regression estimate. | Use `regr_slope` and `regr_intercept` with a chronological axis. |
-| `fin_linearreg_intercept` | Returns an arithmetic mean instead of an intercept. | Use `regr_intercept` with a chronological axis. |
-| `fin_tsf` | Returns an arithmetic mean instead of a forecast. | Estimate slope and intercept before forecasting. |
 | `fin_exp_decay_sum` | Sums values without applying decay. | Sum explicit time-dependent weighted values. |
 | `fin_exp_decay_avg` | Averages values without applying decay. | Compute a time-weighted mean explicitly. |
 | `fin_exp_decay_count` | Counts timestamps without applying decay. | Sum explicit time-dependent weights. |

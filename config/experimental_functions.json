@@ -1,61 +1,6 @@
 {
   "functions": [
     {
-      "name": "fin_sma",
-      "reason": "averages supplied rows and ignores the period argument",
-      "replacement": "use avg with an explicit SQL window matching the desired lookback"
-    },
-    {
-      "name": "fin_wma",
-      "reason": "returns an arithmetic mean without linearly increasing weights and ignores period",
-      "replacement": "assign chronological weights in SQL before aggregating"
-    },
-    {
-      "name": "fin_dema",
-      "reason": "returns an arithmetic mean instead of a double exponential moving average",
-      "replacement": "compute two ordered EMA stages and combine them explicitly"
-    },
-    {
-      "name": "fin_tema",
-      "reason": "returns an arithmetic mean instead of a triple exponential moving average",
-      "replacement": "compute three ordered EMA stages and combine them explicitly"
-    },
-    {
-      "name": "fin_trima",
-      "reason": "returns an arithmetic mean instead of a triangularly weighted moving average",
-      "replacement": "assign triangular chronological weights explicitly"
-    },
-    {
-      "name": "fin_t3",
-      "reason": "returns an arithmetic mean and ignores period and volume factor",
-      "replacement": "use a validated external T3 implementation"
-    },
-    {
-      "name": "fin_kama",
-      "reason": "returns an arithmetic mean and ignores adaptive smoothing parameters",
-      "replacement": "use a validated external Kaufman adaptive moving average implementation"
-    },
-    {
-      "name": "fin_hma",
-      "reason": "returns an arithmetic mean instead of a Hull moving average",
-      "replacement": "compute the staged weighted moving averages explicitly"
-    },
-    {
-      "name": "fin_linearreg",
-      "reason": "returns an arithmetic mean instead of an endpoint regression estimate",
-      "replacement": "use regr_slope and regr_intercept over an explicit chronological axis"
-    },
-    {
-      "name": "fin_linearreg_intercept",
-      "reason": "returns an arithmetic mean instead of a regression intercept",
-      "replacement": "use regr_intercept with an explicit chronological axis"
-    },
-    {
-      "name": "fin_tsf",
-      "reason": "returns an arithmetic mean instead of a regression forecast",
-      "replacement": "estimate slope and intercept explicitly before forecasting"
-    },
-    {
       "name": "fin_exp_decay_sum",
       "reason": "sums supplied values without using timestamps or half-life",
       "replacement": "construct time-dependent exponential weights explicitly before summing"
@@ -84,21 +29,6 @@
       "name": "fin_anova_oneway",
       "reason": "returns NULL until one-way ANOVA statistic and p-value support is added",
       "replacement": "use grouped DuckDB aggregates for means, variances, and counts"
-    },
-    {
-      "name": "fin_apo",
-      "reason": "returns a constant placeholder instead of exponential moving-average spread",
-      "replacement": "compute fast and slow moving averages explicitly in SQL"
-    },
-    {
-      "name": "fin_aroon",
-      "reason": "returns fixed placeholder values instead of lookback high/low positions",
-      "replacement": "compute high/low lookback positions explicitly in SQL"
-    },
-    {
-      "name": "fin_aroonosc",
-      "reason": "returns a constant placeholder instead of Aroon oscillator",
-      "replacement": "compute Aroon up/down explicitly and subtract them"
     },
     {
       "name": "fin_black_litterman_returns",
@@ -141,19 +71,9 @@
       "replacement": "pass an explicit numeric axis and check the returned struct fields"
     },
     {
-      "name": "fin_linearreg_slope",
-      "reason": "returns NULL until rolling/windowed regression slope support is added",
-      "replacement": "use DuckDB regr_slope over the desired window"
-    },
-    {
       "name": "fin_ljung_box",
       "reason": "returns NULL until autocorrelation test statistic support is added",
       "replacement": "compute lagged autocorrelations explicitly in SQL"
-    },
-    {
-      "name": "fin_macd",
-      "reason": "returns zero MACD fields instead of exponential moving-average signals",
-      "replacement": "compute fast, slow, and signal EMAs explicitly before using the result"
     },
     {
       "name": "fin_mann_whitney_u",
@@ -189,11 +109,6 @@
       "name": "fin_ols_no_intercept",
       "reason": "delegates to the placeholder OLS result",
       "replacement": "use explicit SQL linear algebra or DuckDB regr_* aggregates where applicable"
-    },
-    {
-      "name": "fin_ppo",
-      "reason": "returns a constant placeholder instead of percentage price oscillator",
-      "replacement": "compute fast and slow moving averages explicitly in SQL"
     },
     {
       "name": "fin_risk_parity_weights",
