@@ -8,14 +8,14 @@ static unique_ptr<TableRef> OptionChainBindReplace(ClientContext &context, Table
 	RequireInputCountBetween(input, 7, 8,
 	                         "fin_option_chain expects table_name, kind_col, spot_col, strike_col, ttm_col, rate_col, "
 	                         "vol_col[, dividend_yield_col]");
-	auto table = SqlTableName(input.inputs[0]);
-	auto kind = "__finance_source." + SqlColumn(input.inputs[1]);
-	auto spot = "__finance_source." + SqlColumn(input.inputs[2]);
-	auto strike = "__finance_source." + SqlColumn(input.inputs[3]);
-	auto ttm = "__finance_source." + SqlColumn(input.inputs[4]);
-	auto rate = "__finance_source." + SqlColumn(input.inputs[5]);
-	auto vol = "__finance_source." + SqlColumn(input.inputs[6]);
-	auto q = input.inputs.size() == 8 ? "__finance_source." + SqlColumn(input.inputs[7]) : "0.0";
+	auto table = SqlSourceArg(input, 0, "fin_option_chain");
+	auto kind = "__finance_source." + SqlColumnArg(input, 1, "fin_option_chain", "kind_col");
+	auto spot = "__finance_source." + SqlColumnArg(input, 2, "fin_option_chain", "spot_col");
+	auto strike = "__finance_source." + SqlColumnArg(input, 3, "fin_option_chain", "strike_col");
+	auto ttm = "__finance_source." + SqlColumnArg(input, 4, "fin_option_chain", "ttm_col");
+	auto rate = "__finance_source." + SqlColumnArg(input, 5, "fin_option_chain", "rate_col");
+	auto vol = "__finance_source." + SqlColumnArg(input, 6, "fin_option_chain", "vol_col");
+	auto q = input.inputs.size() == 8 ? "__finance_source." + SqlColumnArg(input, 7, "fin_option_chain", "dividend_yield_col") : "0.0";
 	auto args = BSMArguments(kind, spot, strike, ttm, rate, vol, q);
 	auto input_column = [&](idx_t column) {
 		return SqlIdentifier("__finance_source_" + input.inputs[column].GetValue<string>());

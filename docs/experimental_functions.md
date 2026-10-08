@@ -27,10 +27,9 @@ promoted out of this page.
 | `fin_ppo` | Returns a constant placeholder instead of percentage price oscillator. | Compute fast and slow moving averages explicitly in SQL. |
 | `fin_portfolio_optimize` | Returns equal weights without solving the supplied objective. | Use an external optimizer and validate its weights in SQL. |
 | `fin_portfolio_optimize_table` | Assigns equal weights to distinct assets without using return history. | Use an external optimizer and validate its weights in SQL. |
-| `fin_hrp_weights` | Returns equal weights without hierarchical clustering or risk allocation. | Use an external HRP implementation and validate risk in SQL. |
-| `fin_efficient_frontier` | Reports interpolated target returns with constant equal-weight volatility. | Solve target-return portfolios externally and compute each portfolio's risk in SQL. |
 | `fin_bootstrap_curve` | Treats quoted rates as zero rates without bootstrapping instrument cash flows. | Bootstrap instrument-specific discount factors externally. |
-| `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters. | Fit GARCH externally before using parameters in SQL forecasts. |
+| `fin_curve_bootstrap` | Alias of `fin_bootstrap_curve`; treats quoted rates as zero rates. | Bootstrap instrument-specific discount factors externally. |
+| `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters; only p = 1, q = 1, and `normal` are accepted. | Fit GARCH externally before using parameters in SQL forecasts. |
 | `fin_fama_macbeth` | Uses the first factor for per-date regressions, without second-stage inference or lag correction. | Compute reviewed cross-sectional fits and second-stage inference explicitly. |
 | `fin_sma` | Averages supplied rows and ignores period. | Use `avg` with an explicit SQL window for the lookback. |
 | `fin_wma` | Uses an arithmetic mean without chronological weights. | Assign linearly increasing weights explicitly. |

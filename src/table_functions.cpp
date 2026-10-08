@@ -1,6 +1,13 @@
 #include "finance/finance_extension.hpp"
 
+#include "duckdb/common/error_data.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/operator/multiply.hpp"
+#include "duckdb/common/types/column/column_data_collection.hpp"
+#include "duckdb/common/types/hugeint.hpp"
+#include "duckdb/common/types/interval.hpp"
+#include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/function/aggregate_function.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/types/value_map.hpp"
@@ -21,11 +28,13 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <limits>
 
 namespace duckdb {
 namespace {
 
 #include "table_functions/common.inc"
+#include "table_functions/portfolio_math.inc"
 #include "table_functions/option_chain.inc"
 #include "table_functions/grid.inc"
 #include "table_functions/normalization.inc"
