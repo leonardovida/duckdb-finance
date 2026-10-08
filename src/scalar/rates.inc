@@ -1,63 +1,62 @@
 static void YearFracFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<DayCount> day_count(args, 2, ParseDayCountNoPeriod, DayCount::ACT_365F);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		auto convention = args.ColumnCount() == 3 ? input.GetString(2, row) : "ACT/365F";
-		return YearFrac(input.GetDate(0, row), input.GetDate(1, row), convention);
+		return YearFrac(input.GetDate(0, row), input.GetDate(1, row), day_count.Get(input, row));
 	});
 }
 
 static void DiscountFactorFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<Compounding> compounding(args, 2, ParseCompoundingEnum, Compounding::CONTINUOUS);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		string compounding = args.ColumnCount() >= 3 ? input.GetString(2, row) : "continuous";
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 1;
-		return DiscountFactor(input.GetDouble(0, row), input.GetDouble(1, row), compounding, frequency);
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 1;
+		return DiscountFactor(input.GetDouble(0, row), input.GetDouble(1, row), compounding.Get(input, row), frequency);
 	});
 }
 
 static void RateFromDiscountFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<Compounding> compounding(args, 2, ParseCompoundingEnum, Compounding::CONTINUOUS);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		string compounding = args.ColumnCount() >= 3 ? input.GetString(2, row) : "continuous";
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 1;
-		return RateFromDiscount(input.GetDouble(0, row), input.GetDouble(1, row), compounding, frequency);
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 1;
+		return RateFromDiscount(input.GetDouble(0, row), input.GetDouble(1, row), compounding.Get(input, row),
+		                        frequency);
 	});
 }
 
 static void ForwardRateFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<Compounding> compounding(args, 4, ParseCompoundingEnum, Compounding::CONTINUOUS);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		string compounding = args.ColumnCount() >= 5 ? input.GetString(4, row) : "continuous";
 		return ForwardRate(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row),
-		                   input.GetDouble(3, row), compounding);
+		                   input.GetDouble(3, row), compounding.Get(input, row));
 	});
 }
 
 static void PresentValueFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<Compounding> compounding(args, 3, ParseCompoundingEnum, Compounding::CONTINUOUS);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		string compounding = args.ColumnCount() >= 4 ? input.GetString(3, row) : "continuous";
-		return PresentValue(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row), compounding);
+		return input.GetDouble(0, row) *
+		       DiscountFactor(input.GetDouble(1, row), input.GetDouble(2, row), compounding.Get(input, row), 1);
 	});
 }
 
 static void FutureValueFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<Compounding> compounding(args, 3, ParseCompoundingEnum, Compounding::CONTINUOUS);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		string compounding = args.ColumnCount() >= 4 ? input.GetString(3, row) : "continuous";
-		return FutureValue(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row), compounding);
+		return input.GetDouble(0, row) /
+		       DiscountFactor(input.GetDouble(1, row), input.GetDouble(2, row), compounding.Get(input, row), 1);
 	});
 }
 
 static void AnnuityPaymentFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<AnnuityTiming> timing(args, 4, ParseAnnuityTiming, AnnuityTiming::END);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
 		double rate = input.GetDouble(0, row);
 		double nper = input.GetDouble(1, row);
 		double pv = input.GetDouble(2, row);
 		double fv = args.ColumnCount() >= 4 ? input.GetDouble(3, row) : 0.0;
-		string when = args.ColumnCount() >= 5 ? Normalize(input.GetString(4, row)) : "end";
-		if (!IsFinite(rate) || rate <= -1.0 || !IsFinite(nper) || !(nper > 0.0) ||
-		    !IsFinite(pv) || !IsFinite(fv)) {
-			throw InvalidInputException("Annuity inputs must be finite, nper positive, and rate greater than -1");
+		double due = timing.Get(input, row) == AnnuityTiming::BEGIN ? 1.0 : 0.0;
+		if (!IsFinite(rate) || rate <= -1.0 || !IsFinite(nper) || !(nper > 0.0) || !IsFinite(pv) || !IsFinite(fv)) {
+			return FIN_NAN;
 		}
-		if (when != "end" && when != "0" && when != "begin" && when != "start" && when != "1") {
-			throw InvalidInputException("Unknown annuity payment timing '%s'", when);
-		}
-		double due = (when == "begin" || when == "start" || when == "1") ? 1.0 : 0.0;
 		if (rate == 0.0) {
 			return -(pv + fv) / nper;
 		}
@@ -68,7 +67,7 @@ static void AnnuityPaymentFunction(DataChunk &args, ExpressionState &, Vector &r
 
 static void BondPriceFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 2;
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 2;
 		double face = args.ColumnCount() >= 5 ? input.GetDouble(4, row) : 100.0;
 		return BondPrice(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row), frequency, face);
 	});
@@ -76,25 +75,25 @@ static void BondPriceFunction(DataChunk &args, ExpressionState &, Vector &result
 
 static void BondYTMFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 2;
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 2;
 		double face = args.ColumnCount() >= 5 ? input.GetDouble(4, row) : 100.0;
 		return BondYTM(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row), frequency, face);
 	});
 }
 
 static void BondDurationFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<DurationKind> kind(args, 5, ParseDurationKind, DurationKind::MACAULAY);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 2;
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 2;
 		double face = args.ColumnCount() >= 5 ? input.GetDouble(4, row) : 100.0;
-		string kind = args.ColumnCount() >= 6 ? input.GetString(5, row) : "macaulay";
 		return BondDuration(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row), frequency, face,
-		                    kind);
+		                    kind.Get(input, row));
 	});
 }
 
 static void BondConvexityFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 2;
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 2;
 		double face = args.ColumnCount() >= 5 ? input.GetDouble(4, row) : 100.0;
 		return BondConvexity(input.GetDouble(0, row), input.GetDouble(1, row), input.GetDouble(2, row), frequency,
 		                     face);
@@ -103,48 +102,70 @@ static void BondConvexityFunction(DataChunk &args, ExpressionState &, Vector &re
 
 static void DV01Function(DataChunk &args, ExpressionState &, Vector &result) {
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
-		int frequency = args.ColumnCount() >= 4 ? input.GetInt32(3, row) : 2;
+		int64_t frequency = args.ColumnCount() >= 4 ? input.GetInteger(3, row) : 2;
 		double face = args.ColumnCount() >= 5 ? input.GetDouble(4, row) : 100.0;
 		double coupon = input.GetDouble(0, row);
 		double ytm = input.GetDouble(1, row);
 		double maturity = input.GetDouble(2, row);
-		return BondPrice(coupon, ytm - 0.0001, maturity, frequency, face) - BondPrice(coupon, ytm, maturity, frequency, face);
+		return BondPrice(coupon, ytm - 0.0001, maturity, frequency, face) -
+		       BondPrice(coupon, ytm, maturity, frequency, face);
 	});
 }
 
 static void AccruedInterestFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<DayCount> day_count(args, 5, ParseDayCountEnum, DayCount::ACT_365F);
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
 		double face = args.ColumnCount() >= 5 ? input.GetDouble(4, row) : 100.0;
-		string day_count = args.ColumnCount() >= 6 ? input.GetString(5, row) : "ACT/365F";
-		double elapsed = YearFrac(input.GetDate(1, row), input.GetDate(0, row), day_count);
-		double period = YearFrac(input.GetDate(1, row), input.GetDate(2, row), day_count);
-		if (!(period > 0.0)) {
-			throw InvalidInputException("Invalid coupon period");
-		}
-		return face * input.GetDouble(3, row) * elapsed / period;
+		return AccruedInterest(input.GetDate(0, row), input.GetDate(1, row), input.GetDate(2, row),
+		                       input.GetDouble(3, row), face, day_count.Get(input, row));
 	});
 }
 
-static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
+enum class CashflowKind : uint8_t { NPV, IRR, MIRR, XIRR };
+
+static double MIRR(const double *cashflows, const list_entry_t &entry, double finance_rate, double reinvest_rate) {
+	if (!IsFinite(finance_rate) || !IsFinite(reinvest_rate) || finance_rate <= -1.0 || reinvest_rate <= -1.0 ||
+	    entry.length < 2) {
+		return FIN_NAN;
+	}
+	double finance_df = 1.0 / (1.0 + finance_rate);
+	double finance_discount = 1.0;
+	auto n = entry.length - 1;
+	double reinvest_growth = std::exp(double(n) * std::log1p(reinvest_rate));
+	double pv_negative = 0.0;
+	double fv_positive = 0.0;
+	for (idx_t i = 0; i < entry.length; i++) {
+		double cf = cashflows[entry.offset + i];
+		if (cf < 0.0) {
+			pv_negative += cf * finance_discount;
+		} else {
+			fv_positive += cf * reinvest_growth;
+		}
+		finance_discount *= finance_df;
+		reinvest_growth /= 1.0 + reinvest_rate;
+	}
+	if (!(pv_negative < 0.0) || !(fv_positive > 0.0)) {
+		return FIN_NAN;
+	}
+	return std::pow(-fv_positive / pv_negative, 1.0 / double(n)) - 1.0;
+}
+
+static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &result, CashflowKind kind) {
 	auto constant = AllInputsConstant(args);
 	SetResultVectorType(result, constant);
 	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
-	idx_t cf_col = name == "npv" ? 1 : 0;
-	auto cashflow_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[cf_col]);
-	auto &cashflow_child = ListVector::GetChildMutable(args.data[cf_col]);
-	auto cashflow_size = ListVector::GetListSize(args.data[cf_col]);
-	FinanceFlatten(cashflow_child, cashflow_size);
-	auto &cashflow_validity = FlatVector::Validity(cashflow_child);
-	auto cashflow_values = FlatVector::GetData<double>(cashflow_child);
+	idx_t cf_col = kind == CashflowKind::NPV ? 1 : 0;
+	DoubleListArg cashflows(args, input, cf_col);
 	const list_entry_t *date_entries = nullptr;
 	const date_t *date_values = nullptr;
 	const ValidityMask *date_validity = nullptr;
-	if (name == "xirr") {
+	vector<double> amounts;
+	vector<double> years;
+	if (kind == CashflowKind::XIRR) {
 		date_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
 		auto &date_child = ListVector::GetChildMutable(args.data[1]);
-		auto date_size = ListVector::GetListSize(args.data[1]);
-		FinanceFlatten(date_child, date_size);
+		FinanceFlatten(date_child, ListVector::GetListSize(args.data[1]));
 		date_validity = &FlatVector::Validity(date_child);
 		date_values = FlatVector::GetData<date_t>(date_child);
 	}
@@ -154,176 +175,130 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
-		try {
-			auto cf_idx = input.formats[cf_col].sel->get_index(row);
-			auto cashflow_entry = cashflow_entries[cf_idx];
-			if (cashflow_entry.length == 0) {
-				throw InvalidInputException("Cashflow list must not be empty");
-			}
-			ValidateListEntryNoNull(cashflow_validity, cashflow_entry,
-			                        "Finance cashflow functions do not accept NULL list elements");
-			if (name == "npv") {
-				output[row] = CashflowNPV(input.GetDouble(0, row), cashflow_values, cashflow_entry);
-			} else if (name == "irr") {
-				auto scale = ValidateIRRCashflows(cashflow_values, cashflow_entry);
+		auto entry = cashflows.Entry(input, row);
+		double value = FIN_NAN;
+		if (entry.length > 0 && !cashflows.HasNullElement(entry)) {
+			const double *cf = cashflows.values;
+			switch (kind) {
+			case CashflowKind::NPV:
+				value = CashflowNPV(input.GetDouble(0, row), cf, entry);
+				break;
+			case CashflowKind::IRR: {
+				auto scale = IRRCashflowScale(cf, entry);
 				double guess = args.ColumnCount() >= 2 ? input.GetDouble(1, row) : 0.1;
-				output[row] = SolveRate(
-				    [&](double rate) { return CashflowNPVEvaluation(rate, cashflow_values, cashflow_entry, scale); }, guess);
-			} else if (name == "mirr") {
-				double finance_rate = input.GetDouble(1, row);
-				double reinvest_rate = input.GetDouble(2, row);
-				if (!IsFinite(finance_rate) || !IsFinite(reinvest_rate) || finance_rate <= -1.0 || reinvest_rate <= -1.0) {
-					throw InvalidInputException("MIRR rates must be finite and greater than -1");
+				if (IsFinite(scale)) {
+					value = SolveRate([&](double rate) { return CashflowNPVEvaluation(rate, cf, entry, scale); }, guess);
 				}
-				double finance_df = 1.0 / (1.0 + finance_rate);
-				double finance_discount = 1.0;
-				double reinvest_growth = 1.0;
-				auto n = cashflow_entry.length - 1;
-				for (idx_t i = 0; i < n; i++) {
-					reinvest_growth *= 1.0 + reinvest_rate;
+				break;
+			}
+			case CashflowKind::MIRR:
+				value = MIRR(cf, entry, input.GetDouble(1, row), input.GetDouble(2, row));
+				break;
+			case CashflowKind::XIRR: {
+				auto scale = IRRCashflowScale(cf, entry);
+				auto date_entry = date_entries[input.formats[1].sel->get_index(row)];
+				bool valid = IsFinite(scale) && date_entry.length == entry.length;
+				for (idx_t i = 0; valid && i < date_entry.length; i++) {
+					auto pos = date_entry.offset + i;
+					valid = (!date_validity->CanHaveNull() || date_validity->RowIsValid(pos)) &&
+					        Date::IsFinite(date_values[pos]);
 				}
-				double pv_negative = 0.0;
-				double fv_positive = 0.0;
-				for (idx_t i = 0; i < cashflow_entry.length; i++) {
-					double cf = cashflow_values[cashflow_entry.offset + i];
-					if (cf < 0.0) {
-						pv_negative += cf * finance_discount;
-					} else {
-						fv_positive += cf * reinvest_growth;
-					}
-					finance_discount *= finance_df;
-					reinvest_growth /= 1.0 + reinvest_rate;
+				if (!valid) {
+					break;
 				}
-				if (pv_negative >= 0.0 || fv_positive <= 0.0 || n == 0) {
-					throw InvalidInputException("MIRR requires positive and negative cashflows");
-				}
-				output[row] = std::pow(-fv_positive / pv_negative, 1.0 / double(n)) - 1.0;
-			} else {
-				auto scale = ValidateIRRCashflows(cashflow_values, cashflow_entry);
-				auto date_idx = input.formats[1].sel->get_index(row);
-				auto date_entry = date_entries[date_idx];
-				ValidateListEntryNoNull(*date_validity, date_entry,
-				                        "Finance date-list functions do not accept NULL list elements");
-				if (cashflow_entry.length != date_entry.length || !Date::IsFinite(date_values[date_entry.offset])) {
-					throw InvalidInputException("XIRR requires equal cashflow/date lengths and finite dates");
-				}
-				vector<double> amounts;
-				vector<double> years;
-				amounts.reserve(cashflow_entry.length);
-				years.reserve(cashflow_entry.length);
-				for (idx_t i = 0; i < cashflow_entry.length; i++) {
-					auto date = date_values[date_entry.offset + i];
-					if (!Date::IsFinite(date)) {
-						throw InvalidInputException("XIRR requires finite dates");
-					}
-					amounts.push_back(cashflow_values[cashflow_entry.offset + i] / scale);
-					years.push_back(double(int64_t(date.days) - int64_t(date_values[date_entry.offset].days)) / 365.0);
+				amounts.clear();
+				years.clear();
+				auto first_day = int64_t(date_values[date_entry.offset].days);
+				for (idx_t i = 0; i < entry.length; i++) {
+					amounts.push_back(cf[entry.offset + i] / scale);
+					years.push_back(double(int64_t(date_values[date_entry.offset + i].days) - first_day) / 365.0);
 				}
 				double guess = args.ColumnCount() >= 3 ? input.GetDouble(2, row) : 0.1;
-				output[row] = SolveRate(
+				value = SolveRate(
 				    [&](double rate) {
 					    double log_rate = std::log1p(rate);
-					    double value = 0.0;
+					    double npv = 0.0;
 					    double derivative = 0.0;
 					    for (idx_t i = 0; i < amounts.size(); i++) {
 						    auto present_value = amounts[i] * std::exp(-years[i] * log_rate);
-						    value += present_value;
+						    npv += present_value;
 						    derivative -= years[i] * present_value;
 					    }
-					    return RateEvaluation {value, derivative / (1.0 + rate)};
+					    return RateEvaluation {npv, derivative / (1.0 + rate)};
 				    },
 				    guess);
+				break;
 			}
-			if (!std::isfinite(output[row])) {
-				SetResultNull(result, row, args.size(), constant);
 			}
-		} catch (const std::exception &) {
+		}
+		output[row] = value;
+		if (!std::isfinite(value)) {
 			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
+//! NPV of cashflows at year fractions `times` (may be negative). Default compounding is periodic annual,
+//! (1 + r)^-t, matching fin_npv(rate, cashflows) and fin_irr.
 static void NPVWithTimesFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	ConfigArg<Compounding> compounding_arg(args, 3, ParseCompoundingEnum, Compounding::PERIODIC);
 	auto constant = AllInputsConstant(args);
 	SetResultVectorType(result, constant);
 	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
-	auto cashflow_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
-	auto time_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
-	auto &cashflow_child = ListVector::GetChildMutable(args.data[0]);
-	auto &time_child = ListVector::GetChildMutable(args.data[1]);
-	auto cashflow_size = ListVector::GetListSize(args.data[0]);
-	auto time_size = ListVector::GetListSize(args.data[1]);
-	FinanceFlatten(cashflow_child, cashflow_size);
-	FinanceFlatten(time_child, time_size);
-	auto &cashflow_validity = FlatVector::Validity(cashflow_child);
-	auto &time_validity = FlatVector::Validity(time_child);
-	auto cashflow_values = FlatVector::GetData<double>(cashflow_child);
-	auto time_values = FlatVector::GetData<double>(time_child);
+	DoubleListArg cashflows(args, input, 0);
+	DoubleListArg times(args, input, 1);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
-		try {
-			auto cf_idx = input.formats[0].sel->get_index(row);
-			auto t_idx = input.formats[1].sel->get_index(row);
-			auto cashflow_entry = cashflow_entries[cf_idx];
-			auto time_entry = time_entries[t_idx];
-			if (cashflow_entry.length != time_entry.length || cashflow_entry.length == 0) {
-				throw InvalidInputException("NPV cashflow/time lists must be non-empty and have equal length");
-			}
-			ValidateListEntryNoNull(cashflow_validity, cashflow_entry, "NPV cashflow/time lists do not accept NULL elements");
-			ValidateListEntryNoNull(time_validity, time_entry, "NPV cashflow/time lists do not accept NULL elements");
-			auto rate = input.GetDouble(2, row);
-			auto compounding = args.ColumnCount() >= 4 ? ParseCompounding(input.GetString(3, row)) : "continuous";
-			double result_value = 0.0;
-			if (compounding == "continuous") {
-				for (idx_t i = 0; i < cashflow_entry.length; i++) {
-					result_value += cashflow_values[cashflow_entry.offset + i] *
-					                std::exp(-rate * time_values[time_entry.offset + i]);
+		auto compounding = compounding_arg.Get(input, row);
+		auto cashflow_entry = cashflows.Entry(input, row);
+		auto time_entry = times.Entry(input, row);
+		double rate = input.GetDouble(2, row);
+		double value = FIN_NAN;
+		if (cashflow_entry.length == time_entry.length && cashflow_entry.length > 0 &&
+		    !cashflows.HasNullElement(cashflow_entry) && !times.HasNullElement(time_entry) && IsFinite(rate)) {
+			double frequency = double(CompoundingFrequency(compounding, 1));
+			double log_growth = compounding == Compounding::CONTINUOUS ? rate
+			                    : compounding == Compounding::SIMPLE  ? 0.0
+			                    : (1.0 + rate / frequency > 0.0) ? frequency * std::log1p(rate / frequency)
+			                                                       : FIN_NAN;
+			value = 0.0;
+			for (idx_t i = 0; i < cashflow_entry.length; i++) {
+				double t = times.values[time_entry.offset + i];
+				double cf = cashflows.values[cashflow_entry.offset + i];
+				double df;
+				if (compounding == Compounding::SIMPLE) {
+					double base = 1.0 + rate * t;
+					df = base > 0.0 ? 1.0 / base : FIN_NAN;
+				} else {
+					df = std::exp(-log_growth * t);
 				}
-			} else if (compounding == "simple") {
-				for (idx_t i = 0; i < cashflow_entry.length; i++) {
-					result_value += cashflow_values[cashflow_entry.offset + i] /
-					                (1.0 + rate * time_values[time_entry.offset + i]);
-				}
-			} else {
-				for (idx_t i = 0; i < cashflow_entry.length; i++) {
-					result_value += cashflow_values[cashflow_entry.offset + i] *
-					                DiscountFactor(rate, time_values[time_entry.offset + i], compounding, 1);
-				}
+				value += cf * df;
 			}
-			output[row] = result_value;
-			if (!std::isfinite(output[row])) {
-				SetResultNull(result, row, args.size(), constant);
-			}
-		} catch (const std::exception &) {
+		}
+		output[row] = value;
+		if (!std::isfinite(value)) {
 			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
-static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result, const string &name) {
+enum class CurveKind : uint8_t { INTERPOLATE, ZERO, DISCOUNT };
+
+static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result, CurveKind kind) {
 	auto constant = AllInputsConstant(args);
 	SetResultVectorType(result, constant);
 	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
-	auto x_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
-	auto y_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
-	auto &x_child = ListVector::GetChildMutable(args.data[0]);
-	auto &y_child = ListVector::GetChildMutable(args.data[1]);
-	auto x_size = ListVector::GetListSize(args.data[0]);
-	auto y_size = ListVector::GetListSize(args.data[1]);
-	FinanceFlatten(x_child, x_size);
-	FinanceFlatten(y_child, y_size);
-	auto &x_validity = FlatVector::Validity(x_child);
-	auto &y_validity = FlatVector::Validity(y_child);
-	auto x_values = FlatVector::GetData<double>(x_child);
-	auto y_values = FlatVector::GetData<double>(y_child);
-	bool checked_x = false;
-	bool checked_y = false;
+	DoubleListArg xs(args, input, 0);
+	DoubleListArg ys(args, input, 1);
+	// Constant curves are validated once per chunk.
+	int x_state = -1;
+	int y_state = -1;
 	auto constant_x = args.data[0].GetVectorType() == VectorType::CONSTANT_VECTOR;
 	auto constant_y = args.data[1].GetVectorType() == VectorType::CONSTANT_VECTOR;
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
@@ -332,91 +307,78 @@ static void CurveListFunction(DataChunk &args, ExpressionState &, Vector &result
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
-		try {
-			auto x_idx = input.formats[0].sel->get_index(row);
-			auto y_idx = input.formats[1].sel->get_index(row);
-			if (!checked_x) {
-				auto entry = x_entries[x_idx];
-				ValidateListEntryNoNull(x_validity, entry, "Curve list functions do not accept NULL list elements");
-				for (idx_t i = 0; i < entry.length; i++) {
-					if (!IsFinite(x_values[entry.offset + i]) ||
-					    (i > 0 && !(x_values[entry.offset + i] > x_values[entry.offset + i - 1]))) {
-						throw InvalidInputException("Curve maturities must be finite and strictly increasing");
-					}
-				}
-				checked_x = constant_x;
+		auto x_entry = xs.Entry(input, row);
+		auto y_entry = ys.Entry(input, row);
+		bool x_ok;
+		if (constant_x && x_state >= 0) {
+			x_ok = x_state == 1;
+		} else {
+			x_ok = x_entry.length > 0 && !xs.HasNullElement(x_entry);
+			for (idx_t i = 0; x_ok && i < x_entry.length; i++) {
+				double value = xs.values[x_entry.offset + i];
+				x_ok = IsFinite(value) && (i == 0 || value > xs.values[x_entry.offset + i - 1]);
 			}
-			if (!checked_y) {
-				auto entry = y_entries[y_idx];
-				ValidateListEntryNoNull(y_validity, entry, "Curve list functions do not accept NULL list elements");
-				for (idx_t i = 0; i < entry.length; i++) {
-					if (!IsFinite(y_values[entry.offset + i])) {
-						throw InvalidInputException("Curve values must be finite");
-					}
-				}
-				checked_y = constant_y;
+			x_state = x_ok ? 1 : 0;
+		}
+		bool y_ok;
+		if (constant_y && y_state >= 0) {
+			y_ok = y_state == 1;
+		} else {
+			y_ok = !ys.HasNullElement(y_entry);
+			for (idx_t i = 0; y_ok && i < y_entry.length; i++) {
+				y_ok = IsFinite(ys.values[y_entry.offset + i]);
 			}
-			double target = input.GetDouble(2, row);
-			if (!IsFinite(target)) {
-				throw InvalidInputException("Curve target must be finite");
-			}
-			double interpolated = LinearInterpolateList(x_values, x_entries[x_idx], y_values, y_entries[y_idx], target);
-			output[row] = name == "discount" ? std::exp(-interpolated * target) : interpolated;
-			if (!std::isfinite(output[row])) {
-				SetResultNull(result, row, args.size(), constant);
-			}
-		} catch (const std::exception &) {
+			y_state = y_ok ? 1 : 0;
+		}
+		double target = input.GetDouble(2, row);
+		double value = FIN_NAN;
+		bool target_ok = IsFinite(target) && (kind != CurveKind::DISCOUNT || target >= 0.0);
+		if (x_ok && y_ok && target_ok && x_entry.length == y_entry.length) {
+			double interpolated = LinearInterpolateList(xs.values, x_entry, ys.values, y_entry, target);
+			value = kind == CurveKind::DISCOUNT ? std::exp(-interpolated * target) : interpolated;
+		}
+		output[row] = value;
+		if (!std::isfinite(value)) {
 			SetResultNull(result, row, args.size(), constant);
 		}
 	}
 }
 
+//! Par swap rate from payment times and discount factors: (1 - P(T_n)) / sum(tau_i P(T_i)).
 static void SwapRateFunction(DataChunk &args, ExpressionState &, Vector &result) {
 	auto constant = AllInputsConstant(args);
 	SetResultVectorType(result, constant);
 	auto output = GetResultData<double>(result, constant);
 	PreparedInputs input(args);
-	auto maturity_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[0]);
-	auto discount_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
-	auto &maturity_child = ListVector::GetChildMutable(args.data[0]);
-	auto &discount_child = ListVector::GetChildMutable(args.data[1]);
-	auto maturity_size = ListVector::GetListSize(args.data[0]);
-	auto discount_size = ListVector::GetListSize(args.data[1]);
-	FinanceFlatten(maturity_child, maturity_size);
-	FinanceFlatten(discount_child, discount_size);
-	auto &maturity_validity = FlatVector::Validity(maturity_child);
-	auto &discount_validity = FlatVector::Validity(discount_child);
-	auto maturities = FlatVector::GetData<double>(maturity_child);
-	auto discounts = FlatVector::GetData<double>(discount_child);
+	DoubleListArg maturities(args, input, 0);
+	DoubleListArg discounts(args, input, 1);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
 		if (input.HasNull(row)) {
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
-		try {
-			auto m_idx = input.formats[0].sel->get_index(row);
-			auto d_idx = input.formats[1].sel->get_index(row);
-			auto maturity_entry = maturity_entries[m_idx];
-			auto discount_entry = discount_entries[d_idx];
-			if (maturity_entry.length != discount_entry.length || discount_entry.length == 0) {
-				throw InvalidInputException("Swap-rate inputs must be non-empty and have equal length");
-			}
-			ValidateListEntryNoNull(maturity_validity, maturity_entry, "Swap-rate lists do not accept NULL list elements");
-			ValidateListEntryNoNull(discount_validity, discount_entry, "Swap-rate lists do not accept NULL list elements");
+		auto maturity_entry = maturities.Entry(input, row);
+		auto discount_entry = discounts.Entry(input, row);
+		double value = FIN_NAN;
+		if (maturity_entry.length == discount_entry.length && discount_entry.length > 0 &&
+		    !maturities.HasNullElement(maturity_entry) && !discounts.HasNullElement(discount_entry)) {
 			double annuity = 0.0;
 			double previous = 0.0;
-			for (idx_t i = 0; i < maturity_entry.length; i++) {
-				double maturity = maturities[maturity_entry.offset + i];
-				double accrual = maturity - previous;
-				annuity += accrual * discounts[discount_entry.offset + i];
+			bool valid = true;
+			for (idx_t i = 0; valid && i < maturity_entry.length; i++) {
+				double maturity = maturities.values[maturity_entry.offset + i];
+				double df = discounts.values[discount_entry.offset + i];
+				valid = IsFinite(maturity) && maturity > previous && IsFinite(df) && df > 0.0;
+				annuity += (maturity - previous) * df;
 				previous = maturity;
 			}
-			output[row] = (1.0 - discounts[discount_entry.offset + discount_entry.length - 1]) / annuity;
-			if (!std::isfinite(output[row])) {
-				SetResultNull(result, row, args.size(), constant);
+			if (valid && annuity > 0.0) {
+				value = (1.0 - discounts.values[discount_entry.offset + discount_entry.length - 1]) / annuity;
 			}
-		} catch (const std::exception &) {
+		}
+		output[row] = value;
+		if (!std::isfinite(value)) {
 			SetResultNull(result, row, args.size(), constant);
 		}
 	}

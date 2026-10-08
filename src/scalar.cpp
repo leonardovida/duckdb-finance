@@ -1,5 +1,6 @@
 #include "finance/finance_extension.hpp"
 
+#include "duckdb/common/error_data.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/types/date.hpp"
@@ -19,10 +20,12 @@
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
 #include "duckdb/common/vector_operations/unary_executor.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <limits>
