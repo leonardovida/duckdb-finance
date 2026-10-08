@@ -236,16 +236,6 @@
       "replacement": "use an external optimizer and validate the resulting weights in SQL"
     },
     {
-      "name": "fin_hrp_weights",
-      "reason": "returns equal weights without hierarchical clustering or risk allocation",
-      "replacement": "use an external HRP implementation and validate its portfolio risk in SQL"
-    },
-    {
-      "name": "fin_efficient_frontier",
-      "reason": "pairs interpolated target returns with constant equal-weight volatility instead of optimized portfolios",
-      "replacement": "solve each target-return portfolio externally and compute its risk in SQL"
-    },
-    {
       "name": "fin_bootstrap_curve",
       "reason": "treats every quoted rate as a zero rate instead of bootstrapping instrument cash flows",
       "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"

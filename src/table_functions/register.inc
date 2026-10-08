@@ -14,7 +14,7 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	                               FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	                              PortfolioOptimizeFunction, PortfolioOptimizeBind, RowsInit);
 	RegisterTableFunctionPrefixes(loader, "fin_hrp_weights", {list_list_double},
-	                              {list_varchar, FinanceLogicalType(LogicalTypeId::VARCHAR)}, PortfolioOptimizeFunction, HRPWeightsBind,
+	                              {list_varchar, FinanceLogicalType(LogicalTypeId::VARCHAR)}, HRPWeightsFunction, HRPWeightsBind,
 	                              RowsInit);
 	RegisterTableFunctionPrefixes(loader, "fin_efficient_frontier", {list_double, list_list_double},
 	                              {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::BOOLEAN)}, EfficientFrontierFunction,

@@ -1966,6 +1966,23 @@ FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06');
 SELECT assert_eq('hrp weight rows', count(*), 2::BIGINT)
 FROM fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]], ['AAA', 'BBB'], 'single');
 
+-- HRP reference: PyPortfolioOpt-style recursion with scipy.cluster.hierarchy linkage.
+SELECT
+  assert_near('hrp weight 0', list(weight ORDER BY asset_idx)[1], 0.18574376670909412, 1e-12),
+  assert_near('hrp weight 1', list(weight ORDER BY asset_idx)[2], 0.07151635870486522, 1e-12),
+  assert_near('hrp weight 2', list(weight ORDER BY asset_idx)[3], 0.08551510965720086, 1e-12),
+  assert_near('hrp weight 3', list(weight ORDER BY asset_idx)[4], 0.28606543481946095, 1e-12),
+  assert_near('hrp weight 4', list(weight ORDER BY asset_idx)[5], 0.3711593301093789, 1e-12),
+  assert_near('hrp weights sum to one', sum(weight), 1.0, 1e-12),
+  assert_eq('hrp labels', list(asset ORDER BY asset_idx), ['A', 'B', 'C', 'D', 'E'])
+FROM fin_hrp_weights(
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]],
+  ['A', 'B', 'C', 'D', 'E'], 'ward');
+
+SELECT assert_near('hrp two assets inverse variance', max(weight) FILTER (WHERE asset_idx = 0), 0.09 / 0.13, 1e-12)
+FROM fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]]);
+
 SELECT assert_eq('frontier default rows', count(*), 25::BIGINT)
 FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]]);
 
@@ -1973,6 +1990,31 @@ SELECT
   assert_eq('frontier bigint points', count(*), 3000::BIGINT),
   assert_near('frontier last target', max(expected_return), 0.2, 1e-12)
 FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 3000::BIGINT);
+
+-- Unconstrained frontier: closed form sigma^2 = (A m^2 - 2 B m + C) / D (Merton 1972, numpy reference).
+SELECT
+  assert_near('frontier short gmv return', list(expected_return ORDER BY point_idx)[1], 0.05472224591838816, 1e-12),
+  assert_near('frontier short gmv vol', list(volatility ORDER BY point_idx)[1], 0.09091231166889194, 1e-12),
+  assert_near('frontier short mid vol', list(volatility ORDER BY point_idx)[3], 0.13492180447927882, 1e-12),
+  assert_near('frontier short top vol', list(volatility ORDER BY point_idx)[5], 0.21913563849094408, 1e-12),
+  assert_near('frontier short weights sum', list_sum(list(weights ORDER BY point_idx)[4]), 1.0, 1e-12)
+FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5, true);
+
+-- Long-only frontier (scipy SLSQP reference, tolerance limited by SLSQP).
+SELECT
+  assert_near('frontier long gmv return', list(expected_return ORDER BY point_idx)[1], 0.057612461393783336, 1e-9),
+  assert_near('frontier long gmv vol', list(volatility ORDER BY point_idx)[1], 0.09167876144517254, 1e-9),
+  assert_near('frontier long mid vol', list(volatility ORDER BY point_idx)[3], 0.13821531956459598, 1e-9),
+  assert_near('frontier long upper vol', list(volatility ORDER BY point_idx)[4], 0.18116017671525664, 1e-9),
+  assert_eq('frontier long top is best asset', list(weights ORDER BY point_idx)[5], [0.0, 1.0, 0.0, 0.0, 0.0]),
+  assert_true('frontier long weights non-negative', bool_and(list_min(weights) >= 0.0)),
+  assert_eq('frontier long gmv support', list_transform(list(weights ORDER BY point_idx)[1], lambda w: w > 0),
+    [true, false, false, true, true])
+FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5);
 
 SELECT assert_eq('optimizer full overload rows', count(*), 2::BIGINT)
 FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0);

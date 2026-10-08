@@ -124,3 +124,13 @@ statement error
 SELECT * FROM fin_tick_bars('(SELECT 1; SELECT 2)', 'ts', 'p')
 ----
 fin_tick_bars: table_name must contain exactly one SELECT query
+
+statement error
+SELECT * FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.05], [0.05, 0.04]])
+----
+fin_efficient_frontier: covariance matrix must be positive definite
+
+statement error
+SELECT * FROM fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]], ['A', 'B'], 'centroid')
+----
+fin_hrp_weights: unknown linkage 'centroid'

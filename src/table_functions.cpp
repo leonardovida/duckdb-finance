@@ -28,11 +28,13 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <limits>
 
 namespace duckdb {
 namespace {
 
 #include "table_functions/common.inc"
+#include "table_functions/portfolio_math.inc"
 #include "table_functions/option_chain.inc"
 #include "table_functions/grid.inc"
 #include "table_functions/normalization.inc"
