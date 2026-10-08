@@ -42,18 +42,27 @@ struct TechParamSpec {
 static constexpr double TECH_MA_SMA = 0.0;
 static constexpr double TECH_MA_EMA = 1.0;
 
+// Constant parameters are stored here and erased from the call. When a
+// parameter is a column (for example `GROUP BY period`), the call keeps its
+// parameter arguments (`dynamic`) and each group or window partition takes its
+// parameters from its first row; they must then be constant within it.
 struct TechBindData : public FunctionData {
 	double values[TECH_MAX_PARAMS] = {0.0};
+	bool dynamic = false;
+	idx_t provided = 0;
 
 	unique_ptr<FunctionData> Copy() const override {
 		auto result = make_uniq<TechBindData>();
 		memcpy(result->values, values, sizeof(values));
+		result->dynamic = dynamic;
+		result->provided = provided;
 		return std::move(result);
 	}
 
 	bool Equals(const FunctionData &other_p) const override {
 		auto &other = other_p.Cast<TechBindData>();
-		return memcmp(values, other.values, sizeof(values)) == 0;
+		return memcmp(values, other.values, sizeof(values)) == 0 && dynamic == other.dynamic &&
+		       provided == other.provided;
 	}
 };
 
@@ -1891,20 +1900,32 @@ struct TechDriver {
 		}
 	}
 
-	static void Prepare(STATE &state, const TechBindData &bind) {
-		if (state.prepared) {
-			return;
-		}
-		memcpy(state.params, bind.values, sizeof(state.params));
+	static void Prepare(STATE &state, const double *params) {
+		memcpy(state.params, params, sizeof(state.params));
 		idx_t cursor = 0;
 		state.kernel.Init(state.params, cursor);
-		if (cursor > 0) {
-			state.buffer = new double[cursor];
+		if (cursor != state.buffer_size) {
+			delete[] state.buffer;
+			state.buffer = cursor > 0 ? new double[cursor] : nullptr;
 			state.buffer_size = cursor;
 		}
 		state.memory = OP::Memory(state.params);
 		state.kernel.Reset();
 		state.prepared = true;
+	}
+
+	// Per-row parameters (dynamic calls): the first row of a group or of a
+	// rebuilt window frame configures the state; later rows must agree.
+	static void PrepareDynamic(STATE &state, const double *params) {
+		if (state.prepared && memcmp(state.params, params, sizeof(state.params)) == 0) {
+			return;
+		}
+		if (state.prepared && state.count > 0) {
+			throw InvalidInputException("%s: parameters must be constant within a group or window partition",
+			                            OP::NAME);
+		}
+		OP::Validate(OP::NAME, params);
+		Prepare(state, params);
 	}
 
 	static void Reset(STATE &state) {
@@ -2015,16 +2036,65 @@ struct TechDriver {
 	}
 };
 
+template <class OP>
+static void TechValidateParameter(idx_t j, double number) {
+	auto &spec = OP::Params()[j];
+	if (spec.kind == TechParamKind::PERIOD) {
+		if (!std::isfinite(number) || std::trunc(number) != number || number < spec.minimum || number > spec.maximum) {
+			throw InvalidInputException("%s: %s must be an integer between %lld and %lld", OP::NAME, spec.name,
+			                            static_cast<int64_t>(spec.minimum), static_cast<int64_t>(spec.maximum));
+		}
+		return;
+	}
+	if (std::isfinite(number) && number >= spec.minimum && number <= spec.maximum &&
+	    !(spec.exclusive_minimum && number == spec.minimum)) {
+		return;
+	}
+	if (spec.maximum < 1e300) {
+		throw InvalidInputException("%s: %s must be between %g and %g", OP::NAME, spec.name, spec.minimum,
+		                            spec.maximum);
+	}
+	if (spec.minimum > -1e300) {
+		throw InvalidInputException("%s: %s must be finite and %s %g", OP::NAME, spec.name,
+		                            spec.exclusive_minimum ? "greater than" : "at least", spec.minimum);
+	}
+	throw InvalidInputException("%s: %s must be finite", OP::NAME, spec.name);
+}
+
+// Reads the numeric parameter columns of a dynamic call into `params`,
+// validating a value only when it differs from the previous row's.
+template <class OP>
+static void TechReadParameter(idx_t j, bool valid, double value, double *params) {
+	if (!valid) {
+		throw InvalidInputException("%s: %s must not be NULL", OP::NAME, OP::Params()[j].name);
+	}
+	if (value != params[j]) {
+		TechValidateParameter<OP>(j, value);
+		params[j] = value;
+	}
+}
+
+template <class OP>
+static bool TechNumericParameter(idx_t j) {
+	return OP::Params()[j].kind != TechParamKind::MA_TYPE;
+}
+
 template <class OP, class STATE_ACCESS>
 static void TechUpdateRows(Vector inputs[], AggregateInputData &aggr_input_data, idx_t count,
                            STATE_ACCESS &&state_for_row) {
+	using DRIVER = TechDriver<OP>;
 	auto &bind = aggr_input_data.bind_data->Cast<TechBindData>();
-	UnifiedVectorFormat formats[TECH_MAX_INPUTS];
-	const double *data[TECH_MAX_INPUTS];
-	for (idx_t c = 0; c < OP::INPUTS; c++) {
+	const idx_t parameters = bind.dynamic ? bind.provided : 0;
+	UnifiedVectorFormat formats[TECH_MAX_INPUTS + TECH_MAX_PARAMS];
+	const double *data[TECH_MAX_INPUTS + TECH_MAX_PARAMS];
+	for (idx_t c = 0; c < OP::INPUTS + parameters; c++) {
 		inputs[c].ToUnifiedFormat(count, formats[c]);
-		data[c] = UnifiedVectorFormat::GetData<double>(formats[c]);
+		data[c] = c < OP::INPUTS || TechNumericParameter<OP>(c - OP::INPUTS)
+		              ? UnifiedVectorFormat::GetData<double>(formats[c])
+		              : nullptr;
 	}
+	double params[TECH_MAX_PARAMS];
+	memcpy(params, bind.values, sizeof(params));
 	double row[TECH_MAX_INPUTS];
 	for (idx_t i = 0; i < count; i++) {
 		bool valid = true;
@@ -2040,8 +2110,20 @@ static void TechUpdateRows(Vector inputs[], AggregateInputData &aggr_input_data,
 			continue;
 		}
 		auto &state = state_for_row(i);
-		TechDriver<OP>::Prepare(state, bind);
-		TechDriver<OP>::Push(state, row);
+		if (parameters > 0) {
+			for (idx_t j = 0; j < parameters; j++) {
+				auto c = OP::INPUTS + j;
+				if (!data[c]) {
+					continue;
+				}
+				auto index = formats[c].sel->get_index(i);
+				TechReadParameter<OP>(j, formats[c].validity.RowIsValid(index), data[c][index], params);
+			}
+			DRIVER::PrepareDynamic(state, params);
+		} else if (!state.prepared) {
+			DRIVER::Prepare(state, bind.values);
+		}
+		DRIVER::Push(state, row);
 	}
 }
 
@@ -2081,7 +2163,13 @@ static void TechWindow(AggregateInputData &aggr_input_data, const WindowPartitio
                        data_ptr_t l_state, const SubFrames &frames, Vector &result, idx_t rid) {
 	using DRIVER = TechDriver<OP>;
 	auto &state = *reinterpret_cast<TechState<OP> *>(l_state);
-	DRIVER::Prepare(state, aggr_input_data.bind_data->Cast<TechBindData>());
+	auto &bind = aggr_input_data.bind_data->Cast<TechBindData>();
+	const idx_t parameters = bind.dynamic ? bind.provided : 0;
+	if (parameters == 0 && !state.prepared) {
+		DRIVER::Prepare(state, bind.values);
+	}
+	double params[TECH_MAX_PARAMS];
+	memcpy(params, bind.values, sizeof(params));
 	if (!state.window) {
 		state.window = new FinWindowAux();
 	}
@@ -2105,11 +2193,22 @@ static void TechWindow(AggregateInputData &aggr_input_data, const WindowPartitio
 			}
 			row[c] = FlatVector::GetData<double>(vector)[offset];
 		}
+		for (idx_t j = 0; j < parameters; j++) {
+			if (!TechNumericParameter<OP>(j)) {
+				continue;
+			}
+			auto &vector = aux.page->data[OP::INPUTS + j];
+			TechReadParameter<OP>(j, FlatVector::Validity(vector).RowIsValid(offset),
+			                      FlatVector::GetData<double>(vector)[offset], params);
+		}
 		return true;
 	};
 	auto feed = [&](idx_t begin, idx_t end) {
 		for (idx_t i = begin; i < end; i++) {
 			if (read(i)) {
+				if (parameters > 0) {
+					DRIVER::PrepareDynamic(state, params);
+				}
 				DRIVER::Push(state, row);
 			}
 		}
@@ -2177,11 +2276,22 @@ static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFuncti
 	for (idx_t j = 0; j < OP::PARAM_COUNT; j++) {
 		data->values[j] = specs[j].default_value;
 	}
-	for (idx_t j = 0; j + OP::INPUTS < arguments.size(); j++) {
+	const idx_t provided = arguments.size() - OP::INPUTS;
+	bool dynamic = false;
+	for (idx_t j = 0; j < provided; j++) {
+		if (arguments[OP::INPUTS + j]->IsFoldable()) {
+			continue;
+		}
+		if (specs[j].kind == TechParamKind::MA_TYPE) {
+			throw InvalidInputException("%s: %s must be a constant", OP::NAME, specs[j].name);
+		}
+		dynamic = true;
+	}
+	for (idx_t j = 0; j < provided; j++) {
 		auto &argument = *arguments[OP::INPUTS + j];
 		auto &spec = specs[j];
 		if (!argument.IsFoldable()) {
-			throw InvalidInputException("%s: %s must be a constant", OP::NAME, spec.name);
+			continue;
 		}
 		auto value = ExpressionExecutor::EvaluateScalar(context, argument, true);
 		if (value.IsNull()) {
@@ -2192,25 +2302,14 @@ static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFuncti
 			continue;
 		}
 		auto number = DoubleValue::Get(value.DefaultCastAs(LogicalType::DOUBLE));
-		if (spec.kind == TechParamKind::PERIOD) {
-			if (!std::isfinite(number) || std::trunc(number) != number || number < spec.minimum ||
-			    number > spec.maximum) {
-				throw InvalidInputException("%s: %s must be an integer between %lld and %lld", OP::NAME, spec.name,
-				                            static_cast<int64_t>(spec.minimum), static_cast<int64_t>(spec.maximum));
-			}
-		} else if (!std::isfinite(number) || number < spec.minimum || number > spec.maximum ||
-		           (spec.exclusive_minimum && number == spec.minimum)) {
-			if (spec.maximum < 1e300) {
-				throw InvalidInputException("%s: %s must be between %g and %g", OP::NAME, spec.name, spec.minimum,
-				                            spec.maximum);
-			}
-			if (spec.minimum > -1e300) {
-				throw InvalidInputException("%s: %s must be finite and %s %g", OP::NAME, spec.name,
-				                            spec.exclusive_minimum ? "greater than" : "at least", spec.minimum);
-			}
-			throw InvalidInputException("%s: %s must be finite", OP::NAME, spec.name);
-		}
+		TechValidateParameter<OP>(j, number);
 		data->values[j] = number;
+	}
+	if (dynamic) {
+		// Column parameters stay in the call; constant ones were validated above.
+		data->dynamic = true;
+		data->provided = provided;
+		return std::move(data);
 	}
 	OP::Validate(OP::NAME, data->values);
 	// The parameters now live in the bind data; the aggregate only sees prices.
@@ -2218,6 +2317,30 @@ static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFuncti
 		Function::EraseArgument(function, arguments, arguments.size() - 1);
 	}
 	return std::move(data);
+}
+
+// The parameters live in the bind data once erased from the call, so the bind
+// data must be serialized: DuckDB fingerprints plans by serializing them (for
+// example to share common subplans), and calls that differ only in their
+// parameters would otherwise look identical.
+static void TechSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data,
+                          const AggregateFunction &) {
+	auto &data = bind_data->Cast<TechBindData>();
+	vector<double> values(data.values, data.values + TECH_MAX_PARAMS);
+	serializer.WriteProperty(100, "values", values);
+	serializer.WriteProperty(101, "dynamic", data.dynamic);
+	serializer.WriteProperty(102, "provided", data.provided);
+}
+
+static unique_ptr<FunctionData> TechDeserialize(Deserializer &deserializer, AggregateFunction &) {
+	auto result = make_uniq<TechBindData>();
+	auto values = deserializer.ReadProperty<vector<double>>(100, "values");
+	for (idx_t i = 0; i < TECH_MAX_PARAMS && i < values.size(); i++) {
+		result->values[i] = values[i];
+	}
+	result->dynamic = deserializer.ReadProperty<bool>(101, "dynamic");
+	result->provided = deserializer.ReadProperty<idx_t>(102, "provided");
+	return std::move(result);
 }
 
 template <class OP>
@@ -2254,6 +2377,8 @@ static void RegisterTechnicalIndicator(ExtensionLoader &loader) {
 		function.SetStateDestructorCallback(AggregateFunction::StateDestroy<STATE, DRIVER>);
 		function.SetBindCallback(TechBind<OP>);
 		function.SetWindowCallback(TechWindow<OP>);
+		function.SetSerializeCallback(TechSerialize);
+		function.SetDeserializeCallback(TechDeserialize);
 		function.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
 		function.name = FinanceFunctionName(OP::NAME);
 		set.AddFunction(std::move(function));
