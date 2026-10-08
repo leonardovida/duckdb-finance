@@ -14,13 +14,122 @@ docs:
   hello_world: |
     INSTALL finance FROM community;
     LOAD finance;
+
+    -- Price and risk a one-year at-the-money call.
+    WITH option_input AS (
+      SELECT fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS spec
+    )
     SELECT
-      fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS price,
-      fin_simple_return(105.0, 100.0) AS simple_return;
+      round(fin_bsm_price(spec), 6) AS bsm_price,
+      round((fin_bsm_greeks(spec)).delta, 6) AS delta,
+      round(fin_bsm_implied_vol('call', 10.450583572185565, 100.0, 100.0, 1.0, 0.05), 6) AS implied_vol
+    FROM option_input;
+
+    -- Aggregate returns and risk directly in SQL.
+    WITH returns(r) AS (VALUES (0.01), (-0.02), (0.03), (0.004))
+    SELECT
+      round(fin_total_return(r), 6) AS total_return,
+      round(fin_volatility(r), 6) AS annualized_volatility,
+      round(fin_sharpe(r, 0.02), 6) AS sharpe
+    FROM returns;
+
+    -- Table functions are queried with FROM.
+    SELECT *
+    FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');
   extended_description: |
-    DuckDB Finance adds SQL-native quant finance analytics to DuckDB under the
-    fin_ namespace. It includes return and risk analytics, option pricing and
-    Greeks, fixed-income and cash-flow helpers, portfolio math, technical
-    indicators, and table functions.
-    The extension is deterministic and local: it does not call market-data
-    vendors or remote pricing services.
+    DuckDB Finance adds a local, deterministic `fin_*` namespace for quant
+    finance analytics inside DuckDB. It is built for quant developers, desk
+    strategists, risk engineers, and finance teams that want pricing, risk,
+    portfolio, time-series, and validation workflows close to their data without
+    sending rows to a pricing service or hiding assumptions behind an SDK.
+
+    Highlights:
+
+    - Returns, risk, and statistics: simple/log returns, total return,
+      volatility, Sharpe, Sortino, drawdowns, beta, tracking error, VaR/CVaR
+      helpers, outlier checks, weighted statistics, and data-quality summaries.
+    - Options and volatility: Black-Scholes-Merton, Black-76, Bachelier,
+      binomial, digital, Asian geometric, barrier, SABR/SVI helpers, Greeks,
+      higher-order Greeks, option specs, and implied-volatility solvers.
+    - Rates, curves, and cash flows: day counts, discount factors, forward
+      rates, PV/FV, NPV/IRR/XIRR/MIRR, annuities, bond price, yield, duration,
+      convexity, DV01, interpolation, and curve bootstrapping.
+    - Portfolio analytics: portfolio return, variance, volatility, Sharpe,
+      equal/inverse-volatility weights, efficient-frontier rows, HRP fallback
+      weights, optimizer table functions, and rebalance trade generation.
+    - Market data and technical analysis: OHLC/OHLCV helpers, technical
+      indicators, VWAP/TWAP, spread and microstructure helpers, tick bars,
+      volume bars, dollar bars, imbalance bars, and grid builders.
+    - Validation and normalization: schema templates, price/rate/return checks,
+      calendar/session helpers, and table functions that adapt source-shaped
+      OHLCV, returns, and option-chain tables into canonical finance columns.
+
+    Use scalar functions in ordinary `SELECT` expressions, aggregate helpers
+    over grouped rows, and table functions or bind-replace helpers in `FROM`.
+    Examples:
+
+    ```sql
+    -- Black-Scholes-Merton price, Greeks, and implied volatility.
+    WITH option_input AS (
+      SELECT fin_option_spec('call', 100.0, 100.0, 1.0, 0.05, 0.20) AS spec
+    )
+    SELECT
+      fin_bsm_price(spec) AS price,
+      (fin_bsm_greeks(spec)).delta AS delta,
+      fin_bsm_implied_vol('call', 10.450583572185565, 100.0, 100.0, 1.0, 0.05) AS implied_vol
+    FROM option_input;
+
+    -- Return and risk aggregates over rows.
+    WITH returns(r) AS (VALUES (0.01), (-0.02), (0.03), (0.004))
+    SELECT
+      fin_total_return(r) AS total_return,
+      fin_volatility(r) AS annualized_volatility,
+      fin_sortino(r) AS sortino
+    FROM returns;
+
+    -- Fixed-income and cash-flow helpers.
+    SELECT
+      fin_bond_price(0.05, 0.04, 5.0, 2, 100.0) AS bond_price,
+      fin_bond_duration(0.05, 0.04, 5.0, 2, 100.0, 'modified') AS modified_duration,
+      fin_xirr([-100.0, 110.0], [DATE '2026-01-01', DATE '2027-01-01']) AS xirr;
+
+    -- Portfolio and calendar table functions.
+    SELECT *
+    FROM fin_efficient_frontier([0.10, 0.20], [[0.04, 0.01], [0.01, 0.09]], 5);
+
+    SELECT *
+    FROM fin_hrp_weights([[0.04, 0.01], [0.01, 0.09]], ['AAA', 'BBB'], 'single');
+
+    SELECT *
+    FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-08');
+
+    -- Source-table helpers take table and column names as strings.
+    CREATE OR REPLACE TEMP TABLE option_inputs AS
+    SELECT * FROM (
+      VALUES ('call', 100.0, 100.0, 1.0, 0.05, 0.20, 0.0)
+    ) AS t(kind, spot, strike, ttm, rate, vol, dividend_yield);
+
+    SELECT *
+    FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol', 'dividend_yield');
+
+    CREATE OR REPLACE TEMP TABLE raw_prices AS
+    SELECT * FROM (
+      VALUES
+        (TIMESTAMP '2026-01-02 09:30:00', 100.0, 101.0, 99.5, 100.5, 1200.0),
+        (TIMESTAMP '2026-01-02 09:31:00', 100.5, 101.2, 100.1, 100.9, 1500.0)
+    ) AS t(ts, open, high, low, close, volume);
+
+    SELECT *
+    FROM fin_normalize_ohlcv('raw_prices', 'ts', 'open', 'high', 'low', 'close', 'volume');
+    ```
+
+    Input conventions are explicit and caller-owned: percentages use decimals
+    (`0.05` for 5 percent rates, `0.20` for 20 percent volatility), option time
+    to maturity is annualized unless you use the date-based helpers, and market
+    or portfolio tables remain ordinary DuckDB tables. The extension performs no
+    network calls and does not fetch market data. Some broad catalog entries are
+    pragmatic v1 aliases or approximations; they are documented and tested so
+    stronger implementations can replace them behind stable names.
+
+    Full documentation and the complete function reference:
+    https://leonardovida.github.io/duckdb-finance/

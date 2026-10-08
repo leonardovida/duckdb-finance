@@ -81,8 +81,11 @@ def experimental_functions() -> dict[str, dict[str, str]]:
 
 def registered_functions() -> set[str]:
     functions: set[str] = set()
+    generated = ROOT / "src" / "function_metadata.inc"
     for path in (ROOT / "src").rglob("*"):
         if path.suffix not in {".cpp", ".inc", ".hpp"}:
+            continue
+        if path == generated:
             continue
         functions.update(re.findall(r'"(fin_[A-Za-z0-9_]+)"', read_text(path)))
     return functions

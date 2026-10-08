@@ -13,7 +13,11 @@ def read(path: Path) -> str:
 
 def source_files() -> list[Path]:
     suffixes = {".cpp", ".inc", ".hpp"}
-    return sorted(path for path in (ROOT / "src").rglob("*") if path.suffix in suffixes)
+    generated = ROOT / "src" / "function_metadata.inc"
+    return sorted(
+        path for path in (ROOT / "src").rglob("*")
+        if path.suffix in suffixes and path != generated
+    )
 
 
 def registered_functions() -> set[str]:
