@@ -129,3 +129,15 @@ INSERT INTO gold_ticks VALUES
   ('Y', 1, TIMESTAMP '2026-01-02 09:30:00', 50.0, 1.0, 1.0),
   ('Y', 2, TIMESTAMP '2026-01-02 09:30:02', 49.0, 2.0, -2.0),
   ('Y', 3, TIMESTAMP '2026-01-02 09:30:04', 51.0, 3.0, 3.0);
+
+-- Deterministic GARCH(1,1) path (omega 1e-5, alpha 0.1, beta 0.85) driven by a
+-- chirp innovation, stored in scrambled order; t is the ordering key.
+CREATE OR REPLACE TEMP TABLE gold_garch AS
+WITH RECURSIVE g(t, h, r) AS (
+  SELECT 0, 0.0001::DOUBLE, sqrt(0.0001) * sqrt(2.0) * sin(0.3)
+  UNION ALL
+  SELECT t + 1, 0.00001 + 0.1 * r * r + 0.85 * h,
+         sqrt(0.00001 + 0.1 * r * r + 0.85 * h) * sqrt(2.0) * sin(0.77 * (t + 1) * (t + 1) + 0.3)
+  FROM g WHERE t < 299
+)
+SELECT t, r FROM g ORDER BY (t * 37) % 300;

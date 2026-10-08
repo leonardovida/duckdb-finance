@@ -1605,3 +1605,185 @@ struct NeweyWestOperation : public OrderedSeriesBase<2> {
 		StatScalarFinalizeMixin::FinalizeWith<T, STATE, NeweyWestOperation>(state, target, finalize_data);
 	}
 };
+
+// GARCH(1,1) maximum likelihood with a zero conditional mean and Gaussian
+// innovations: h_1 = sample variance (ddof 1), h_t = omega + alpha r_{t-1}^2 +
+// beta h_{t-1}, loglik = -1/2 sum(log(2 pi) + log h_t + r_t^2 / h_t). The
+// recursion matches fin_garch11_forecast. BFGS with analytic gradients over
+// omega = s2 exp(u0), alpha + beta = logistic(u1), alpha / (alpha + beta) =
+// logistic(u2), which keeps omega > 0, alpha, beta >= 0 and alpha + beta < 1;
+// the best of several deterministic starts is returned.
+struct GarchFitOperation : public OrderedSeriesBase<1> {
+	static vector<string> FieldNames() {
+		return {"omega", "alpha", "beta", "loglik", "nobs"};
+	}
+	static LogicalType ReturnType() {
+		return StatStructType<GarchFitOperation>();
+	}
+	static void ValidateParameter(idx_t, double, bool) {
+	}
+	template <class STATE>
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t) {
+		Intake(state, row);
+	}
+	static double Logistic(double u) {
+		return u >= 0.0 ? 1.0 / (1.0 + std::exp(-u)) : std::exp(u) / (1.0 + std::exp(u));
+	}
+	// Returns the mean negative log-likelihood and its gradient in u.
+	static double Objective(const vector<double> &r2, double s2, const double *u, double *grad) {
+		const double p = Logistic(u[1]);
+		const double share = Logistic(u[2]);
+		const double omega = s2 * std::exp(u[0]);
+		const double alpha = p * share;
+		const double beta = p * (1.0 - share);
+		const idx_t n = r2.size();
+		double h = s2;
+		double dh[3] = {0.0, 0.0, 0.0}; // d h / d (omega, alpha, beta)
+		double nll = 0.0;
+		double g[3] = {0.0, 0.0, 0.0};
+		for (idx_t t = 0; t < n; t++) {
+			if (t > 0) {
+				const double h_prev = h;
+				dh[0] = 1.0 + beta * dh[0];
+				dh[1] = r2[t - 1] + beta * dh[1];
+				dh[2] = h_prev + beta * dh[2];
+				h = omega + alpha * r2[t - 1] + beta * h_prev;
+			}
+			if (!(h > 0.0) || !std::isfinite(h)) {
+				return std::numeric_limits<double>::infinity();
+			}
+			nll += 0.5 * (std::log(2.0 * M_PI) + std::log(h) + r2[t] / h);
+			const double dl = 0.5 * (1.0 / h - r2[t] / (h * h));
+			for (idx_t k = 0; k < 3; k++) {
+				g[k] += dl * dh[k];
+			}
+		}
+		if (grad) {
+			const double dp = p * (1.0 - p);
+			const double ds = share * (1.0 - share);
+			grad[0] = g[0] * omega / double(n);
+			grad[1] = (g[1] * share + g[2] * (1.0 - share)) * dp / double(n);
+			grad[2] = (g[1] - g[2]) * p * ds / double(n);
+		}
+		return nll / double(n);
+	}
+	static double Minimize(const vector<double> &r2, double s2, double *u) {
+		double grad[3], next_grad[3];
+		double f = Objective(r2, s2, u, grad);
+		if (!std::isfinite(f)) {
+			return f;
+		}
+		double inv[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+		for (idx_t iteration = 0; iteration < 1000; iteration++) {
+			double gnorm = std::max(std::fabs(grad[0]), std::max(std::fabs(grad[1]), std::fabs(grad[2])));
+			if (gnorm < 1e-12) {
+				break;
+			}
+			double d[3];
+			for (idx_t i = 0; i < 3; i++) {
+				d[i] = -(inv[i][0] * grad[0] + inv[i][1] * grad[1] + inv[i][2] * grad[2]);
+			}
+			double slope = d[0] * grad[0] + d[1] * grad[1] + d[2] * grad[2];
+			if (!(slope < 0.0)) {
+				for (idx_t i = 0; i < 3; i++) {
+					for (idx_t j = 0; j < 3; j++) {
+						inv[i][j] = i == j ? 1.0 : 0.0;
+					}
+					d[i] = -grad[i];
+				}
+				slope = -(grad[0] * grad[0] + grad[1] * grad[1] + grad[2] * grad[2]);
+			}
+			double step = 1.0;
+			double candidate[3];
+			double next_f = std::numeric_limits<double>::infinity();
+			for (idx_t trial = 0; trial < 60; trial++) {
+				for (idx_t i = 0; i < 3; i++) {
+					candidate[i] = u[i] + step * d[i];
+				}
+				next_f = Objective(r2, s2, candidate, next_grad);
+				if (std::isfinite(next_f) && next_f <= f + 1e-4 * step * slope) {
+					break;
+				}
+				step *= 0.5;
+			}
+			if (!(std::isfinite(next_f) && next_f <= f + 1e-4 * step * slope)) {
+				break;
+			}
+			double s[3], y[3];
+			for (idx_t i = 0; i < 3; i++) {
+				s[i] = candidate[i] - u[i];
+				y[i] = next_grad[i] - grad[i];
+				u[i] = candidate[i];
+				grad[i] = next_grad[i];
+			}
+			const double improvement = f - next_f;
+			f = next_f;
+			const double sy = s[0] * y[0] + s[1] * y[1] + s[2] * y[2];
+			if (sy > 1e-300) {
+				// BFGS inverse-Hessian update.
+				double hy[3];
+				for (idx_t i = 0; i < 3; i++) {
+					hy[i] = inv[i][0] * y[0] + inv[i][1] * y[1] + inv[i][2] * y[2];
+				}
+				const double yhy = y[0] * hy[0] + y[1] * hy[1] + y[2] * hy[2];
+				for (idx_t i = 0; i < 3; i++) {
+					for (idx_t j = 0; j < 3; j++) {
+						inv[i][j] += ((sy + yhy) * s[i] * s[j]) / (sy * sy) - (hy[i] * s[j] + s[i] * hy[j]) / sy;
+					}
+				}
+			}
+			if (improvement <= 1e-16 * std::max(1.0, std::fabs(f)) &&
+			    std::max(std::fabs(s[0]), std::max(std::fabs(s[1]), std::fabs(s[2]))) < 1e-12) {
+				break;
+			}
+		}
+		return f;
+	}
+	template <class STATE>
+	static bool Compute(STATE &state, double *out) {
+		vector<std::array<double, 2>> rows;
+		StatSortedSeries<2>(*state.data, rows);
+		const idx_t n = rows.size();
+		if (n < 10) {
+			return false;
+		}
+		vector<double> r2(n);
+		double mean = 0.0;
+		for (idx_t t = 0; t < n; t++) {
+			r2[t] = rows[t][1] * rows[t][1];
+			mean += rows[t][1];
+		}
+		mean /= double(n);
+		double s2 = 0.0;
+		for (auto &row : rows) {
+			s2 += (row[1] - mean) * (row[1] - mean);
+		}
+		s2 /= double(n - 1);
+		if (!(s2 > 0.0) || !std::isfinite(s2)) {
+			return false;
+		}
+		static const double STARTS[][2] = {{0.05, 0.90}, {0.10, 0.80}, {0.20, 0.60}, {0.02, 0.97}, {0.30, 0.30}};
+		double best_f = std::numeric_limits<double>::infinity();
+		double best_u[3] = {0.0, 0.0, 0.0};
+		for (auto &start : STARTS) {
+			const double p = start[0] + start[1];
+			double u[3] = {std::log(1.0 - p), std::log(p / (1.0 - p)), std::log(start[0] / start[1])};
+			const double f = Minimize(r2, s2, u);
+			if (f < best_f) {
+				best_f = f;
+				std::copy(u, u + 3, best_u);
+			}
+		}
+		if (!std::isfinite(best_f)) {
+			return false;
+		}
+		const double p = Logistic(best_u[1]);
+		const double share = Logistic(best_u[2]);
+		out[0] = s2 * std::exp(best_u[0]);
+		out[1] = p * share;
+		out[2] = p * (1.0 - share);
+		out[3] = -best_f * double(n);
+		out[4] = double(n);
+		return true;
+	}
+};

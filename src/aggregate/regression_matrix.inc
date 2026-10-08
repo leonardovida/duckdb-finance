@@ -907,6 +907,7 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 	AggregateFunctionSet adf(FinanceFunctionName("finance_adf_internal"));
 	AggregateFunctionSet ljung_box(FinanceFunctionName("finance_ljung_box_internal"));
 	AggregateFunctionSet newey_west(FinanceFunctionName("finance_newey_west_internal"));
+	AggregateFunctionSet garch_fit(FinanceFunctionName("finance_garch11_fit_internal"));
 	for (auto &key : StatOrderKeyTypes()) {
 		turnover.AddFunction(StatScalarAggregate<StatHistoryState, FactorTurnoverOperation>(
 		    "finance_factor_turnover_internal", {key, BIGINT, DOUBLE, BIGINT}));
@@ -924,6 +925,8 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 		                                                                               {DOUBLE, key, BIGINT}));
 		newey_west.AddFunction(StatScalarAggregate<StatHistoryState, NeweyWestOperation>(
 		    "finance_newey_west_internal", {DOUBLE, DOUBLE, key, BIGINT}));
+		garch_fit.AddFunction(
+		    StatStructAggregate<StatHistoryState, GarchFitOperation>("finance_garch11_fit_internal", {DOUBLE, key}));
 	}
 	loader.RegisterFunction(std::move(turnover));
 	loader.RegisterFunction(std::move(autocorr));
@@ -933,4 +936,5 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 	loader.RegisterFunction(std::move(adf));
 	loader.RegisterFunction(std::move(ljung_box));
 	loader.RegisterFunction(std::move(newey_west));
+	loader.RegisterFunction(std::move(garch_fit));
 }

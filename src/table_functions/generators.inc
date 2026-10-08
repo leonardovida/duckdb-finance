@@ -261,11 +261,6 @@ struct PortfolioOptimizeBindData : public FunctionData {
 	}
 };
 
-static vector<double> EqualWeights(idx_t n) {
-	vector<double> weights(n, n == 0 ? 0.0 : 1.0 / double(n));
-	return weights;
-}
-
 static unique_ptr<FunctionData> PortfolioOptimizeBind(ClientContext &, TableFunctionBindInput &input,
                                                       vector<LogicalType> &return_types, vector<string> &names) {
 	names = {"asset_idx", "weight"};
@@ -274,8 +269,8 @@ static unique_ptr<FunctionData> PortfolioOptimizeBind(ClientContext &, TableFunc
 	auto mu = ReadDoubleListValue(RequireArgument(input, 0, function_name, "mu"), function_name, "mu");
 	auto cov = ReadDoubleMatrixValue(RequireArgument(input, 1, function_name, "cov"), function_name, "cov");
 	ValidateCovarianceShape(cov, mu.size(), function_name);
-	RequireNonNullArguments(input, 2, function_name);
-	return make_uniq<PortfolioOptimizeBindData>(EqualWeights(mu.size()));
+	auto config = ReadPortfolioQPConfig(input.inputs, 2, function_name);
+	return make_uniq<PortfolioOptimizeBindData>(PortfolioOptimizeSolve(mu, cov, config, function_name));
 }
 
 static void PortfolioOptimizeFunction(ClientContext &, TableFunctionInput &data_p, DataChunk &output) {

@@ -2468,11 +2468,79 @@ FROM fin_efficient_frontier([0.08, 0.12, 0.10, 0.06, 0.05],
   [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
    [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 5);
 
-SELECT assert_eq('optimizer full overload rows', count(*), 2::BIGINT)
+-- Bounded QP optimizer. References: exact KKT solves on the optimal active set
+-- (numpy), cross-checked against scipy SLSQP.
+SELECT
+  assert_eq('optimizer full overload rows', count(*), 2::BIGINT),
+  assert_near('optimizer 2 asset tangency', max(weight) FILTER (WHERE asset_idx = 0), 0.5, 1e-12)
 FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.0, true, 0.0, 1.0, 0.12, 0.2, 1.0);
 
-SELECT assert_eq('optimizer table rows', count(*), 2::BIGINT)
-FROM fin_portfolio_optimize_table('gold_current_weights', 'asset', 'weight', 'weight');
+SELECT
+  assert_near('optimizer min variance w0', list(weight ORDER BY asset_idx)[1], 0.14113065664025784, 1e-12),
+  assert_eq('optimizer min variance excluded', list(weight ORDER BY asset_idx)[2:3], [0.0, 0.0]),
+  assert_near('optimizer min variance w3', list(weight ORDER BY asset_idx)[4], 0.33785416946421376, 1e-12),
+  assert_near('optimizer min variance w4', list(weight ORDER BY asset_idx)[5], 0.5210151738955284, 1e-12)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]]);
+
+-- Unbounded tangency portfolio equals Sigma^-1 (mu - rf) normalized.
+SELECT
+  assert_near('optimizer tangency w0', list(weight ORDER BY asset_idx)[1], 0.25946089402163214, 1e-12),
+  assert_near('optimizer tangency w4', list(weight ORDER BY asset_idx)[5], 0.20135885408474086, 1e-12)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_sharpe', 0.02, false);
+
+SELECT
+  assert_eq('optimizer capped sharpe cap', list(weight ORDER BY asset_idx)[1], 0.25),
+  assert_near('optimizer capped sharpe w1', list(weight ORDER BY asset_idx)[2], 0.17355952868695226, 1e-12),
+  assert_near('optimizer capped sharpe w3', list(weight ORDER BY asset_idx)[4], 0.20290156573354723, 1e-12),
+  assert_near('optimizer capped sharpe sum', sum(weight), 1.0, 1e-14)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_sharpe', 0.02, true, NULL, 0.25);
+
+SELECT
+  assert_near('optimizer target vol w0', list(weight ORDER BY asset_idx)[1], 0.30960157447276515, 1e-11),
+  assert_near('optimizer target vol w3', list(weight ORDER BY asset_idx)[4], 0.08179736039649857, 1e-11),
+  assert_near('optimizer target vol floor', list(weight ORDER BY asset_idx)[5], 0.05, 1e-15)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'target_vol', 0.0, true, 0.05, 0.5, NULL, 0.15);
+
+SELECT
+  assert_near('optimizer target return w0', list(weight ORDER BY asset_idx)[1], 0.385131476729678, 1e-12),
+  assert_near('optimizer target return w3', list(weight ORDER BY asset_idx)[4], 0.004129099084253651, 1e-12),
+  assert_near('optimizer target return short floor', list(weight ORDER BY asset_idx)[5], -0.2, 1e-15),
+  assert_near('optimizer target return attained', sum(weight * [0.08, 0.12, 0.10, 0.06, 0.05][asset_idx + 1]), 0.11, 1e-14)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'target_return', 0.0, false, -0.2, NULL, 0.11);
+
+-- max_utility: max mu'w - risk_aversion / 2 w'Sigma w (scipy SLSQP reference).
+SELECT
+  assert_near('optimizer utility w0', list(weight ORDER BY asset_idx)[1], 0.30445442408957096, 1e-7),
+  assert_near('optimizer utility w4', list(weight ORDER BY asset_idx)[5], 0.05523801334225375, 1e-7)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10, 0.06, 0.05],
+  [[0.040, 0.006, 0.010, 0.002, 0.004], [0.006, 0.090, 0.012, 0.020, 0.003], [0.010, 0.012, 0.0625, 0.005, 0.015],
+   [0.002, 0.020, 0.005, 0.0225, 0.001], [0.004, 0.003, 0.015, 0.001, 0.0144]], 'max_utility', 0.0, true, NULL, 0.6, NULL, NULL, 3.0);
+
+-- Table optimizer: sample means and pairwise covariance of the return history
+-- (pandas mean/cov, scipy SLSQP reference); asset keeps its source type.
+SELECT
+  assert_eq('optimizer table assets', list(asset ORDER BY asset_idx), ['A', 'B', 'C', 'D']),
+  assert_near('optimizer table sharpe w0', list(weight ORDER BY asset_idx)[1], 0.1594705003533707, 1e-7),
+  assert_near('optimizer table sharpe w3', list(weight ORDER BY asset_idx)[4], 0.2724011546600638, 1e-7)
+FROM fin_portfolio_optimize_table('(SELECT i // 4 AS d, chr(65 + (i % 4)::INTEGER) AS a, x / 10 + 0.01 * (i % 4) AS r FROM gold_stats)',
+  'a', 'd', 'r', 'max_sharpe', 0.0, true, NULL, 0.6);
+
+SELECT
+  assert_eq('optimizer table integer asset', typeof(any_value(asset)), 'BIGINT'),
+  assert_near('optimizer table min variance w0', list(weight ORDER BY asset_idx)[1], 0.20390342313284646, 1e-7),
+  assert_near('optimizer table min variance w2', list(weight ORDER BY asset_idx)[3], 0.2657306503042067, 1e-7)
+FROM fin_portfolio_optimize_table('(SELECT i // 4 AS d, i % 4 AS a, x / 10 + 0.01 * (i % 4) AS r FROM gold_stats)',
+  'a', 'd', 'r');
 
 SELECT assert_eq('factor report rows', count(*), 1::BIGINT)
 FROM fin_factor_report('gold_returns', 'd', 'asset', 'factor', 'forward_return', 2);
@@ -2490,21 +2558,74 @@ SELECT
   assert_eq('factor report observations', n_obs, 12::BIGINT)
 FROM fin_factor_report('gold_factor_panel', 'd', 'asset', 'factor', 'fwd', 2::BIGINT);
 
-SELECT assert_eq('fama macbeth rows', count(*), 5::BIGINT)
-FROM fin_fama_macbeth('gold_returns', 'd', 'asset', 'forward_return', ['factor'], 1);
+-- Fama-MacBeth: per-date OLS, then the time-series mean of each coefficient
+-- (numpy/statsmodels reference; Newey-West = OLS on a constant with
+-- cov_type='HAC', maxlags=L, use_correction=False).
+SELECT
+  assert_eq('fama macbeth terms', list(term ORDER BY term = 'intercept' DESC, term), ['intercept', 'f1', 'f2']),
+  assert_near('fama macbeth intercept', max(estimate) FILTER (WHERE term = 'intercept'), 0.4919074928170733, 1e-12),
+  assert_near('fama macbeth f1', max(estimate) FILTER (WHERE term = 'f1'), 1.1979860539704417, 1e-12),
+  assert_near('fama macbeth f2', max(estimate) FILTER (WHERE term = 'f2'), -0.6859207392729733, 1e-12),
+  assert_near('fama macbeth classic se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.017695044165216837, 1e-12),
+  assert_near('fama macbeth classic se f2', max(stderr) FILTER (WHERE term = 'f2'), 0.03212088857842378, 1e-12),
+  assert_eq('fama macbeth periods', min(n_periods), 8::BIGINT)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2']);
+
+SELECT
+  assert_near('fama macbeth nw2 se intercept', max(stderr) FILTER (WHERE term = 'intercept'), 0.0156725138345265, 1e-12),
+  assert_near('fama macbeth nw2 se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.009448102636082955, 1e-12),
+  assert_near('fama macbeth nw2 tstat f2', max(tstat) FILTER (WHERE term = 'f2'),
+    -0.6859207392729733 / 0.014347694072117443, 1e-9)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2'], 2);
+
+SELECT assert_near('fama macbeth nw0 se f1', max(stderr) FILTER (WHERE term = 'f1'), 0.016552198177518674, 1e-12)
+FROM fin_fama_macbeth('(SELECT i // 8 AS d, i % 8 AS a, oy, f1, f2 FROM gold_stats)', 'd', 'a', 'oy', ['f1', 'f2'], 0);
 
 -- Grouping uses the date argument even when the source also has a column named date.
 SELECT
-  assert_eq('fama macbeth groups by date argument', count(*), 3::BIGINT),
-  assert_near('fama macbeth slope date 1', max(beta) FILTER (WHERE date = 1), 0.011, 1e-12)
+  assert_eq('fama macbeth groups by date argument', max(n_periods), 3::BIGINT),
+  assert_near('fama macbeth slope mean', max(estimate) FILTER (WHERE term = 'factor'),
+    (0.011000000000000005 + 0.016999999999999998 + 0.008888888888888887) / 3, 1e-12)
 FROM fin_fama_macbeth('(SELECT d, DATE ''2000-01-01'' AS date, asset, factor, fwd FROM gold_factor_panel)',
   'd', 'asset', 'fwd', ['factor']);
 
+-- GARCH(1,1) MLE on a simulated path stored out of order (scipy Nelder-Mead
+-- reference on the same likelihood, h_1 = sample variance).
 SELECT
   assert_eq('garch fit rows', count(*), 1::BIGINT),
-  assert_eq('garch fit omega type', typeof(any_value(omega)), 'DOUBLE'),
-  assert_eq('garch fit beta type', typeof(any_value(beta)), 'DOUBLE')
-FROM fin_garch_fit('gold_returns', 'r', 1, 1, 'normal');
+  assert_near('garch fit loglik', any_value(loglik), 857.213331159131, 1e-8),
+  assert_near('garch fit omega', any_value(omega), 9.667622579178341e-06, 1e-10),
+  assert_near('garch fit alpha', any_value(alpha), 0.11024234033021169, 1e-6),
+  assert_near('garch fit beta', any_value(beta), 0.8428890079171752, 1e-6),
+  assert_near('garch fit unconditional variance', any_value(unconditional_variance),
+    any_value(omega) / (1 - any_value(alpha) - any_value(beta)), 1e-15),
+  assert_eq('garch fit nobs', any_value(nobs), 300::BIGINT)
+FROM fin_garch_fit('gold_garch', 'r', 't', 1, 1, 'normal');
+
+-- Table-function estimators do not depend on threads or row order.
+CREATE OR REPLACE MACRO sp_tf_metrics() AS TABLE
+  SELECT 'garch' AS k, alpha AS v FROM fin_garch_fit('(SELECT ts, x / 10 AS r FROM sp_order_input WHERE g = 3)', 'r', 'ts')
+  UNION ALL
+  SELECT term, stderr FROM fin_fama_macbeth('(SELECT ts // 10 AS d, g AS a, y, x FROM sp_order_input)', 'd', 'a', 'y', ['x'], 2)
+  UNION ALL
+  SELECT asset::VARCHAR, weight FROM fin_portfolio_optimize_table(
+    '(SELECT ts AS d, g AS a, x / 100 + 0.001 * (g % 7) AS r FROM sp_order_input WHERE g < 10)', 'a', 'd', 'r', 'max_sharpe');
+SET threads = 1;
+CREATE OR REPLACE TEMP TABLE sp_tf_one AS SELECT * FROM sp_tf_metrics();
+SET threads = 8;
+CREATE OR REPLACE TEMP TABLE sp_tf_eight AS SELECT * FROM sp_tf_metrics();
+RESET threads;
+SELECT
+  assert_eq('table estimators populated', count(*) FILTER (WHERE a.v IS NOT NULL), 13::BIGINT),
+  assert_true('table estimators are thread invariant', max(abs(a.v - b.v)) <= 1e-12)
+FROM sp_tf_one a JOIN sp_tf_eight b USING (k);
+
+SELECT assert_true('garch fit too short is null', omega IS NULL AND loglik IS NULL)
+FROM fin_garch_fit('(SELECT t, r FROM gold_garch WHERE t < 9)', 'r', 't');
+
+-- Fitted parameters plug into fin_garch11_forecast with the same recursion.
+SELECT assert_true('garch fit feeds forecast', fin_garch11_forecast(g.r, f.omega, f.alpha, f.beta ORDER BY g.t) > 0)
+FROM gold_garch g, fin_garch_fit('gold_garch', 'r', 't') f;
 
 SELECT assert_eq('normalize returns rows', count(*), 5::BIGINT)
 FROM fin_normalize_returns('gold_returns', 'd', 'asset', 'r');

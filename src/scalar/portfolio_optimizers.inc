@@ -588,6 +588,54 @@ static void PortfolioWeightsFunction(DataChunk &args, ExpressionState &, Vector 
 	writer.Finish();
 }
 
+// finance_portfolio_optimize_internal(mu, cov, objective, risk_free, long_only, min_weight, max_weight,
+// target_return, target_vol, risk_aversion) behind fin_portfolio_optimize_table. It runs once per
+// query, so it reads arguments as Values.
+static void PortfolioOptimizeScalarFunction(DataChunk &args, ExpressionState &, Vector &result) {
+	const string function_name = "fin_portfolio_optimize_table";
+	const auto count = args.size();
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+	for (idx_t row = 0; row < count; row++) {
+		auto mu_value = args.GetValue(0, row);
+		auto cov_value = args.GetValue(1, row);
+		bool ok = !mu_value.IsNull() && !cov_value.IsNull();
+		vector<double> mu;
+		vector<vector<double>> cov;
+		if (ok) {
+			for (auto &child : ListValue::GetChildren(mu_value)) {
+				ok = ok && !child.IsNull();
+				mu.push_back(ok ? child.GetValue<double>() : 0.0);
+			}
+			for (auto &row_value : ListValue::GetChildren(cov_value)) {
+				ok = ok && !row_value.IsNull();
+				vector<double> cov_row;
+				if (ok) {
+					for (auto &child : ListValue::GetChildren(row_value)) {
+						ok = ok && !child.IsNull();
+						cov_row.push_back(ok ? child.GetValue<double>() : 0.0);
+					}
+				}
+				cov.push_back(std::move(cov_row));
+			}
+		}
+		if (!ok) {
+			FlatVector::SetNull(result, row, true);
+			continue;
+		}
+		vector<Value> config_inputs;
+		for (idx_t col = 2; col < args.ColumnCount(); col++) {
+			config_inputs.push_back(args.GetValue(col, row));
+		}
+		auto config = ReadPortfolioQPConfig(config_inputs, 0, function_name);
+		auto weights = PortfolioOptimizeSolve(mu, cov, config, function_name);
+		vector<Value> children;
+		for (auto w : weights) {
+			children.push_back(Value::DOUBLE(w));
+		}
+		result.SetValue(row, Value::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE), std::move(children)));
+	}
+}
+
 static void RegisterPortfolioOptimizerScalars(ExtensionLoader &loader) {
 	const auto DOUBLE = FinanceLogicalType(LogicalTypeId::DOUBLE);
 	const auto BOOLEAN = FinanceLogicalType(LogicalTypeId::BOOLEAN);
@@ -608,4 +656,8 @@ static void RegisterPortfolioOptimizerScalars(ExtensionLoader &loader) {
 	add("finance_black_litterman_internal",
 	    {vector_type, matrix_type, matrix_type, vector_type, DOUBLE, matrix_type, DOUBLE},
 	    PortfolioWeightsFunction<PortfolioKernel::BLACK_LITTERMAN>);
+	const auto VARCHAR = FinanceLogicalType(LogicalTypeId::VARCHAR);
+	add("finance_portfolio_optimize_internal",
+	    {vector_type, matrix_type, VARCHAR, DOUBLE, BOOLEAN, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE},
+	    PortfolioOptimizeScalarFunction);
 }

@@ -86,16 +86,6 @@
       "replacement": "compute fast and slow moving averages explicitly in SQL"
     },
     {
-      "name": "fin_portfolio_optimize",
-      "reason": "returns equal weights without solving the supplied optimization objective",
-      "replacement": "use an external optimizer and validate the resulting weights in SQL"
-    },
-    {
-      "name": "fin_portfolio_optimize_table",
-      "reason": "assigns equal weights to distinct assets without using their return history",
-      "replacement": "use an external optimizer and validate the resulting weights in SQL"
-    },
-    {
       "name": "fin_bootstrap_curve",
       "reason": "treats every quoted rate as a zero rate instead of bootstrapping instrument cash flows",
       "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
@@ -104,16 +94,6 @@
       "name": "fin_curve_bootstrap",
       "reason": "alias of fin_bootstrap_curve that treats every quoted rate as a zero rate",
       "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
-    },
-    {
-      "name": "fin_garch_fit",
-      "reason": "returns fixed omega alpha and beta (only p=1, q=1, normal accepted) rather than fitting a GARCH model",
-      "replacement": "fit GARCH parameters externally before forecasting in SQL"
-    },
-    {
-      "name": "fin_fama_macbeth",
-      "reason": "runs per-date regressions on the first factor only without second-stage inference or lag corrections",
-      "replacement": "compute reviewed cross-sectional regressions and second-stage inference explicitly"
     }
   ]
 }

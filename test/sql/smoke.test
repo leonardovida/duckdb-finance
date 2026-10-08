@@ -373,3 +373,53 @@ statement error
 SELECT fin_cov_matrix(i, a, r, 1) FROM (VALUES (1, 'A', 0.1)) AS t(i, a, r)
 ----
 No function matches
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'bogus')
+----
+fin_portfolio_optimize: unknown objective 'bogus'
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'target_vol', 0, true, NULL, NULL, NULL, 0.1)
+----
+fin_portfolio_optimize: target_vol 0.1 is below the minimum attainable volatility
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'target_return', 0, true, NULL, NULL, 0.3)
+----
+fin_portfolio_optimize: target_return 0.3 is not attainable with these bounds
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'min_variance', 0, true, 0.0, 0.4)
+----
+fin_portfolio_optimize: no fully invested portfolio satisfies min_weight and max_weight
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.06], [0.06, 0.09]])
+----
+fin_portfolio_optimize: covariance must be positive definite
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.3)
+----
+fin_portfolio_optimize: no feasible portfolio has expected return above risk_free
+
+statement error
+SELECT * FROM fin_portfolio_optimize_table('(SELECT 1 AS d, 1 AS a, 0.1 AS r)', 'a', 'd', 'r', 'nope')
+----
+fin_portfolio_optimize_table: unknown objective 'nope'
+
+statement error
+SELECT * FROM fin_portfolio_optimize_table('(SELECT 1 AS d, 1 AS a, 0.1 AS r)', 'a', 'd', 'r')
+----
+fin_portfolio_optimize_table: covariance is undefined
+
+statement error
+SELECT * FROM fin_fama_macbeth('(SELECT 1 AS d, 1 AS a, 1.0 AS y, 2.0 AS x)', 'd', 'a', 'y', ['x'], -1)
+----
+fin_fama_macbeth: lags must be between 0 and 100000
+
+statement error
+SELECT * FROM fin_garch_fit('(SELECT 1 AS t, 0.1 AS r)', 'r', 't', 2)
+----
+fin_garch_fit: only p = 1 is supported
