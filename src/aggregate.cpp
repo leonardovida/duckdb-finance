@@ -23,11 +23,9 @@ namespace {
 #include "aggregate/update_helpers.inc"
 #include "aggregate/numeric_helpers.inc"
 #include "aggregate/risk_common.inc"
-#include "aggregate/ema.inc"
 #include "aggregate/sortino.inc"
 #include "aggregate/ewma.inc"
 #include "aggregate/bipower_variation.inc"
-#include "aggregate/rsi.inc"
 #include "aggregate/drawdown.inc"
 #include "aggregate/outliers.inc"
 #include "aggregate/quantile_spread.inc"
@@ -37,6 +35,7 @@ namespace {
 #include "aggregate/risk_metrics.inc"
 #include "aggregate/helpers.inc"
 #include "aggregate/value_at_key.inc"
+#include "aggregate/technical.inc"
 
 } // namespace
 

@@ -7,10 +7,6 @@ static void AddCompensated(double value, double &sum, double &correction) {
 	sum = next;
 }
 
-static double SumError(double left, double right, double sum) {
-	return std::abs(left) >= std::abs(right) ? (left - sum) + right : (right - sum) + left;
-}
-
 template <class TRANSFORM>
 static double CompensatedVectorSum(const vector<double> &values, const TRANSFORM &transform) {
 	// Independent lanes shorten the recurrence dependency chain and allow SIMD
