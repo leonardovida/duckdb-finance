@@ -1,6 +1,86 @@
 #include "finance/finance_extension.hpp"
 
+#include "duckdb/catalog/catalog.hpp"
+#include "duckdb/catalog/catalog_entry/function_entry.hpp"
+#include "duckdb/common/string_util.hpp"
+#if __has_include("duckdb/common/identifier.hpp")
+#define FINANCE_METADATA_HAS_DUCKDB_IDENTIFIER 1
+#include "duckdb/common/identifier.hpp"
+#else
+#define FINANCE_METADATA_HAS_DUCKDB_IDENTIFIER 0
+#endif
+
 namespace duckdb {
+namespace {
+
+struct FinanceFunctionMetadata {
+	const char *name;
+	const char *category;
+	const char *description;
+	const char *example;
+};
+
+#include "function_metadata.inc"
+
+// DuckDB v1.5.6 ships identifier.hpp as a 2.0 backport while catalog entry names
+// remain strings, so resolve the name type by overload instead of by header.
+static const string &FinanceNameString(const string &name) {
+	return name;
+}
+
+#if FINANCE_METADATA_HAS_DUCKDB_IDENTIFIER
+static Identifier FinanceCatalogName(const string &name) {
+	return Identifier(name);
+}
+
+static const string &FinanceNameString(const Identifier &name) {
+	return name.GetIdentifierName();
+}
+#else
+static string FinanceCatalogName(const string &name) {
+	return name;
+}
+#endif
+
+static const string &FinanceEntryName(CatalogEntry &entry) {
+	return FinanceNameString(entry.name);
+}
+
+static const FinanceFunctionMetadata *FindFinanceFunctionMetadata(const string &name) {
+	for (idx_t i = 0; FINANCE_FUNCTION_METADATA[i].name != nullptr; i++) {
+		if (name == FINANCE_FUNCTION_METADATA[i].name) {
+			return &FINANCE_FUNCTION_METADATA[i];
+		}
+	}
+	return nullptr;
+}
+
+static void ApplyFinanceFunctionMetadata(CatalogEntry &entry) {
+	auto &name = FinanceEntryName(entry);
+	if (!StringUtil::StartsWith(name, "fin_")) {
+		return;
+	}
+	auto metadata = FindFinanceFunctionMetadata(name);
+	if (!metadata) {
+		return;
+	}
+	FunctionDescription description;
+	description.description = metadata->description;
+	description.examples.push_back(metadata->example);
+	description.categories.push_back(metadata->category);
+	entry.Cast<FunctionEntry>().descriptions = {std::move(description)};
+}
+
+static void RegisterFinanceFunctionMetadata(ExtensionLoader &loader) {
+	auto &db = loader.GetDatabaseInstance();
+	auto &catalog = Catalog::GetSystemCatalog(db);
+	auto transaction = CatalogTransaction::GetSystemTransaction(db);
+	auto &schema = catalog.GetSchema(transaction, FinanceCatalogName(DEFAULT_SCHEMA));
+	for (auto type : {CatalogType::SCALAR_FUNCTION_ENTRY, CatalogType::AGGREGATE_FUNCTION_ENTRY,
+	                  CatalogType::TABLE_FUNCTION_ENTRY, CatalogType::MACRO_ENTRY}) {
+		schema.Scan(type, ApplyFinanceFunctionMetadata);
+	}
+}
 
 static void LoadInternal(ExtensionLoader &loader) {
 	loader.SetDescription("SQL-native quant finance functions for DuckDB");
@@ -8,7 +88,10 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterFinanceMacros(loader);
 	RegisterFinanceAggregates(loader);
 	RegisterFinanceTableFunctions(loader);
+	RegisterFinanceFunctionMetadata(loader);
 }
+
+} // namespace
 
 void FinanceExtension::Load(ExtensionLoader &loader) {
 	LoadInternal(loader);

@@ -249,7 +249,6 @@ that overflow return `NULL` rather than a fabricated zero variance.
 | `fin_bbands` | `fin_bbands(close, period := 20, k := 2.0)` | Compute bbands for SQL finance workflows. | STRUCT. |
 | `fin_bop` | `fin_bop(open, high, low, close)` | Compute bop for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_cci` | `fin_cci(high, low, close, period := 20, constant := 0.015)` | Compute cci for SQL finance workflows. | Aggregate or scalar SQL macro result. |
-| `fin_cdl_pattern` | `fin_cdl_pattern(open, high, low, close, pattern)` | Candlestick pattern pattern helper. | INTEGER signal. |
 | `fin_cmo` | `fin_cmo(close, period := 14)` | Compute cmo for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 | `fin_dema` | `fin_dema(x, period := 20)` | Return the arithmetic mean of supplied rows. | Experimental arithmetic-mean alias; ignores period and does not compute DEMA. |
 | `fin_donchian` | `fin_donchian(high, low, period := 20)` | Compute donchian for SQL finance workflows. | STRUCT. |

@@ -17,7 +17,7 @@ GOLD_TRACE_SQL ?= /tmp/duckdb-finance-gold.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
+.PHONY: debug release test smoke smoke-quiet gold gold-quiet perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -65,6 +65,9 @@ check-perf-tests:
 check-function-surface:
 	python3 scripts/check_function_surface.py
 
+check-function-metadata:
+	python3 scripts/generate_function_metadata.py --check
+
 check-function-usability:
 	python3 scripts/check_function_usability.py
 
@@ -79,9 +82,9 @@ check-sql-runner:
 check-aggregate-numerics: debug
 	python3 scripts/verify_aggregate_numerics.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)"
 
-check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner test check-aggregate-numerics
+check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-usability check-release-metadata check-sql-runner test check-aggregate-numerics
 
-ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-usability check-release-metadata check-sql-runner
+ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-usability check-release-metadata check-sql-runner
 
 ci-duckdb-smoke: smoke-quiet
 
