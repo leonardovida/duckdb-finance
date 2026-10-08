@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <unordered_map>
 #include <cstring>
 #include <cctype>
 #include <limits>
@@ -38,6 +39,8 @@ namespace {
 #include "aggregate/helpers.inc"
 #include "aggregate/value_at_key.inc"
 #include "aggregate/technical.inc"
+#include "aggregate/technical_volume.inc"
+#include "aggregate/market_volume.inc"
 
 } // namespace
 
