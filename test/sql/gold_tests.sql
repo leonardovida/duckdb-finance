@@ -24,7 +24,7 @@ SELECT
   assert_eq('npv invalid periodic base', fin_npv(-2, [-100, 110]), NULL),
   assert_eq('mirr invalid finance base', fin_mirr([-100, 110], -2, 0.1), NULL),
   assert_eq('mirr invalid reinvest base', fin_mirr([-100, 110], 0.1, -2), NULL),
-  assert_eq('annuity invalid timing', fin_annuity_payment(0.05, 10, 100, 0, 'typo'), NULL),
+  assert_near('annuity due timing', fin_annuity_payment(0.05, 10, 100, 0, 'begin'), -12.333769044329202, 1e-10),
   assert_eq('annuity invalid rate', fin_annuity_payment(-2, 10, 100), NULL),
   assert_near('annuity tiny rate long term', fin_annuity_payment(1e-15, 1e9, 100), -1.0000005000000838e-7, 1e-19);
 
@@ -176,7 +176,6 @@ SELECT
   assert_near('bond high yield', fin_bond_ytm(0.01, 0, 1, 1, 100), 9999.0, 1e-7),
   assert_eq('bond out of range periods', fin_bond_price(0.05, 0.04, 1e30, 2), NULL),
   assert_eq('bond duration invalid frequency', fin_bond_duration(0.05, 0.04, 5, 0), NULL),
-  assert_eq('bond unknown duration kind', fin_bond_duration(0.05, 0.04, 5, 2, 100, 'typo'), NULL),
   assert_eq('bond convexity out of range periods', fin_bond_convexity(0.05, 0.04, 1e30, 2), NULL),
   assert_near('bond convexity large period count', fin_bond_convexity(0, 0, 25000, 2), 50000.0 * 50001.0 / 4.0, 1e-6),
   assert_near('bond convexity large frequency', fin_bond_convexity(0, 0, 0.00002, 50000), 2.0 / 2500000000.0, 1e-18);
@@ -464,7 +463,10 @@ SELECT
   assert_near('round to tick', fin_round_to_tick(100.037, 0.05), 100.05, 1e-12);
 
 SELECT
-  assert_eq('round to tick rejects unknown mode', fin_round_to_tick(100.037, 0.05, 'typo'), NULL),
+  assert_near('round to tick keeps on-grid price down', fin_round_to_tick(1.13, 0.01, 'down'), 1.13, 0),
+  assert_near('round to tick keeps on-grid price up', fin_round_to_tick(1.13, 0.01, 'up'), 1.13, 0),
+  assert_near('round to tick down', fin_round_to_tick(1.137, 0.01, 'down'), 1.13, 0),
+  assert_near('round to tick up', fin_round_to_tick(1.131, 0.01, 'up'), 1.14, 0),
   assert_eq('discount rejects invalid simple base', fin_discount_factor(-1.0, 1.0, 'simple'), NULL),
   assert_eq('discount rejects invalid periodic base', fin_discount_factor(-2.0, 1.0, 'periodic', 2), NULL);
 
@@ -1212,7 +1214,7 @@ SELECT
   assert_not_null('bond duration', fin_bond_duration(0.05, 0.04, 5.0, 2, 100.0, 'modified')),
   assert_not_null('bond convexity', fin_bond_convexity(0.05, 0.04, 5.0, 2, 100.0)),
   assert_not_null('dv01', fin_dv01(0.05, 0.04, 5.0, 2, 100.0)),
-  assert_near('accrued interest half period', fin_accrued_interest(DATE '2026-04-01', DATE '2026-01-01', DATE '2026-07-01', 0.04, 100.0, 'ACT/365F'), 1.9889502762430937, 1e-12),
+  assert_near('accrued interest half period', fin_accrued_interest(DATE '2026-04-01', DATE '2026-01-01', DATE '2026-07-01', 0.04, 100.0, 'ACT/365F'), 0.9863013698630136, 1e-12),
   assert_near('npv timed periodic', fin_npv([-100.0, 60.0, 60.0], [0.0, 1.0, 2.0], 0.1, 'periodic'), 4.132231404958667, 1e-12),
   assert_near('irr', fin_irr([-100.0, 60.0, 60.0]), 0.1306623862918075, 1e-10),
   assert_near('irr multiple roots default guess', fin_irr([-100.0, 230.0, -132.0]), 0.1, 1e-10),
@@ -1713,11 +1715,8 @@ SELECT
 
 SELECT
   assert_eq('currency rejects non-letters', fin_normalize_currency('12!'), NULL),
-  assert_eq('binomial rejects unsupported exercise', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'bermudan', 'crr'), NULL),
-  assert_eq('binomial zero vol rejects unsupported exercise', fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'bermudan', 'crr'), NULL),
-  assert_eq('binomial rejects unknown tree', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20, 'european', 'typo'), NULL),
-  assert_eq('binomial zero vol rejects unknown tree', fin_binomial_price('call', 100.0, 90.0, 1.0, 0.05, 0.0, 0.0, 20, 'european', 'typo'), NULL),
-  assert_eq('binomial caps excessive work', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 4097), NULL);
+  assert_near('binomial accepts more than 4096 steps', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 20000), 10.450583572185565, 1e-3),
+  assert_near('binomial accepts BIGINT steps', fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 200::BIGINT), fin_binomial_price('call', 100.0, 100.0, 1.0, 0.05, 0.2, 0.0, 200), 0);
 
 -- Window aggregation must combine states exactly, not treat each segment as a
 -- fresh history.

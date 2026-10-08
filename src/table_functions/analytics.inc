@@ -115,7 +115,7 @@ static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFun
 static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFunctionBindInput &input) {
 	RequireInputCountBetween(input, 1, 3, "fin_calendar expects calendar, start_date, end_date");
 	auto calendar = SqlLiteral(input.inputs[0]);
-	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(input.inputs[1]) : CurrentDateLiteral();
+	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(input.inputs[1]) : CurrentDateSql(context);
 	auto end_date = input.inputs.size() >= 3 ? SqlLiteral(input.inputs[2]) : start_date;
 	auto query = StringUtil::Format(
 	    "SELECT %s::VARCHAR AS calendar, CAST(generate_series AS DATE) AS date, "
