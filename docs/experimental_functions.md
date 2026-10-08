@@ -54,7 +54,8 @@ promoted out of this page.
 | `fin_hrp_weights` | Returns equal weights without hierarchical clustering or risk allocation. | Use an external HRP implementation and validate risk in SQL. |
 | `fin_efficient_frontier` | Reports interpolated target returns with constant equal-weight volatility. | Solve target-return portfolios externally and compute each portfolio's risk in SQL. |
 | `fin_bootstrap_curve` | Treats quoted rates as zero rates without bootstrapping instrument cash flows. | Bootstrap instrument-specific discount factors externally. |
-| `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters. | Fit GARCH externally before using parameters in SQL forecasts. |
+| `fin_curve_bootstrap` | Alias of `fin_bootstrap_curve`; treats quoted rates as zero rates. | Bootstrap instrument-specific discount factors externally. |
+| `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters; only p = 1, q = 1, and `normal` are accepted. | Fit GARCH externally before using parameters in SQL forecasts. |
 | `fin_fama_macbeth` | Uses the first factor for per-date regressions, without second-stage inference or lag correction. | Compute reviewed cross-sectional fits and second-stage inference explicitly. |
 | `fin_autocorr` | Correlates values with themselves and ignores lag. | Build lagged pairs with SQL windows, then use `corr`. |
 | `fin_crosscorr` | Ignores lag and computes contemporaneous Pearson correlation. | Build lagged pairs with SQL windows, then use `corr`. |

@@ -94,3 +94,21 @@ INSERT INTO gold_covariance VALUES
   ('AAA', 'BBB', 0.01),
   ('BBB', 'AAA', 0.01),
   ('BBB', 'BBB', 0.09);
+
+CREATE OR REPLACE TEMP TABLE gold_factor_panel(d INTEGER, asset VARCHAR, factor DOUBLE, fwd DOUBLE);
+INSERT INTO gold_factor_panel VALUES
+  (1, 'A', 1.0, 0.010), (1, 'B', 2.0, 0.030), (1, 'C', 3.0, 0.020), (1, 'D', 4.0, 0.050),
+  (2, 'A', 4.0, 0.040), (2, 'B', 3.0, -0.010), (2, 'C', 2.0, 0.000), (2, 'D', 1.0, -0.020),
+  (3, 'A', 2.0, 0.015), (3, 'B', 2.0, 0.005), (3, 'C', 5.0, 0.030), (3, 'D', 1.0, -0.010);
+
+-- Two assets with an exact duplicate timestamp, for bar/grid determinism checks.
+CREATE OR REPLACE TEMP TABLE gold_ticks(sym VARCHAR, seq INTEGER, ts TIMESTAMP, price DOUBLE, volume DOUBLE, signed_volume DOUBLE);
+INSERT INTO gold_ticks VALUES
+  ('X', 1, TIMESTAMP '2026-01-02 09:30:00', 10.0, 10.0, 10.0),
+  ('X', 2, TIMESTAMP '2026-01-02 09:30:01', 12.0, 20.0, 20.0),
+  ('X', 3, TIMESTAMP '2026-01-02 09:30:01', 11.0, 5.0, -5.0),
+  ('X', 4, TIMESTAMP '2026-01-02 09:30:03', 11.5, 40.0, -40.0),
+  ('X', 5, TIMESTAMP '2026-01-02 09:30:04', 11.0, 5.0, 5.0),
+  ('Y', 1, TIMESTAMP '2026-01-02 09:30:00', 50.0, 1.0, 1.0),
+  ('Y', 2, TIMESTAMP '2026-01-02 09:30:02', 49.0, 2.0, -2.0),
+  ('Y', 3, TIMESTAMP '2026-01-02 09:30:04', 51.0, 3.0, 3.0);

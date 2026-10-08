@@ -251,8 +251,13 @@
       "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
     },
     {
+      "name": "fin_curve_bootstrap",
+      "reason": "alias of fin_bootstrap_curve that treats every quoted rate as a zero rate",
+      "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
+    },
+    {
       "name": "fin_garch_fit",
-      "reason": "returns fixed omega alpha and beta rather than fitting a GARCH model",
+      "reason": "returns fixed omega alpha and beta (only p=1, q=1, normal accepted) rather than fitting a GARCH model",
       "replacement": "fit GARCH parameters externally before forecasting in SQL"
     },
     {

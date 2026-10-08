@@ -54,3 +54,73 @@ SELECT fin_outlier_count(x, threshold ORDER BY seq)
 FROM (VALUES (1, 0.0, 1.0), (2, 'NaN'::DOUBLE, 2.0)) AS t(seq, x, threshold)
 ----
 Outlier threshold must be constant within a group
+
+statement error
+SELECT fin_rate(x, t, 'fortnight') FROM (VALUES (1.0, TIMESTAMP '2026-01-01')) AS v(x, t)
+----
+fin_rate: unknown unit 'fortnight'
+
+statement error
+SELECT * FROM fin_volume_bars('(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS p, -5.0 AS v)', 'ts', 'p', 'v', 10)
+----
+fin_volume_bars: volume must be finite and non-negative
+
+statement error
+SELECT * FROM fin_tick_bars('(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS p)', 'ts', 'p', 0)
+----
+fin_tick_bars: threshold must be positive and finite
+
+statement error
+SELECT * FROM fin_imbalance_bars('(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS p, 1.0 AS v)', 'ts', 'p', 'v', 10, 'expected')
+----
+fin_imbalance_bars: unknown method 'expected'
+
+statement error
+SELECT * FROM fin_schema_template('nonsense')
+----
+fin_schema_template: unknown schema kind 'nonsense'
+
+statement error
+SELECT * FROM fin_validate_schema('(SELECT 1 AS ts)', 'quotes')
+----
+fin_validate_schema: unknown schema kind 'quotes'
+
+statement error
+SELECT * FROM fin_factor_report('(SELECT 1 AS d, 1 AS a, 1.0 AS f, 1.0 AS r)', 'd', 'a', 'f', 'r', NULL)
+----
+fin_factor_report: buckets cannot be NULL
+
+statement error
+SELECT * FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 0)
+----
+fin_efficient_frontier: points must be between 1 and 100000
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''1y'' AS i, 1.0 AS m, 0.05 AS r)', 'i', 'm', 'r', 'bogus')
+----
+fin_bootstrap_curve: unknown compounding 'bogus'
+
+statement error
+SELECT * FROM fin_resample_grid('(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS v)', 'ts', 'v', TIMESTAMP '2026-01-01', TIMESTAMP '2026-01-02', INTERVAL '1 hour', 'last', INTERVAL '-1 minute')
+----
+fin_resample_grid: staleness must be a non-negative interval
+
+statement error
+SELECT * FROM fin_resample_grid('(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS v)', 'ts', 'v', TIMESTAMP '2026-01-01', TIMESTAMP '2026-01-02', INTERVAL '0 seconds')
+----
+fin_resample_grid: step must be a positive interval
+
+statement error
+SELECT * FROM fin_portfolio_variance_table('(SELECT ''A'' AS a, 1.0 AS w)', 'a', 'w', '(SELECT ''B'' AS i, ''B'' AS j, 0.04 AS c)', 'i', 'j', 'c')
+----
+fin_portfolio_variance_table: missing variance (diagonal covariance) for asset A
+
+statement error
+SELECT * FROM fin_rebalance_trades('(SELECT ''A'' AS asset, 0.5 AS weight UNION ALL SELECT ''A'', 0.5)', '(SELECT ''A'' AS asset, 1.0 AS weight)', '(SELECT ''A'' AS asset, 10.0 AS price)')
+----
+fin_rebalance_trades: duplicate asset A in current weights
+
+statement error
+SELECT * FROM fin_tick_bars('(SELECT 1; SELECT 2)', 'ts', 'p')
+----
+fin_tick_bars: table_name must contain exactly one SELECT query

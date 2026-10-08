@@ -2,18 +2,124 @@ static string SqlIdentifier(const string &name) {
 	return "\"" + StringUtil::Replace(name, "\"", "\"\"") + "\"";
 }
 
-static string SqlTableName(const Value &value) {
-	if (value.IsNull()) {
-		throw BinderException("Table name cannot be NULL");
-	}
-	return QualifiedName::Parse(value.GetValue<string>()).ToString();
+static string SqlStringLiteral(const string &value) {
+	return "'" + StringUtil::Replace(value, "'", "''") + "'";
 }
 
-static string SqlColumn(const Value &value) {
-	if (value.IsNull()) {
-		throw BinderException("Column name cannot be NULL");
+static const Value &RequireArgument(const TableFunctionBindInput &input, idx_t index, const string &function_name,
+                                    const string &parameter) {
+	if (index >= input.inputs.size()) {
+		throw BinderException("%s: missing %s argument", function_name, parameter);
 	}
-	return SqlIdentifier(value.GetValue<string>());
+	auto &value = input.inputs[index];
+	if (value.IsNull()) {
+		throw BinderException("%s: %s cannot be NULL", function_name, parameter);
+	}
+	return value;
+}
+
+static string RequireString(const Value &value, const string &function_name, const string &parameter) {
+	if (value.IsNull()) {
+		throw BinderException("%s: %s cannot be NULL", function_name, parameter);
+	}
+	auto result = value.ToString();
+	if (StringUtil::Replace(result, " ", "").empty()) {
+		throw BinderException("%s: %s cannot be empty", function_name, parameter);
+	}
+	return result;
+}
+
+// A table source is either a (possibly qualified) table, view, or CTE name, or a
+// parenthesized SELECT query such as '(FROM read_parquet(''trades.parquet''))'.
+static string SqlSource(const Value &value, const string &function_name, const string &parameter = "table_name") {
+	auto text = RequireString(value, function_name, parameter);
+	auto trimmed = text;
+	StringUtil::Trim(trimmed);
+	if (!trimmed.empty() && trimmed.front() == '(') {
+		if (trimmed.back() != ')') {
+			throw BinderException("%s: %s query must be wrapped in parentheses", function_name, parameter);
+		}
+		auto query = trimmed.substr(1, trimmed.size() - 2);
+		Parser parser;
+		try {
+			parser.ParseQuery(query);
+		} catch (std::exception &ex) {
+			ErrorData error(ex);
+			throw BinderException("%s: %s is not a valid SELECT query: %s", function_name, parameter,
+			                      error.RawMessage());
+		}
+		if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::SELECT_STATEMENT) {
+			throw BinderException("%s: %s must contain exactly one SELECT query", function_name, parameter);
+		}
+		// Keep the user's SQL text; the newline terminates a trailing line comment.
+		return "(" + query + "\n)";
+	}
+	return QualifiedName::Parse(text).ToString();
+}
+
+static string SqlColumn(const Value &value, const string &function_name, const string &parameter) {
+	return SqlIdentifier(RequireString(value, function_name, parameter));
+}
+
+static string SqlColumnArg(const TableFunctionBindInput &input, idx_t index, const string &function_name,
+                           const string &parameter) {
+	return SqlColumn(RequireArgument(input, index, function_name, parameter), function_name, parameter);
+}
+
+static string SqlSourceArg(const TableFunctionBindInput &input, idx_t index, const string &function_name,
+                           const string &parameter = "table_name") {
+	return SqlSource(RequireArgument(input, index, function_name, parameter), function_name, parameter);
+}
+
+static optional_ptr<const Value> NamedArgument(const TableFunctionBindInput &input, const string &name) {
+	for (auto &entry : input.named_parameters) {
+		if (StringUtil::CIEquals(entry.first, name)) {
+			return &entry.second;
+		}
+	}
+	return nullptr;
+}
+
+// Optional named column argument; returns an empty string when omitted or NULL.
+static string OptionalNamedColumn(const TableFunctionBindInput &input, const string &name,
+                                  const string &function_name) {
+	auto value = NamedArgument(input, name);
+	if (!value || value->IsNull()) {
+		return string();
+	}
+	return SqlColumn(*value, function_name, name);
+}
+
+static double RequireFiniteDouble(const Value &value, const string &function_name, const string &parameter) {
+	if (value.IsNull()) {
+		throw BinderException("%s: %s cannot be NULL", function_name, parameter);
+	}
+	Value double_value;
+	string error;
+	if (!value.DefaultTryCastAs(LogicalType::DOUBLE, double_value, &error)) {
+		throw InvalidInputException("%s: %s must be numeric: %s", function_name, parameter, error);
+	}
+	auto result = double_value.GetValue<double>();
+	if (!std::isfinite(result)) {
+		throw InvalidInputException("%s: %s must be finite", function_name, parameter);
+	}
+	return result;
+}
+
+static int64_t RequireInteger(const Value &value, const string &function_name, const string &parameter) {
+	if (value.IsNull()) {
+		throw BinderException("%s: %s cannot be NULL", function_name, parameter);
+	}
+	Value integer_value;
+	string error;
+	if (!value.DefaultTryCastAs(LogicalType::BIGINT, integer_value, &error)) {
+		throw InvalidInputException("%s: %s must be an integer: %s", function_name, parameter, error);
+	}
+	return integer_value.GetValue<int64_t>();
+}
+
+static string DoubleLiteral(double value) {
+	return "CAST(" + Value::DOUBLE(value).ToSQLString() + " AS DOUBLE)";
 }
 
 static string SqlLiteral(const Value &value) {
@@ -36,12 +142,6 @@ static string CurrentDateLiteral() {
 		throw InternalException("Failed to format current local date");
 	}
 	return "DATE '" + string(buffer) + "'";
-}
-
-static void RequireInputCountAtLeast(const TableFunctionBindInput &input, idx_t min_count, const string &message) {
-	if (input.inputs.size() < min_count) {
-		throw BinderException(message);
-	}
 }
 
 static void RequireInputCountExactly(const TableFunctionBindInput &input, idx_t expected_count, const string &message) {
@@ -69,19 +169,24 @@ static unique_ptr<TableRef> ParseSubquery(ClientContext &context, const string &
 }
 
 static void RegisterBindReplace(ExtensionLoader &loader, const string &name, vector<LogicalType> args,
-                                table_function_bind_replace_t bind_replace) {
+                                table_function_bind_replace_t bind_replace,
+                                const vector<string> &named_varchar_parameters = {}) {
 	TableFunction function(FinanceFunctionName(name), std::move(args), nullptr, nullptr);
 	function.bind_replace = bind_replace;
+	for (auto &parameter : named_varchar_parameters) {
+		function.named_parameters[parameter] = LogicalType::VARCHAR;
+	}
 	loader.RegisterFunction(std::move(function));
 }
 
 static void RegisterBindReplacePrefixes(ExtensionLoader &loader, const string &name, vector<LogicalType> required_args,
                                         const vector<LogicalType> &optional_args,
-                                        table_function_bind_replace_t bind_replace) {
+                                        table_function_bind_replace_t bind_replace,
+                                        const vector<string> &named_varchar_parameters = {}) {
 	for (idx_t optional_count = 0; optional_count <= optional_args.size(); optional_count++) {
 		auto args = required_args;
 		args.insert(args.end(), optional_args.begin(), optional_args.begin() + optional_count);
-		RegisterBindReplace(loader, name, std::move(args), bind_replace);
+		RegisterBindReplace(loader, name, std::move(args), bind_replace, named_varchar_parameters);
 	}
 }
 
@@ -100,5 +205,6 @@ static void RegisterGridFunction(ExtensionLoader &loader, const string &name, ta
 	RegisterBindReplacePrefixes(loader, name,
 	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR),
 	                             FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::INTERVAL)},
-	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::INTERVAL)}, bind_replace);
+	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::INTERVAL)}, bind_replace,
+	                            {"asset_col", "seq_col"});
 }
