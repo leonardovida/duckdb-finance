@@ -360,3 +360,113 @@ statement error
 SELECT fin_yearfrac(1, 2)
 ----
 fin_yearfrac: argument 1 must be DATE, TIMESTAMP or TIMESTAMPTZ, got INTEGER
+
+statement error
+SELECT fin_rank_corr(x, y, 'pearson') FROM (VALUES (1.0, 2.0), (2.0, 1.0)) AS t(x, y)
+----
+fin_rank_corr: unknown method 'pearson'
+
+statement error
+SELECT fin_adf(x, i, 1, 'cct') FROM (VALUES (1, 1.0)) AS t(i, x)
+----
+fin_adf: unknown regression 'cct'
+
+statement error
+SELECT fin_ljung_box(x, i, 0) FROM (VALUES (1, 1.0)) AS t(i, x)
+----
+fin_ljung_box: lags must be an integer >= 1
+
+statement error
+SELECT fin_exp_decay_avg(x, ts, INTERVAL '-1 minute') FROM (VALUES (TIMESTAMP '2026-01-01', 1.0)) AS t(ts, x)
+----
+fin_exp_decay_avg: halflife must be positive and finite
+
+statement error
+SELECT fin_money_round(1.0, 2, 'bankers')
+----
+fin_money_round: unknown mode 'bankers'
+
+statement error
+SELECT fin_cents_to_money(100, -1)
+----
+fin_cents_to_money: scale must be an integer between 0 and 9
+
+statement error
+SELECT fin_rate_spec(0.05, 'continuous', 2.7)
+----
+fin_rate_spec: frequency must be a positive integer
+
+statement error
+SELECT fin_rate_spec(0.05, 'bogus')
+----
+fin_rate_spec: unknown compounding 'bogus'
+
+statement error
+SELECT fin_portfolio_vector([0.5], ['A', 'B'])
+----
+fin_portfolio_vector: weights and labels must have the same length
+
+statement error
+SELECT fin_risk_parity_weights([[0.04, 0.0], [0.0, 0.09]], NULL, 0.0)
+----
+fin_risk_parity_weights: tol must be positive and finite
+
+statement error
+SELECT fin_black_litterman_returns([0.5, 0.5], [[0.04, 0.0], [0.0, 0.09]], [[1.0, 0.0]], [0.1], -0.05)
+----
+fin_black_litterman_returns: tau must be positive and finite
+
+statement error
+SELECT fin_cov_matrix(i, a, r, 1) FROM (VALUES (1, 'A', 0.1)) AS t(i, a, r)
+----
+No function matches
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'bogus')
+----
+fin_portfolio_optimize: unknown objective 'bogus'
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'target_vol', 0, true, NULL, NULL, NULL, 0.1)
+----
+fin_portfolio_optimize: target_vol 0.1 is below the minimum attainable volatility
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'target_return', 0, true, NULL, NULL, 0.3)
+----
+fin_portfolio_optimize: target_return 0.3 is not attainable with these bounds
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'min_variance', 0, true, 0.0, 0.4)
+----
+fin_portfolio_optimize: no fully invested portfolio satisfies min_weight and max_weight
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.06], [0.06, 0.09]])
+----
+fin_portfolio_optimize: covariance must be positive definite
+
+statement error
+SELECT * FROM fin_portfolio_optimize([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 'max_sharpe', 0.3)
+----
+fin_portfolio_optimize: no feasible portfolio has expected return above risk_free
+
+statement error
+SELECT * FROM fin_portfolio_optimize_table('(SELECT 1 AS d, 1 AS a, 0.1 AS r)', 'a', 'd', 'r', 'nope')
+----
+fin_portfolio_optimize_table: unknown objective 'nope'
+
+statement error
+SELECT * FROM fin_portfolio_optimize_table('(SELECT 1 AS d, 1 AS a, 0.1 AS r)', 'a', 'd', 'r')
+----
+fin_portfolio_optimize_table: covariance is undefined
+
+statement error
+SELECT * FROM fin_fama_macbeth('(SELECT 1 AS d, 1 AS a, 1.0 AS y, 2.0 AS x)', 'd', 'a', 'y', ['x'], -1)
+----
+fin_fama_macbeth: lags must be between 0 and 100000
+
+statement error
+SELECT * FROM fin_garch_fit('(SELECT 1 AS t, 0.1 AS r)', 'r', 't', 2)
+----
+fin_garch_fit: only p = 1 is supported

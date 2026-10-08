@@ -19,51 +19,14 @@ promoted out of this page.
 
 | Function | Why It Is Experimental | Prefer |
 |---|---|---|
-| `fin_adf` | Returns `NULL` until an Augmented Dickey-Fuller implementation is added. | Use explicit SQL regression diagnostics or keep this out of production workflows. |
-| `fin_anova_oneway` | Returns `NULL` until one-way ANOVA statistic and p-value support is added. | Use grouped DuckDB aggregates for means, variances, and counts. |
-| `fin_black_litterman_returns` | Returns input market weights until full Black-Litterman posterior support is added. | Keep Black-Litterman calculations in reviewed SQL or an external model. |
-| `fin_corr_matrix` | Returns a one-cell placeholder rather than a grouped correlation matrix. | Use pairwise DuckDB `corr()` grouped by asset pairs. |
-| `fin_cov_matrix` | Returns a one-cell variance placeholder rather than a grouped covariance matrix. | Use pairwise DuckDB `covar_samp()` grouped by asset pairs. |
-| `fin_cramers_v` | Returns `NULL` until categorical association support is added. | Build a contingency table and compute the statistic explicitly. |
-| `fin_half_life_mean_reversion` | Returns `NULL` until lagged-regression half-life support is added. | Estimate lagged regression manually and compute `-ln(2) / slope`. |
-| `fin_hurst` | Returns a fixed neutral value until a rescaled-range or variance-scaling implementation is added. | Use explicit log-log variance scaling in SQL. |
-| `fin_ks_test` | Returns `NULL` until Kolmogorov-Smirnov statistic support is added. | Compare empirical distributions with explicit SQL quantiles. |
-| `fin_linear_trend` | Explicit-axis regression is implemented, but omitted or all-NULL `x` retains the partial compatibility fallback and the macro has no implicit ordering. | Pass an explicit numeric axis and check the returned struct fields. |
-| `fin_ljung_box` | Returns `NULL` until autocorrelation test statistic support is added. | Compute lagged autocorrelations explicitly in SQL. |
-| `fin_mann_whitney_u` | Returns `NULL` until rank-sum statistic support is added. | Rank observations with DuckDB window functions and aggregate manually. |
-| `fin_max_sharpe_weights` | Returns equal weights until constrained optimizer support is added. | Use `fin_portfolio_optimize` for diagnostic table output or an external optimizer. |
-| `fin_min_variance_weights` | Returns equal weights until closed-form or constrained optimizer support is added. | Use `fin_portfolio_optimize` for diagnostic table output or an external optimizer. |
-| `fin_mutual_information` | Returns `NULL` until binned mutual-information support is added. | Bin inputs explicitly and aggregate probabilities in SQL. |
-| `fin_newey_west_tstat` | Returns `NULL` until HAC standard-error support is added. | Compute regression and HAC errors in reviewed SQL or an external stats package. |
-| `fin_ols` | Returns `NULL` model fields except intercept. | Use DuckDB `regr_*` aggregates for single-factor regressions. |
-| `fin_ols_no_intercept` | Delegates to the placeholder OLS result. | Use explicit SQL linear algebra or DuckDB `regr_*` aggregates where applicable. |
-| `fin_risk_parity_weights` | Returns equal weights until risk-budget optimizer support is added. | Use `fin_hrp_weights` for a deterministic table output or an external optimizer. |
-| `fin_theils_u` | Returns `NULL` until categorical association support is added. | Build the contingency table and entropy terms explicitly. |
-| `fin_ttest_1samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
-| `fin_ttest_2samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
-| `fin_welch_ttest` | Delegates to two-sample t-test output that does not include a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
-| `fin_portfolio_optimize` | Returns equal weights without solving the supplied objective. | Use an external optimizer and validate its weights in SQL. |
-| `fin_portfolio_optimize_table` | Assigns equal weights to distinct assets without using return history. | Use an external optimizer and validate its weights in SQL. |
 | `fin_bootstrap_curve` | Treats quoted rates as zero rates without bootstrapping instrument cash flows. | Bootstrap instrument-specific discount factors externally. |
 | `fin_curve_bootstrap` | Alias of `fin_bootstrap_curve`; treats quoted rates as zero rates. | Bootstrap instrument-specific discount factors externally. |
-| `fin_garch_fit` | Returns fixed omega, alpha, and beta rather than fitted parameters; only p = 1, q = 1, and `normal` are accepted. | Fit GARCH externally before using parameters in SQL forecasts. |
-| `fin_fama_macbeth` | Uses the first factor for per-date regressions, without second-stage inference or lag correction. | Compute reviewed cross-sectional fits and second-stage inference explicitly. |
-| `fin_autocorr` | Correlates values with themselves and ignores lag. | Build lagged pairs with SQL windows, then use `corr`. |
-| `fin_crosscorr` | Ignores lag and computes contemporaneous Pearson correlation. | Build lagged pairs with SQL windows, then use `corr`. |
-| `fin_rank_corr` | Computes Pearson correlation on raw values and ignores method. | Rank observations explicitly before correlating them. |
-| `fin_rank_ic` | Correlates raw values rather than ranks. | Rank factors and returns explicitly before correlating them. |
-| `fin_factor_ic` | Computes Pearson correlation and ignores the requested method. | Use `corr` for Pearson IC or explicitly rank pairs for rank IC. |
-| `fin_ema_halflife` | Computes an arithmetic mean, ignoring timestamps and half-life. | Compute time-dependent exponential weights explicitly. |
-| `fin_exp_decay_sum` | Sums values without applying decay. | Sum explicit time-dependent weighted values. |
-| `fin_exp_decay_avg` | Averages values without applying decay. | Compute a time-weighted mean explicitly. |
-| `fin_exp_decay_count` | Counts timestamps without applying decay. | Sum explicit time-dependent weights. |
-| `fin_exp_decay_max` | Returns an ordinary maximum without applying decay. | Define and implement the desired decay convention explicitly. |
 
 Additional technical indicators retain simplified formulas. The WMA, DEMA,
 TEMA, TRIMA, T3, KAMA, HMA, and regression-level aliases currently use arithmetic
 means. ATR averages high minus low; it has no previous-close true-range or Wilder
 smoothing. ADX/DI, CMO, MFI, TRIX, stochastic RSI, SAR, OBV, and Roll spread also
-use simplified proxies. The exponential-decay family does not apply decay.
+use simplified proxies.
 These formulas need independent model validation before production use.
 
 ## Promotion Rule
