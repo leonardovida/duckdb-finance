@@ -1,4 +1,5 @@
 void RegisterFinanceAggregates(ExtensionLoader &loader) {
+	RegisterValueAtKeyAggregates(loader);
 	AggregateFunctionSet ema_set(FinanceFunctionName("fin_ema"));
 	ema_set.AddFunction(OrderDependent(UnaryDoubleAggregate<EMAState, EMAUnaryOperation>("fin_ema")));
 	ema_set.AddFunction(OrderDependent(BinaryDoubleAggregate<EMAState, double, EMAOperation>(

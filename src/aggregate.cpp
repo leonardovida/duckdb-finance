@@ -36,6 +36,7 @@ namespace {
 #include "aggregate/iv_range.inc"
 #include "aggregate/risk_metrics.inc"
 #include "aggregate/helpers.inc"
+#include "aggregate/value_at_key.inc"
 
 } // namespace
 

@@ -20,7 +20,7 @@
     {"fin_weighted_var", "(x, w, ddof := 0) AS finance_weighted_var_internal(x::DOUBLE, w::DOUBLE, ddof::DOUBLE)"},
     {"fin_weighted_stddev", "(x, w, ddof := 0) AS sqrt(fin_weighted_var(x, w, ddof))"},
     {"fin_mad", "(x) AS CASE WHEN bool_or(NOT isfinite(x::DOUBLE)) THEN NULL ELSE mad(x::DOUBLE) END"},
-    {"fin_zscore_last", "(x, ts) AS CASE WHEN bool_or(NOT isfinite(x::DOUBLE)) THEN NULL ELSE (last(x::DOUBLE ORDER BY ts, x::DOUBLE) FILTER (WHERE x IS NOT NULL AND ts IS NOT NULL) - avg(x::DOUBLE)) / nullif(stddev_samp(x::DOUBLE), 0) END"},
+    {"fin_zscore_last", "(x, ts) AS CASE WHEN bool_or(NOT isfinite(x::DOUBLE)) THEN NULL ELSE (finance_last_by_internal(x::DOUBLE, ts) - avg(x::DOUBLE)) / nullif(stddev_samp(x::DOUBLE), 0) END"},
 
     {"fin_cum_return", "(r, method := 'simple') AS fin_total_return(r, method)"},
     {"fin_cagr", "(r, annualization := 252) AS CASE WHEN count(r) = 0 OR bool_or(NOT isfinite(r::DOUBLE) OR r < -1) THEN NULL WHEN bool_or(r = -1) THEN -1.0::DOUBLE ELSE finance_expm1_internal(fsum(finance_log1p_internal(CASE WHEN isfinite(r::DOUBLE) AND r > -1 THEN r::DOUBLE END)) * annualization::DOUBLE / count(r)) END"},

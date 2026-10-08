@@ -242,7 +242,7 @@ variance.
 | `fin_welch_ttest` | `fin_welch_ttest(x, y)` | Compute welch ttest for SQL finance workflows. | STRUCT. |
 | `fin_win_rate` | `fin_win_rate(r)` | Fraction of non-NULL observations above zero. | `DOUBLE`; SQL macro. Non-finite input makes the group `NULL`. |
 | `fin_winsorized_mean` | `fin_winsorized_mean(x, 0.05, 0.95)` | Clamp observations to the lower and upper continuous quantiles, then average them. | `DOUBLE`; positional `(x [, lower_q, upper_q])`, defaults 0.05 and 0.95; bounds must satisfy `0 <= lower_q <= upper_q <= 1`. Non-finite input makes the group `NULL`. Native aggregate: arguments are positional (`name := value` is rejected). Runs as a window function; framed values equal the grouped result over the frame rows. |
-| `fin_zscore_last` | `fin_zscore_last(x, ts)` | Z-score of the latest observation by `ts`: `(x_last - avg(x)) / stddev_samp(x)`. | `DOUBLE`; SQL macro. Ties on `ts` pick the largest `x`. 0.3.0 added the ordering argument (the order-less form used an arbitrary row). Non-finite input makes the group `NULL`. |
+| `fin_zscore_last` | `fin_zscore_last(x, ts)` | Z-score of the latest observation by `ts`: `(x_last - avg(x)) / stddev_samp(x)`. | `DOUBLE`; SQL macro. Ties on `ts` pick the largest `x`; `ts` may be an integer, floating-point, `DATE`, `TIMESTAMP` or `TIMESTAMPTZ` column. 0.3.0 added the ordering argument (the order-less form used an arbitrary row). Non-finite input makes the group `NULL`. |
 | `fin_ztest_mean` | `fin_ztest_mean(x, mu, sigma := NULL)` | Compute ztest mean for SQL finance workflows. | Aggregate or scalar SQL macro result. |
 
 ### Fixed Income, Rates, And Cash Flows
