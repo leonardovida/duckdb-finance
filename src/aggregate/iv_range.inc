@@ -5,15 +5,28 @@ struct IVRangeState {
 	double max_iv;
 	double last_iv;
 	idx_t count;
+	FinWindowAux *window;
 };
 
 static bool IsValidIVObservation(double value) {
 	return std::isfinite(value) && value >= 0.0;
 }
 
-struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
+// IV rank: (last - min) / (max - min) over the ordered observations. The last
+// observation depends on the ordering, so the aggregate is order-dependent.
+struct IVRangeOperation : public FinOperationDefaults {
+	static constexpr idx_t REQUIRED_ARGS = 1;
+	static constexpr bool ORDER_DEPENDENT = true;
+	static constexpr bool WINDOW_INCREMENTAL = true;
+
 	template <class STATE>
 	static void Initialize(STATE &state) {
+		state.window = nullptr;
+		WindowReset(state);
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
 		state.isset = false;
 		state.invalid = false;
 		state.min_iv = 0.0;
@@ -23,7 +36,8 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 	}
 
 	template <class STATE>
-	static void UpdateValue(STATE &state, double value) {
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t) {
+		auto value = row.v[0];
 		if (!IsValidIVObservation(value)) {
 			// Negative or non-finite IV makes the group's rank undefined.
 			state.invalid = true;
@@ -42,20 +56,15 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		target.invalid = target.invalid || source.invalid;
-		if (!source.isset) {
+		if (!source.isset && !source.invalid) {
 			return;
 		}
-		if (!target.isset) {
-			auto invalid = target.invalid;
-			target = source;
-			target.invalid = invalid;
-			return;
+		if (target.isset || target.invalid) {
+			FinRejectUnorderedCombine("fin_iv_rank");
 		}
-		target.min_iv = std::min(target.min_iv, source.min_iv);
-		target.max_iv = std::max(target.max_iv, source.max_iv);
-		target.last_iv = source.last_iv;
-		target.count += source.count;
+		auto window = target.window;
+		target = source;
+		target.window = window;
 	}
 
 	template <class T, class STATE>
@@ -68,8 +77,10 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 		target = rank;
 	}
 
-	static bool IgnoreNull() {
-		return true;
+	template <class STATE>
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.window;
+		state.window = nullptr;
 	}
 };
 
@@ -111,8 +122,14 @@ struct IVPercentileOperation : public FinOperationDefaults {
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		target.invalid = target.invalid || source.invalid;
-		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
+		if (source.values->empty() && !source.invalid) {
+			return;
+		}
+		if (!target.values->empty() || target.invalid) {
+			FinRejectUnorderedCombine("fin_iv_percentile");
+		}
+		target.invalid = source.invalid;
+		*target.values = *source.values;
 	}
 
 	template <class T, class STATE>

@@ -85,13 +85,27 @@ Conventions for the returns and risk functions (0.3.0):
   bipower variation) take positional arguments. DuckDB binds native arguments
   by position, so `name := value` on a constant is rejected with an error;
   macros keep named parameters. These aggregates also run as window functions
-  (`OVER (PARTITION BY .. ORDER BY .. ROWS BETWEEN ..)`); fixed-state metrics
-  use DuckDB's segment tree and history-keeping ones keep a single frame.
+  (`OVER (PARTITION BY .. ORDER BY .. ROWS BETWEEN ..)`); order-independent
+  fixed-state metrics use DuckDB's segment tree, and history-keeping and
+  order-dependent ones evaluate one frame at a time from the ordered frame rows.
 - Order-dependent aggregates need `ORDER BY` inside the call
   (`fin_max_drawdown(r ORDER BY ts)`) or a window `ORDER BY`. Order-dependent
   macros take the ordering column explicitly (`fin_calmar(r, ts)`,
   `fin_recovery_factor(r, ts)`, `fin_zscore_last(x, ts)`). Break ties in the
   ordering key: rows with equal keys have no defined relative order.
+- The order-dependent native aggregates (the drawdown family,
+  `fin_drawdown_at_risk`, `fin_conditional_drawdown_at_risk`,
+  `fin_ulcer_index`, `fin_ewma_variance`, `fin_ewma_vol`,
+  `fin_garch11_forecast`, `fin_iv_rank`, `fin_iv_percentile`,
+  `fin_stability`, `fin_bipower_variation`, `fin_yang_zhang_vol`) reject
+  unordered input like the technical indicators: when DuckDB merges partial
+  results of a call without `ORDER BY` (parallel scans, `UNION ALL` inputs) or
+  evaluates a window without `ORDER BY` over the whole partition
+  (`OVER (PARTITION BY s)`), the call fails with `rows reached the aggregate in
+  an undefined order`. An unordered call that DuckDB happens to run as a single
+  stream is not detected and uses the scan order, so always order the call. A
+  running frame (`ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) ends at
+  the grouped value, bit for bit.
 - Risk-free rates, MAR, required returns and thresholds (`fin_sharpe`,
   `fin_sortino`, `fin_downside_deviation`, `fin_upside_deviation`,
   `fin_semivariance`, `fin_omega_ratio`, `fin_hit_ratio`, `fin_alpha`,

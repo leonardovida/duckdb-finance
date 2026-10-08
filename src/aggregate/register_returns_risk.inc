@@ -1,8 +1,3 @@
-static AggregateFunction WithNamedArgumentsBind(AggregateFunction function) {
-	function.SetBindCallback(FinNamedArgumentsBind);
-	return function;
-}
-
 template <class OP, class RESULT_TYPE = double>
 static void RegisterDrawdownSet(ExtensionLoader &loader, const string &name, const LogicalType &return_type) {
 	FinRegisterSet(loader, name,
@@ -77,14 +72,14 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	                    "fin_weighted_quantile", {DOUBLE, DOUBLE, DOUBLE, VARCHAR})});
 
 	FinRegisterSet(loader, "fin_garch11_forecast",
-	               {FinAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(4)),
-	                FinAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(5)),
-	                FinAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(6))});
+	               {FinWindowAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(4)),
+	                FinWindowAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(5)),
+	                FinWindowAggregate<Garch11State, Garch11Operation>("fin_garch11_forecast", FinDoubles(6))});
 	FinRegisterSet(loader, "fin_stability",
-	               {FinAggregate<StabilityState, StabilityOperation>("fin_stability", FinDoubles(1))});
+	               {FinWindowAggregate<StabilityState, StabilityOperation>("fin_stability", FinDoubles(1))});
 	FinRegisterSet(loader, "fin_yang_zhang_vol",
-	               {FinAggregate<YangZhangState, YangZhangOperation>("fin_yang_zhang_vol", FinDoubles(4)),
-	                FinAggregate<YangZhangState, YangZhangOperation>("fin_yang_zhang_vol", FinDoubles(5))});
+	               {FinWindowAggregate<YangZhangState, YangZhangOperation>("fin_yang_zhang_vol", FinDoubles(4)),
+	                FinWindowAggregate<YangZhangState, YangZhangOperation>("fin_yang_zhang_vol", FinDoubles(5))});
 
 	// Outlier count keeps its bulk-append fast paths; windows rebuild one frame.
 	AggregateFunctionSet outlier_count_set(FinanceFunctionName("fin_outlier_count"));
@@ -146,10 +141,7 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	weighted_variance.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	loader.RegisterFunction(weighted_variance);
 
-	auto iv_rank = UnaryDoubleAggregate<IVRangeState, IVRangeOperation>("fin_iv_rank");
-	iv_rank.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
-	iv_rank.SetBindCallback(FinNamedArgumentsBind);
-	loader.RegisterFunction(iv_rank);
+	loader.RegisterFunction(FinWindowAggregate<IVRangeState, IVRangeOperation>("fin_iv_rank", FinDoubles(1)));
 	loader.RegisterFunction(
 	    FinWindowAggregate<IVPercentileState, IVPercentileOperation>("fin_iv_percentile", FinDoubles(1)));
 }

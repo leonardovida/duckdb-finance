@@ -405,7 +405,7 @@ struct BetaOperation : public FinOperationDefaults {
 // beta sigma2_t starting from sigma2_1 = initial_var (default: the sample
 // variance of the returns, ddof 1) and returns annualization * sigma2_{n+1}.
 // The recursion is affine in the seed: sigma2_{n+1} = A + B * sigma2_1, so the
-// state keeps (A, B) and ordered blocks merge as A = A_R + B_R A_L, B = B_L B_R.
+// state keeps (A, B) and applies the seed at finalize.
 struct Garch11State {
 	double affine;
 	double decay;
@@ -417,6 +417,7 @@ struct Garch11State {
 	double annualization;
 	bool parameters_set;
 	bool invalid;
+	FinWindowAux *window;
 };
 
 struct Garch11Operation : public FinOperationDefaults {
@@ -429,6 +430,12 @@ struct Garch11Operation : public FinOperationDefaults {
 
 	template <class STATE>
 	static void Initialize(STATE &state) {
+		state.window = nullptr;
+		WindowReset(state);
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
 		state.affine = 0.0;
 		state.decay = 1.0;
 		state.moments.Reset();
@@ -437,11 +444,6 @@ struct Garch11Operation : public FinOperationDefaults {
 		state.annualization = DEFAULT_ANNUALIZATION;
 		state.parameters_set = false;
 		state.invalid = false;
-	}
-
-	template <class STATE>
-	static void WindowReset(STATE &state) {
-		Initialize(state);
 	}
 
 	static void ValidateParameter(idx_t column, double value, bool valid) {
@@ -511,27 +513,18 @@ struct Garch11Operation : public FinOperationDefaults {
 		state.moments.Add(value);
 	}
 
+	// Every counted row sets parameters_set, so it marks a state that has seen rows.
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		target.invalid = target.invalid || source.invalid;
 		if (!source.parameters_set) {
 			return;
 		}
-		if (!target.parameters_set) {
-			auto invalid = target.invalid;
-			target = source;
-			target.invalid = invalid;
-			return;
+		if (target.parameters_set) {
+			FinRejectUnorderedCombine("fin_garch11_forecast");
 		}
-		if (!SameParameter(target.omega, source.omega) || !SameParameter(target.alpha, source.alpha) ||
-		    !SameParameter(target.beta, source.beta) || !SameParameter(target.initial_var, source.initial_var) ||
-		    !SameParameter(target.annualization, source.annualization)) {
-			throw InvalidInputException("fin_garch11_forecast: parameters must be constant within a group");
-		}
-		// target is the earlier block, source the later one.
-		target.affine = source.affine + source.decay * target.affine;
-		target.decay *= source.decay;
-		target.moments.Merge(source.moments);
+		auto window = target.window;
+		target = source;
+		target.window = window;
 	}
 
 	template <class T, class STATE>
@@ -558,7 +551,9 @@ struct Garch11Operation : public FinOperationDefaults {
 	}
 
 	template <class STATE>
-	static void Destroy(STATE &, AggregateInputData &) {
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.window;
+		state.window = nullptr;
 	}
 };
 
@@ -583,6 +578,7 @@ struct YangZhangState {
 	FinSum rogers_satchell;
 	double annualization;
 	bool annualization_set;
+	FinWindowAux *window;
 };
 
 struct YangZhangOperation : public FinOperationDefaults {
@@ -592,6 +588,12 @@ struct YangZhangOperation : public FinOperationDefaults {
 
 	template <class STATE>
 	static void Initialize(STATE &state) {
+		state.window = nullptr;
+		WindowReset(state);
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
 		state.has_first = false;
 		state.invalid = false;
 		state.first_open = state.first_c = state.first_rs = state.last_close = 0.0;
@@ -600,11 +602,6 @@ struct YangZhangOperation : public FinOperationDefaults {
 		state.rogers_satchell.Reset();
 		state.annualization = DEFAULT_ANNUALIZATION;
 		state.annualization_set = false;
-	}
-
-	template <class STATE>
-	static void WindowReset(STATE &state) {
-		Initialize(state);
 	}
 
 	static void ValidateParameter(idx_t, double value, bool valid) {
@@ -648,33 +645,22 @@ struct YangZhangOperation : public FinOperationDefaults {
 		state.last_close = close;
 	}
 
+	template <class STATE>
+	static bool HasRows(const STATE &state) {
+		return state.has_first || state.invalid || state.annualization_set;
+	}
+
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		target.invalid = target.invalid || source.invalid;
-		if (source.annualization_set) {
-			if (target.annualization_set && target.annualization != source.annualization) {
-				throw InvalidInputException("fin_yang_zhang_vol: annualization must be constant within a group");
-			}
-			target.annualization = source.annualization;
-			target.annualization_set = true;
-		}
-		if (!source.has_first) {
+		if (!HasRows(source)) {
 			return;
 		}
-		if (!target.has_first) {
-			auto invalid = target.invalid;
-			target = source;
-			target.invalid = invalid;
-			return;
+		if (HasRows(target)) {
+			FinRejectUnorderedCombine("fin_yang_zhang_vol");
 		}
-		// target precedes source: the source's first bar now has a previous close.
-		target.overnight.Add(std::log(source.first_open / target.last_close));
-		target.open_close.Add(source.first_c);
-		target.rogers_satchell.Add(source.first_rs);
-		target.overnight.Merge(source.overnight);
-		target.open_close.Merge(source.open_close);
-		target.rogers_satchell.Merge(source.rogers_satchell);
-		target.last_close = source.last_close;
+		auto window = target.window;
+		target = source;
+		target.window = window;
 	}
 
 	template <class T, class STATE>
@@ -701,7 +687,9 @@ struct YangZhangOperation : public FinOperationDefaults {
 	}
 
 	template <class STATE>
-	static void Destroy(STATE &, AggregateInputData &) {
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.window;
+		state.window = nullptr;
 	}
 };
 
@@ -709,9 +697,8 @@ struct YangZhangOperation : public FinOperationDefaults {
 // Stability of returns (empyrical stability_of_timeseries)
 //===--------------------------------------------------------------------===//
 // R^2 of the OLS fit of cumulative log returns y_t = sum_{s<=t} log1p(r_s) on
-// the observation index t = 1..n. Ordered blocks merge exactly: the later block
-// shifts its index mean by n_left and its level mean by the left block's total
-// log return, which leaves its centered co-moments unchanged.
+// the observation index t = 1..n, accumulated with streaming co-moments over
+// the ordered rows.
 struct StabilityState {
 	double count;
 	double mean_t;
@@ -721,6 +708,7 @@ struct StabilityState {
 	double cty;
 	FinSum total;
 	bool invalid;
+	FinWindowAux *window;
 };
 
 struct StabilityOperation : public FinOperationDefaults {
@@ -730,14 +718,15 @@ struct StabilityOperation : public FinOperationDefaults {
 
 	template <class STATE>
 	static void Initialize(STATE &state) {
-		state.count = state.mean_t = state.mean_y = state.m2t = state.m2y = state.cty = 0.0;
-		state.total.Reset();
-		state.invalid = false;
+		state.window = nullptr;
+		WindowReset(state);
 	}
 
 	template <class STATE>
 	static void WindowReset(STATE &state) {
-		Initialize(state);
+		state.count = state.mean_t = state.mean_y = state.m2t = state.m2y = state.cty = 0.0;
+		state.total.Reset();
+		state.invalid = false;
 	}
 
 	template <class STATE>
@@ -762,30 +751,15 @@ struct StabilityOperation : public FinOperationDefaults {
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		target.invalid = target.invalid || source.invalid;
-		if (source.count == 0.0) {
+		if (source.count == 0.0 && !source.invalid) {
 			return;
 		}
-		if (target.count == 0.0) {
-			auto invalid = target.invalid;
-			target = source;
-			target.invalid = invalid;
-			return;
+		if (target.count != 0.0 || target.invalid) {
+			FinRejectUnorderedCombine("fin_stability");
 		}
-		// target precedes source in the ordering.
-		auto source_mean_t = source.mean_t + target.count;
-		auto source_mean_y = source.mean_y + target.total.Value();
-		auto total = target.count + source.count;
-		auto dt = source_mean_t - target.mean_t;
-		auto dy = source_mean_y - target.mean_y;
-		auto weight = target.count * source.count / total;
-		target.m2t += source.m2t + dt * dt * weight;
-		target.m2y += source.m2y + dy * dy * weight;
-		target.cty += source.cty + dt * dy * weight;
-		target.mean_t += dt * (source.count / total);
-		target.mean_y += dy * (source.count / total);
-		target.count = total;
-		target.total.Merge(source.total);
+		auto window = target.window;
+		target = source;
+		target.window = window;
 	}
 
 	template <class T, class STATE>
@@ -803,6 +777,8 @@ struct StabilityOperation : public FinOperationDefaults {
 	}
 
 	template <class STATE>
-	static void Destroy(STATE &, AggregateInputData &) {
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.window;
+		state.window = nullptr;
 	}
 };

@@ -8,6 +8,18 @@
 
 constexpr idx_t FIN_MAX_AGGREGATE_ARGS = 8;
 
+// Order-dependent aggregates consume one ordered stream per group: an ordered
+// call `fin_x(v ORDER BY ts)` feeds a single state in order, and window frames
+// are evaluated by the window callback. Two non-empty partial states therefore
+// mean the rows reached the aggregate in an undefined order (an unordered call
+// split across threads, or a window over the whole partition without ORDER BY),
+// so Combine rejects the merge instead of returning a thread-dependent result.
+static void FinRejectUnorderedCombine(const char *name) {
+	throw InvalidInputException("%s: rows reached the aggregate in an undefined order. Use an ordered call such as "
+	                            "%s(... ORDER BY ts) or a window with ORDER BY and a frame that ends at the current row",
+	                            name, name);
+}
+
 struct FinRow {
 	double v[FIN_MAX_AGGREGATE_ARGS];
 	bool valid[FIN_MAX_AGGREGATE_ARGS];
