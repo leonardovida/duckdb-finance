@@ -5,6 +5,7 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                    ValidateSchemaBindReplace);
 	loader.RegisterFunction(BarIndexAggregate());
+	loader.RegisterFunction(CurveBootstrapAggregate());
 
 	auto list_double = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));
 	auto list_list_double = LogicalType::LIST(list_double);
@@ -36,12 +37,8 @@ void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
 	                             FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, NormalizeOptionChainBindReplace);
 
-	RegisterBindReplacePrefixes(loader, "fin_bootstrap_curve",
-	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, BootstrapCurveBindReplace);
-	RegisterBindReplacePrefixes(loader, "fin_curve_bootstrap",
-	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
-	                            {FinanceLogicalType(LogicalTypeId::VARCHAR)}, CurveBootstrapBindReplace);
+	RegisterCurveBootstrap(loader, "fin_bootstrap_curve", BootstrapCurveBindReplace);
+	RegisterCurveBootstrap(loader, "fin_curve_bootstrap", CurveBootstrapBindReplace);
 	RegisterBindReplacePrefixes(loader, "fin_portfolio_optimize_table",
 	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BOOLEAN), FinanceLogicalType(LogicalTypeId::DOUBLE),

@@ -40,6 +40,7 @@ namespace {
 #include "table_functions/option_chain.inc"
 #include "table_functions/grid.inc"
 #include "table_functions/normalization.inc"
+#include "table_functions/curve_bootstrap.inc"
 #include "table_functions/analytics.inc"
 #include "table_functions/bars.inc"
 #include "table_functions/generators.inc"
