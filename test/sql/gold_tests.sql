@@ -2199,15 +2199,68 @@ SELECT * EXCLUDE (vol), vol AS model_price, vol AS expected_vol FROM gold_option
 SELECT assert_near('repricing uses conflicting input before replacement', model_implied_volatility, expected_vol, 1e-10)
 FROM fin_option_chain('gold_chain_model_input', 'kind', 'spot', 'strike', 'ttm', 'rate', 'model_price');
 
-SELECT assert_eq('bootstrap curve rows', count(*), 3::BIGINT)
-FROM fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'continuous');
+-- Curve bootstrap references: QuantLib 1.43 PiecewiseLogLinearDiscount with SimpleDayCounter,
+-- NullCalendar, Unadjusted, zero fixing days (DepositRateHelper, FraRateHelper, SwapRateHelper),
+-- cross-checked by an independent numpy sequential bootstrap.
+CREATE OR REPLACE TEMP TABLE gold_curve_expected(inst VARCHAR, df_annual DOUBLE, df_semiannual DOUBLE,
+  zero_cont DOUBLE, fwd_cont DOUBLE, zero_quarterly DOUBLE, zero_simple DOUBLE);
+INSERT INTO gold_curve_expected VALUES
+  ('d3m', 0.992555831265509, 0.992555831265509, 0.02988805935480511, 0.02988805935480511, 0.030000000000001137, 0.030000000000001137),
+  ('d6m', 0.984251968503937, 0.984251968503937, 0.031746698312580326, 0.033605337270355785, 0.03187301387332919, 0.03200000000000003),
+  ('f6x9', 0.975956339617191, 0.975956339617191, 0.03244990342455955, 0.033856313648517454, 0.032581884610245915, 0.032848000000000134),
+  ('s2y', 0.931651086060209, 0.931044586864458, 0.03539845278548928, 0.03716758240204719, 0.03555554715913711, 0.0366816048209857),
+  ('s3y', 0.893886246796388, 0.892924250610456, 0.03739225087477797, 0.041379847053355366, 0.037567569298002645, 0.03957019273384973),
+  ('s5y', 0.816975632682333, 0.815275842012498, 0.040429201985028626, 0.04498462865040451, 0.040634207132411504, 0.0448053430227179);
 
-SELECT assert_near('bootstrap curve periodic compounding', discount_factor, fin_discount_factor(0.040, 0.5, 'periodic'), 1e-12)
-FROM fin_bootstrap_curve('gold_curve', 'inst', 'maturity', 'rate', 'periodic')
-WHERE instrument = 'bill';
+SELECT assert_eq('bootstrap curve rows', count(*), 6::BIGINT)
+FROM fin_bootstrap_curve('gold_curve', 'kind', 'maturity', 'rate', instrument_col := 'inst', start_col := 'start_time');
 
-SELECT assert_eq('curve bootstrap rows', count(*), 3::BIGINT)
-FROM fin_curve_bootstrap('gold_curve', 'inst', 'maturity', 'rate', 'continuous');
+SELECT assert_eq('bootstrap curve maturity order', list(instrument), ['d3m', 'd6m', 'f6x9', 's2y', 's3y', 's5y'])
+FROM fin_bootstrap_curve('gold_curve', 'kind', 'maturity', 'rate', instrument_col := 'inst', start_col := 'start_time');
+
+SELECT
+  assert_near('bootstrap curve quantlib annual df ' || c.instrument, c.discount_factor, e.df_annual, 1e-12),
+  assert_near('bootstrap curve continuous zero ' || c.instrument, c.zero_rate, e.zero_cont, 1e-12),
+  assert_near('bootstrap curve continuous forward ' || c.instrument, c.forward_rate, e.fwd_cont, 1e-12),
+  assert_eq('bootstrap curve echoes quote ' || c.instrument, c.rate, g.rate),
+  assert_eq('bootstrap curve echoes type ' || c.instrument, c.instrument_type, g.kind)
+FROM fin_bootstrap_curve('gold_curve', 'kind', 'maturity', 'rate', 'continuous', instrument_col := 'inst', start_col := 'start_time') c
+JOIN gold_curve_expected e ON e.inst = c.instrument
+JOIN gold_curve g ON g.inst = c.instrument;
+
+SELECT assert_near('curve bootstrap quantlib semiannual swap df ' || c.instrument, c.discount_factor, e.df_semiannual, 1e-12)
+FROM fin_curve_bootstrap('gold_curve', 'kind', 'maturity', 'rate', instrument_col := 'inst', start_col := 'start_time', fixed_frequency := 2) c
+JOIN gold_curve_expected e ON e.inst = c.instrument;
+
+SELECT assert_near('bootstrap curve quarterly zero ' || c.instrument, c.zero_rate, e.zero_quarterly, 1e-12)
+FROM fin_bootstrap_curve('gold_curve', 'kind', 'maturity', 'rate', 'quarterly', instrument_col := 'inst', start_col := 'start_time') c
+JOIN gold_curve_expected e ON e.inst = c.instrument;
+
+SELECT
+  assert_near('bootstrap curve simple zero ' || c.instrument, c.zero_rate, e.zero_simple, 1e-12),
+  assert_near('bootstrap curve compounding keeps df ' || c.instrument, c.discount_factor, e.df_annual, 1e-12)
+FROM fin_bootstrap_curve('gold_curve', 'kind', 'maturity', 'rate', 'simple', instrument_col := 'inst', start_col := 'start_time') c
+JOIN gold_curve_expected e ON e.inst = c.instrument;
+
+-- Annual swaps at 1.25y and 2.25y have a 0.25y front stub (numpy reference).
+SELECT
+  assert_near('bootstrap curve stub swap df ' || maturity, discount_factor,
+    CASE maturity WHEN 0.5 THEN 0.9852216748768473 WHEN 1.25 THEN 0.9577921698818882 ELSE 0.9151562306394376 END, 1e-12),
+  assert_near('bootstrap curve stub swap forward ' || maturity, forward_rate,
+    CASE maturity WHEN 0.5 THEN 0.029777224987501117 WHEN 1.25 THEN 0.037647804961264845 ELSE 0.045536018198753754 END, 1e-12),
+  assert_eq('bootstrap curve instrument defaults to null', instrument, NULL::VARCHAR)
+FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 0.5, 0.030), (''swap'', 1.25, 0.035), (''swap'', 2.25, 0.040)) t(k, m, r))', 'k', 'm', 'r');
+
+SELECT
+  assert_near('bootstrap curve zero df ' || maturity, discount_factor, fin_discount_factor(rate, maturity, 'semiannual'), 1e-12),
+  assert_near('bootstrap curve zero roundtrip ' || maturity, zero_rate, rate, 1e-12),
+  assert_near('bootstrap curve zero forward ' || maturity, forward_rate,
+    CASE maturity WHEN 1.0 THEN 0.05 ELSE 0.06001219512195188 END, 1e-12),
+  assert_eq('bootstrap curve normalizes type', instrument_type, 'zero')
+FROM fin_bootstrap_curve('(FROM (VALUES (''ZERO'', 2.0, 0.055), ('' zero'', 1.0, 0.05)) t(k, m, r))', 'k', 'm', 'r', 'semiannual');
+
+SELECT assert_eq('bootstrap curve empty input', count(*), 0::BIGINT)
+FROM fin_bootstrap_curve('(SELECT ''swap'' AS k, 1.0 AS m, 0.05 AS r WHERE false)', 'k', 'm', 'r');
 
 SELECT assert_eq('calendar rows', count(*), 3::BIGINT)
 FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06');

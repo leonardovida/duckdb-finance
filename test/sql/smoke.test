@@ -183,9 +183,64 @@ SELECT * FROM fin_efficient_frontier([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], 0
 fin_efficient_frontier: points must be between 1 and 100000
 
 statement error
-SELECT * FROM fin_bootstrap_curve('(SELECT ''1y'' AS i, 1.0 AS m, 0.05 AS r)', 'i', 'm', 'r', 'bogus')
+SELECT * FROM fin_bootstrap_curve('(SELECT ''zero'' AS k, 1.0 AS m, 0.05 AS r)', 'k', 'm', 'r', 'bogus')
 ----
 fin_bootstrap_curve: unknown compounding 'bogus'
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''bond'' AS k, 1.0 AS m, 0.05 AS r)', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: unknown instrument type 'bond'
+
+statement error
+SELECT * FROM fin_curve_bootstrap('(FROM (VALUES (''zero'', 1.0, 0.05), (''deposit'', 1.0, 0.04)) t(k, m, r))', 'k', 'm', 'r')
+----
+fin_curve_bootstrap: duplicate maturity 1
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''zero'' AS k, 0.0 AS m, 0.05 AS r)', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: maturity must be positive and finite
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''deposit'' AS k, 1.0 AS m, NULL::DOUBLE AS r)', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: instrument type, maturity, and rate must not be NULL
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''fra'' AS k, 1.0 AS m, 0.05 AS r)', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: fra at maturity 1 needs a start time (start_col)
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''fra'' AS k, 1.0 AS m, 0.05 AS r, 0.5 AS s)', 'k', 'm', 'r', start_col := 's')
+----
+fin_bootstrap_curve: fra start 0.5 is beyond the bootstrapped curve
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''deposit'' AS k, 1.0 AS m, -1.5 AS r)', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: deposit at maturity 1 implies a non-positive discount factor
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 1.0, 0.0), (''swap'', 3.0, 1.2)) t(k, m, r))', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: swap at maturity 3 implies a non-positive discount factor
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''swap'' AS k, 1e6 AS m, 0.05 AS r)', 'k', 'm', 'r')
+----
+fin_bootstrap_curve: swap at maturity 1e+06 has more than 100000 fixed-leg payments
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''swap'' AS k, 1.0 AS m, 0.05 AS r)', 'k', 'm', 'r', fixed_frequency := 0)
+----
+fin_bootstrap_curve: fixed_frequency must be between 1 and 365 payments per year
+
+statement error
+SELECT * FROM fin_bootstrap_curve('(SELECT ''swap'' AS k, 1.0 AS m, 0.05 AS r)', 'k', 'm', 'r', fixed_frequency := NULL)
+----
+fin_bootstrap_curve: fixed_frequency cannot be NULL
 
 statement error
 SELECT * FROM fin_resample_grid('(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS v)', 'ts', 'v', TIMESTAMP '2026-01-01', TIMESTAMP '2026-01-02', INTERVAL '1 hour', 'last', INTERVAL '-1 minute')

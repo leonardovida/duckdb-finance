@@ -52,13 +52,16 @@ SELECT kind, round(model_price, 6) AS model_price, round(model_delta, 6) AS mode
 FROM fin_option_chain('option_inputs', 'kind', 'spot', 'strike', 'ttm', 'rate', 'vol')
 ORDER BY kind;
 
-CREATE OR REPLACE TEMP TABLE curve(inst VARCHAR, mat DOUBLE, rate DOUBLE);
-INSERT INTO curve VALUES ('bill', 0.5, 0.04), ('note', 1.0, 0.045), ('bond', 2.0, 0.05);
-SELECT instrument, maturity, round(discount_factor, 6) AS discount_factor
-FROM fin_bootstrap_curve('curve', 'inst', 'mat', 'rate')
+CREATE OR REPLACE TEMP TABLE curve(inst VARCHAR, kind VARCHAR, mat DOUBLE, rate DOUBLE, fra_start DOUBLE);
+INSERT INTO curve VALUES
+  ('3m', 'deposit', 0.25, 0.030, NULL), ('6x9', 'fra', 0.75, 0.034, 0.5), ('6m', 'deposit', 0.5, 0.032, NULL),
+  ('2y', 'swap', 2.0, 0.036, NULL), ('5y', 'swap', 5.0, 0.041, NULL);
+SELECT instrument, maturity, round(discount_factor, 6) AS discount_factor, round(zero_rate, 6) AS zero_rate,
+  round(forward_rate, 6) AS forward_rate
+FROM fin_bootstrap_curve('curve', 'kind', 'mat', 'rate', instrument_col := 'inst', start_col := 'fra_start')
 ORDER BY maturity;
 SELECT count(*) AS bootstrapped_with_convention
-FROM fin_bootstrap_curve('curve', 'inst', 'mat', 'rate', 'continuous');
+FROM fin_curve_bootstrap('curve', 'kind', 'mat', 'rate', 'semiannual', start_col := 'fra_start', fixed_frequency := 2);
 
 CREATE OR REPLACE TEMP TABLE factor_inputs(d DATE, asset VARCHAR, factor DOUBLE, ret DOUBLE);
 INSERT INTO factor_inputs VALUES
