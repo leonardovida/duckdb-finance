@@ -3,11 +3,11 @@
     {"finance_periodic_rate_internal", "(rate, annualization) AS CASE WHEN rate IS NULL THEN NULL WHEN rate = 0 THEN 0.0::DOUBLE WHEN NOT isfinite(rate::DOUBLE) OR rate <= -1 THEN NULL ELSE finance_expm1_internal(finance_log1p_internal(rate::DOUBLE) / annualization::DOUBLE) END"},
     {"fin_simple_return", "(price, prev_price) AS CASE WHEN price IS NULL OR prev_price IS NULL OR prev_price = 0 THEN NULL ELSE price::DOUBLE / prev_price::DOUBLE - 1 END"},
     {"fin_log_return", "(price, prev_price) AS CASE WHEN price IS NULL OR prev_price IS NULL OR price <= 0 OR prev_price <= 0 THEN NULL ELSE ln(price::DOUBLE / prev_price::DOUBLE) END"},
-    {"fin_return", "(price, prev_price, method := 'simple') AS CASE fin_parse_return_method(method) WHEN 'log' THEN fin_log_return(price, prev_price) WHEN 'simple' THEN fin_simple_return(price, prev_price) ELSE error('fin_return: unknown method ''' || coalesce(method::VARCHAR, 'NULL') || '''; supported methods are ''simple'' and ''log''') END"},
+    {"fin_return", "(price, prev_price, method := 'simple') AS CASE try(fin_parse_return_method(method)) WHEN 'log' THEN fin_log_return(price, prev_price) WHEN 'simple' THEN fin_simple_return(price, prev_price) ELSE error('fin_return: unknown method ''' || coalesce(method::VARCHAR, 'NULL') || '''; supported methods are ''simple'' and ''log''') END"},
     {"fin_gross_return", "(r) AS CASE WHEN r IS NULL THEN NULL ELSE 1 + r::DOUBLE END"},
     {"fin_to_log_return", "(r) AS CASE WHEN r IS NULL OR NOT isfinite(r::DOUBLE) OR r <= -1 THEN NULL ELSE finance_log1p_internal(r::DOUBLE) END"},
     {"fin_from_log_return", "(lr) AS CASE WHEN lr IS NULL OR NOT isfinite(lr::DOUBLE) THEN NULL ELSE finance_expm1_internal(lr::DOUBLE) END"},
-    {"fin_price_from_return", "(prev_price, r, method := 'simple') AS CASE fin_parse_return_method(method) WHEN 'log' THEN prev_price::DOUBLE * exp(r::DOUBLE) WHEN 'simple' THEN prev_price::DOUBLE * (1 + r::DOUBLE) ELSE error('fin_price_from_return: unknown method ''' || coalesce(method::VARCHAR, 'NULL') || '''; supported methods are ''simple'' and ''log''') END"},
+    {"fin_price_from_return", "(prev_price, r, method := 'simple') AS CASE try(fin_parse_return_method(method)) WHEN 'log' THEN prev_price::DOUBLE * exp(r::DOUBLE) WHEN 'simple' THEN prev_price::DOUBLE * (1 + r::DOUBLE) ELSE error('fin_price_from_return: unknown method ''' || coalesce(method::VARCHAR, 'NULL') || '''; supported methods are ''simple'' and ''log''') END"},
     {"fin_excess_return", "(r, rf, annualization := 252, rf_convention := 'annual') AS CASE lower(rf_convention) WHEN 'periodic' THEN r::DOUBLE - rf::DOUBLE WHEN 'annual' THEN r::DOUBLE - finance_periodic_rate_internal(rf, annualization) ELSE error('fin_excess_return: unknown rf_convention ''' || coalesce(rf_convention::VARCHAR, 'NULL') || '''; supported conventions are ''annual'' and ''periodic''') END"},
 
     {"fin_kahan_sum", "(x) AS CASE WHEN bool_or(NOT isfinite(x::DOUBLE)) THEN NULL ELSE fsum(x::DOUBLE) END"},
@@ -22,7 +22,7 @@
     {"fin_mad", "(x) AS CASE WHEN bool_or(NOT isfinite(x::DOUBLE)) THEN NULL ELSE mad(x::DOUBLE) END"},
     {"fin_zscore_last", "(x, ts) AS CASE WHEN bool_or(NOT isfinite(x::DOUBLE)) THEN NULL ELSE (finance_last_by_internal(x::DOUBLE, ts) - avg(x::DOUBLE)) / nullif(stddev_samp(x::DOUBLE), 0) END"},
 
-    {"fin_cum_return", "(r, method := 'simple') AS fin_total_return(r, method)"},
+    {"fin_cum_return", "(r, method := 'simple') AS fin_total_return(r, CASE WHEN method IS NULL THEN error('fin_cum_return: method must not be NULL') WHEN lower(method::VARCHAR) IN ('simple', 'arithmetic', 'pct', 'percent', 'log', 'ln', 'continuous') THEN method::VARCHAR ELSE error('fin_cum_return: unknown method ''' || method::VARCHAR || '''; supported methods are ''simple'' and ''log''') END)"},
     {"fin_cagr", "(r, annualization := 252) AS CASE WHEN count(r) = 0 OR bool_or(NOT isfinite(r::DOUBLE) OR r < -1) THEN NULL WHEN bool_or(r = -1) THEN -1.0::DOUBLE ELSE finance_expm1_internal(fsum(finance_log1p_internal(CASE WHEN isfinite(r::DOUBLE) AND r > -1 THEN r::DOUBLE END)) * annualization::DOUBLE / count(r)) END"},
     {"fin_annual_return", "(r, annualization := 252) AS fin_cagr(r, annualization)"},
     {"fin_arithmetic_return", "(r) AS CASE WHEN bool_or(NOT isfinite(r::DOUBLE)) THEN NULL ELSE avg(r::DOUBLE) END"},
@@ -31,7 +31,7 @@
     {"fin_log_nav", "(r, initial_nav := 1.0) AS CASE WHEN count(r) = 0 OR bool_or(NOT isfinite(r::DOUBLE) OR r < -1) OR bool_or(r = -1) OR NOT (initial_nav > 0) THEN NULL ELSE ln(initial_nav::DOUBLE) + fsum(finance_log1p_internal(CASE WHEN isfinite(r::DOUBLE) AND r > -1 THEN r::DOUBLE END)) END"},
     {"fin_recovery_factor", "(r, ts) AS fin_total_return(r) / nullif(abs(fin_max_drawdown(r ORDER BY ts)), 0)"},
     {"fin_gain_to_pain", "(r) AS CASE WHEN bool_or(NOT isfinite(r::DOUBLE)) THEN NULL ELSE fsum(r::DOUBLE) / nullif(abs(fsum(r::DOUBLE) FILTER (WHERE r < 0)), 0) END"},
-    {"fin_aggregate_return", "(r, method := 'simple') AS fin_total_return(r, method)"},
+    {"fin_aggregate_return", "(r, method := 'simple') AS fin_total_return(r, CASE WHEN method IS NULL THEN error('fin_aggregate_return: method must not be NULL') WHEN lower(method::VARCHAR) IN ('simple', 'arithmetic', 'pct', 'percent', 'log', 'ln', 'continuous') THEN method::VARCHAR ELSE error('fin_aggregate_return: unknown method ''' || method::VARCHAR || '''; supported methods are ''simple'' and ''log''') END)"},
 
     {"fin_upside_deviation", "(r, threshold := 0.0, annualization := 252) AS CASE WHEN bool_or(NOT isfinite(r::DOUBLE)) THEN NULL ELSE sqrt(avg(CASE WHEN r IS NOT NULL THEN pow(greatest(r::DOUBLE - finance_periodic_rate_internal(threshold, annualization), 0), 2) END)) * sqrt(annualization::DOUBLE) END"},
     {"fin_semivariance", "(r, threshold := 0.0, annualization := 252) AS CASE WHEN bool_or(NOT isfinite(r::DOUBLE)) THEN NULL ELSE avg(CASE WHEN r IS NOT NULL THEN pow(least(r::DOUBLE - finance_periodic_rate_internal(threshold, annualization), 0), 2) END) END"},

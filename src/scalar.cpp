@@ -19,6 +19,7 @@
 #include "duckdb/common/vector_operations/binary_executor.hpp"
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
 #include "duckdb/common/vector_operations/unary_executor.hpp"
+#include "duckdb/function/cast/cast_function_set.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 
@@ -59,5 +60,14 @@ static void FinanceFlatten(Vector &vector, idx_t count) {
 } // namespace
 
 #include "scalar/register.inc"
+
+void FinanceValidateCalendar(const string &function_name, const string &calendar) {
+	try {
+		ParseCalendar(calendar);
+	} catch (InvalidInputException &ex) {
+		ErrorData error(ex);
+		throw InvalidInputException("%s: %s", function_name, error.RawMessage());
+	}
+}
 
 } // namespace duckdb

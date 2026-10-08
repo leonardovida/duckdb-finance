@@ -47,7 +47,13 @@ This document is generated from the extension registration surface in `src/` and
   raw / 100); theta accepts `'year'` (default), `'day'` (/365), or
   `'trading_day'` (/252).
 - Native scalar functions take optional arguments by position. Only SQL macros
-  such as `fin_option_spec` accept `name := value` arguments.
+  such as `fin_option_spec` accept `name := value` arguments. DuckDB binds the
+  arguments of native (C++) functions by position and drops their names, so
+  0.3.0 rejects a named argument on a native scalar or aggregate with
+  `<function>: named argument '<name> := ...' is not supported` instead of
+  applying it to the parameter at that position. A name written on a bare
+  column reference (`fin_bond_price(c, ytm := y, m)`) cannot be detected, so
+  pass every native argument positionally.
 
 ## Function Index
 

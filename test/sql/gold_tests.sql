@@ -172,6 +172,16 @@ SELECT
   assert_near('bond ytm price roundtrip', fin_bond_price(coupon, fin_bond_ytm(reference, coupon, maturity, freq, face), maturity, freq, face), reference, 1e-9)
 FROM reconciled;
 
+-- Native scalars bind by position and reject `name := value` (test/sql/smoke.test);
+-- column references, select-list aliases, struct fields and lambda parameters
+-- whose names look like parameter names are ordinary positional arguments.
+SELECT
+  assert_near('bond select-list alias argument', bond, 104.49129250312109, 1e-9),
+  assert_near('bond struct field arguments', fin_bond_price(s.coupon, s.ytm, s.maturity, 2, 100.0), 104.49129250312109, 1e-9),
+  assert_near('bond lambda parameter argument', list_transform([0.04], lambda ytm: fin_bond_price(0.05, ytm, 5.0, 2, 100.0))[1],
+              104.49129250312109, 1e-9)
+FROM (SELECT {'coupon': 0.05, 'ytm': 0.04, 'maturity': 5.0} AS s, 0.05 AS coupon, fin_bond_price(coupon, 0.04, 5.0, 2, 100.0) AS bond);
+
 SELECT
   assert_near('bond high yield', fin_bond_ytm(0.01, 0, 1, 1, 100), 9999.0, 1e-7),
   assert_eq('bond out of range periods', fin_bond_price(0.05, 0.04, 1e30, 2), NULL),
@@ -3247,6 +3257,15 @@ SELECT
   assert_near('two asset max sharpe', fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]])[1], 0.5, 1e-12),
   assert_near('black litterman single view', fin_black_litterman_returns([0.6, 0.4], [[0.04, 0.01], [0.01, 0.09]], [[1.0, 0.0]], [0.1])[1],
               0.085, 1e-12);
+
+-- The portfolio macros accept named macro parameters and any input that casts
+-- implicitly to DOUBLE lists; other types fail with the macro's own name
+-- (test/sql/smoke.test).
+SELECT
+  assert_near('max sharpe named macro parameters',
+              fin_max_sharpe_weights([0.1, 0.2], [[0.04, 0.01], [0.01, 0.09]], risk_free := 0.0, long_only := true)[1], 0.5, 1e-12),
+  assert_near('risk parity integer covariance', fin_risk_parity_weights([[4, 0], [0, 9]], [1, 1], 1e-12, 1000)[1], 0.6, 1e-9),
+  assert_near('min variance array covariance', fin_min_variance_weights([[0.04, 0.01], [0.01, 0.09]]::DOUBLE[2][2])[1], 0.8 / 1.1, 1e-12);
 
 -- Portfolio construction against closed forms / KKT-verified numpy solutions
 -- (see docs: long-only solves use an exact active-set QP). S is a 4-asset
