@@ -233,3 +233,63 @@ statement error
 SELECT fin_yearfrac(1, 2)
 ----
 fin_yearfrac: argument 1 must be DATE, TIMESTAMP or TIMESTAMPTZ, got INTEGER
+
+statement error
+SELECT fin_rank_corr(x, y, 'pearson') FROM (VALUES (1.0, 2.0), (2.0, 1.0)) AS t(x, y)
+----
+fin_rank_corr: unknown method 'pearson'
+
+statement error
+SELECT fin_adf(x, i, 1, 'cct') FROM (VALUES (1, 1.0)) AS t(i, x)
+----
+fin_adf: unknown regression 'cct'
+
+statement error
+SELECT fin_ljung_box(x, i, 0) FROM (VALUES (1, 1.0)) AS t(i, x)
+----
+fin_ljung_box: lags must be an integer >= 1
+
+statement error
+SELECT fin_exp_decay_avg(x, ts, INTERVAL '-1 minute') FROM (VALUES (TIMESTAMP '2026-01-01', 1.0)) AS t(ts, x)
+----
+fin_exp_decay_avg: halflife must be positive and finite
+
+statement error
+SELECT fin_money_round(1.0, 2, 'bankers')
+----
+fin_money_round: unknown mode 'bankers'
+
+statement error
+SELECT fin_cents_to_money(100, -1)
+----
+fin_cents_to_money: scale must be an integer between 0 and 9
+
+statement error
+SELECT fin_rate_spec(0.05, 'continuous', 2.7)
+----
+fin_rate_spec: frequency must be a positive integer
+
+statement error
+SELECT fin_rate_spec(0.05, 'bogus')
+----
+fin_rate_spec: unknown compounding 'bogus'
+
+statement error
+SELECT fin_portfolio_vector([0.5], ['A', 'B'])
+----
+fin_portfolio_vector: weights and labels must have the same length
+
+statement error
+SELECT fin_risk_parity_weights([[0.04, 0.0], [0.0, 0.09]], NULL, 0.0)
+----
+fin_risk_parity_weights: tol must be positive and finite
+
+statement error
+SELECT fin_black_litterman_returns([0.5, 0.5], [[0.04, 0.0], [0.0, 0.09]], [[1.0, 0.0]], [0.1], -0.05)
+----
+fin_black_litterman_returns: tau must be positive and finite
+
+statement error
+SELECT fin_cov_matrix(i, a, r, 1) FROM (VALUES (1, 'A', 0.1)) AS t(i, a, r)
+----
+No function matches

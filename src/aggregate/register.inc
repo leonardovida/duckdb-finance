@@ -62,4 +62,5 @@ void RegisterFinanceAggregates(ExtensionLoader &loader) {
 	loader.RegisterFunction(std::move(rsi_set));
 
 	RegisterReturnsRiskAggregates(loader);
+	RegisterStatisticsAggregates(loader);
 }

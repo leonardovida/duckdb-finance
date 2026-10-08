@@ -94,3 +94,20 @@ INSERT INTO gold_covariance VALUES
   ('AAA', 'BBB', 0.01),
   ('BBB', 'AAA', 0.01),
   ('BBB', 'BBB', 0.09);
+
+-- Deterministic 64-row sample for statistical tests and series diagnostics.
+-- Rows are stored in a scrambled order so ordered statistics must use the
+-- explicit ordering key i. ar is an AR(1) (phi 0.7) driven by e.
+CREATE OR REPLACE TEMP TABLE gold_stats AS
+WITH base AS (
+  SELECT i, sin(1.7 * i) + 0.5 * cos(0.37 * i * i) AS x, sin(0.77 * i * i + 0.3) AS e,
+         cos(0.9 * i) AS f1, sin(0.45 * i + 1) AS f2
+  FROM range(64) t(i)
+)
+SELECT i, x,
+       CASE WHEN i % 5 = 0 THEN round(0.4 * x + cos(2.3 * i), 1) ELSE 0.4 * x + cos(2.3 * i) END AS y,
+       pow(0.7, i) * sum(pow(0.7, -i) * e) OVER (ORDER BY i) AS ar,
+       i % 3 AS g, CASE WHEN i % 4 = 0 THEN i % 3 ELSE (i * i) % 4 END AS h, f1, f2,
+       0.5 + 1.2 * f1 - 0.7 * f2 + 0.3 * sin(3.7 * i) AS oy
+FROM base
+ORDER BY (i * 37) % 64;
