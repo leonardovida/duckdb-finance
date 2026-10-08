@@ -852,14 +852,61 @@ SELECT
   assert_near('historical cvar return sign', fin_cvar(r, 0.5, 'historical', false), -7.5, 1e-12)
 FROM (VALUES (-10.0), (-5.0), (0.0), (5.0)) AS tail_returns(r);
 
+-- Physical row order must not matter; equal timestamps are ordered by value.
 SELECT
-  assert_near('delta aggregate', fin_delta(close), 3.0, 1e-12),
-  assert_near('pct change aggregate', fin_pct_change(close), 0.03, 1e-12),
-  assert_not_null('rate aggregate', fin_rate(close, ts)),
-  assert_eq('changes aggregate', fin_changes(close), 4::BIGINT),
-  assert_eq('resets aggregate', fin_resets(close - 100.0), 1::BIGINT),
-  assert_eq('last non null', fin_last_non_null(close), 103.0),
-  assert_eq('first non null', fin_first_non_null(close), 100.0),
+  assert_near('delta ignores row order', fin_delta(x, t), 2.0, 1e-12),
+  assert_eq('last tie takes largest value', fin_last_non_null(x, t), 7.0),
+  assert_eq('first skips null value', fin_first_non_null(x, t), 5.0),
+  assert_near('pct change ignores row order', fin_pct_change(x, t), 0.4, 1e-12),
+  assert_eq('changes skips nulls', fin_changes(x, t), 2::BIGINT),
+  assert_eq('resets counts decreases', fin_resets(x, t), 1::BIGINT),
+  assert_near('rate uses non-null span', fin_rate(x, t, 'second'), 1.0, 1e-12)
+FROM (VALUES
+  (TIMESTAMP '2026-01-01 00:00:02', 7.0),
+  (TIMESTAMP '2026-01-01 00:00:00', NULL),
+  (TIMESTAMP '2026-01-01 00:00:02', 3.0),
+  (TIMESTAMP '2026-01-01 00:00:00', 5.0)
+) AS t(t, x);
+
+SELECT
+  assert_eq('changes empty is zero', fin_changes(x, t), 0::BIGINT),
+  assert_eq('resets empty is zero', fin_resets(x, t), 0::BIGINT),
+  assert_eq('delta empty is null', fin_delta(x, t), NULL)
+FROM (SELECT 1.0 AS x, TIMESTAMP '2026-01-01' AS t WHERE false);
+
+CREATE TEMP TABLE gold_ts_order AS
+SELECT i AS g, TIMESTAMP '2026-01-01' + to_seconds(i) AS t, ((i * 7919) % 101)::DOUBLE AS x
+FROM range(20000) r(i)
+ORDER BY hash(i);
+SET threads = 1;
+CREATE TEMP TABLE gold_ts_order_t1 AS
+SELECT g % 7 AS k, fin_delta(x, t) AS d, fin_pct_change(x, t) AS p, fin_rate(x, t) AS r, fin_changes(x, t) AS c,
+  fin_resets(x, t) AS z, fin_first_non_null(x, t) AS f, fin_last_non_null(x, t) AS l
+FROM gold_ts_order GROUP BY 1;
+SET threads = 8;
+SELECT assert_eq('ordered time-series macros thread determinism', count(*), 0::BIGINT)
+FROM (
+  SELECT g % 7 AS k, fin_delta(x, t) AS d, fin_pct_change(x, t) AS p, fin_rate(x, t) AS r, fin_changes(x, t) AS c,
+    fin_resets(x, t) AS z, fin_first_non_null(x, t) AS f, fin_last_non_null(x, t) AS l
+  FROM gold_ts_order GROUP BY 1
+  EXCEPT SELECT * FROM gold_ts_order_t1
+);
+RESET threads;
+
+-- Ordered time-series macros take an explicit ordering column; closes are
+-- 100, 102, 99, 104, 103 at one-minute steps (independent hand computation).
+SELECT
+  assert_near('delta aggregate', fin_delta(close, ts), 3.0, 1e-12),
+  assert_near('pct change aggregate', fin_pct_change(close, ts), 0.03, 1e-12),
+  assert_near('rate aggregate per second', fin_rate(close, ts), 3.0 / 240.0, 1e-15),
+  assert_near('rate aggregate per minute', fin_rate(close, ts, 'minute'), 0.75, 1e-12),
+  assert_near('rate aggregate per hour', fin_rate(close, ts, 'hours'), 45.0, 1e-12),
+  assert_eq('changes aggregate', fin_changes(close, ts), 4::BIGINT),
+  assert_eq('resets aggregate', fin_resets(close, ts), 2::BIGINT),
+  assert_eq('last non null', fin_last_non_null(close, ts), 103.0),
+  assert_eq('first non null', fin_first_non_null(close, ts), 100.0),
+  assert_eq('delta return type', typeof(fin_delta(close, ts)), 'DOUBLE'),
+  assert_eq('changes return type', typeof(fin_changes(close, ts)), 'BIGINT'),
   assert_near('ema default recurrence', fin_ema(close ORDER BY seq), 100.69349705112582, 1e-12),
   assert_near('ema halflife alias', fin_ema_halflife(close, ts, INTERVAL '1 minute'), 101.6, 1e-12),
   assert_near('exp decay sum alias', fin_exp_decay_sum(close, ts, INTERVAL '1 minute'), 508.0, 1e-12),
