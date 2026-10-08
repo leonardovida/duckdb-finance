@@ -22,23 +22,29 @@ struct FinanceFunctionMetadata {
 
 #include "function_metadata.inc"
 
+// DuckDB v1.5.6 ships identifier.hpp as a 2.0 backport while catalog entry names
+// remain strings, so resolve the name type by overload instead of by header.
+static const string &FinanceNameString(const string &name) {
+	return name;
+}
+
 #if FINANCE_METADATA_HAS_DUCKDB_IDENTIFIER
 static Identifier FinanceCatalogName(const string &name) {
 	return Identifier(name);
 }
 
-static const string &FinanceEntryName(CatalogEntry &entry) {
-	return entry.name.GetIdentifierName();
+static const string &FinanceNameString(const Identifier &name) {
+	return name.GetIdentifierName();
 }
 #else
 static string FinanceCatalogName(const string &name) {
 	return name;
 }
+#endif
 
 static const string &FinanceEntryName(CatalogEntry &entry) {
-	return entry.name;
+	return FinanceNameString(entry.name);
 }
-#endif
 
 static const FinanceFunctionMetadata *FindFinanceFunctionMetadata(const string &name) {
 	for (idx_t i = 0; FINANCE_FUNCTION_METADATA[i].name != nullptr; i++) {
