@@ -44,7 +44,6 @@ promoted out of this page.
 | `fin_ols_no_intercept` | Delegates to the placeholder OLS result. | Use explicit SQL linear algebra or DuckDB `regr_*` aggregates where applicable. |
 | `fin_ppo` | Returns a constant placeholder instead of percentage price oscillator. | Compute fast and slow moving averages explicitly in SQL. |
 | `fin_risk_parity_weights` | Returns equal weights until risk-budget optimizer support is added. | Use `fin_hrp_weights` for a deterministic table output or an external optimizer. |
-| `fin_stability` | Returns a constant placeholder instead of log-equity trend stability. | Compute NAV and regression `r2` explicitly in SQL. |
 | `fin_theils_u` | Returns `NULL` until categorical association support is added. | Build the contingency table and entropy terms explicitly. |
 | `fin_ttest_1samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |
 | `fin_ttest_2samp` | Returns a statistic and degrees of freedom but not a p-value. | Use the statistic as a diagnostic only or compute p-values externally. |

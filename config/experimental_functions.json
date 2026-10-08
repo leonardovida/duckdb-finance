@@ -201,11 +201,6 @@
       "replacement": "use fin_hrp_weights for a deterministic table output or an external optimizer"
     },
     {
-      "name": "fin_stability",
-      "reason": "returns a constant placeholder instead of log-equity trend stability",
-      "replacement": "compute NAV and regression r2 explicitly in SQL"
-    },
-    {
       "name": "fin_theils_u",
       "reason": "returns NULL until categorical association support is added",
       "replacement": "build the contingency table and entropy terms explicitly"

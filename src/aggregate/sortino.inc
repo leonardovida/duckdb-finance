@@ -7,6 +7,8 @@ struct SortinoState {
 	double correction;
 	double downside_correction;
 	double downside_scale;
+	bool invalid;
+	FinPeriodicRateCache mar_cache;
 };
 
 struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
@@ -18,6 +20,8 @@ struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 		state.annualization = DEFAULT_ANNUALIZATION;
 		state.scale = state.correction = state.downside_correction = 0.0;
 		state.downside_scale = 0.0;
+		state.invalid = false;
+		state.mar_cache = FinPeriodicRateCache();
 	}
 
 	static void AddExcess(double value, double &sum, double &correction) {
@@ -29,7 +33,9 @@ struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
 		if (!std::isfinite(value)) {
-			throw InvalidInputException("Sortino excess returns must be finite");
+			// Non-finite returns (or an invalid MAR) make the group's ratio undefined.
+			state.invalid = true;
+			return;
 		}
 		auto scale = std::abs(value);
 		// Ordinary returns need no rescaling. Keep their hot path in original
@@ -60,14 +66,17 @@ struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.invalid = target.invalid || source.invalid;
 		if (source.count == 0) {
 			return;
 		}
 		if (target.count == 0) {
+			auto invalid = target.invalid;
 			target = source;
+			target.invalid = invalid;
 			return;
 		} else if (target.annualization != source.annualization) {
-			throw InvalidInputException("Sortino annualization must be constant within a group");
+			throw InvalidInputException("fin_sortino: annualization must be constant within a group");
 		}
 		target.count += source.count;
 		auto scale = std::max(target.scale, source.scale);
@@ -89,7 +98,7 @@ struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (state.count == 0 || state.downside_sq <= 0.0) {
+		if (state.invalid || state.count == 0 || state.downside_sq <= 0.0) {
 			finalize_data.ReturnNull();
 			return;
 		}
@@ -109,10 +118,8 @@ struct SortinoOperation : public UnaryDoubleUpdateOperation<SortinoOperation> {
 struct SortinoWithMAROperation : public SortinoOperation {
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double mar) {
-		if (!std::isfinite(value) || !std::isfinite(mar)) {
-			throw InvalidInputException("Sortino returns and MAR must be finite");
-		}
-		SortinoOperation::UpdateValue(state, value - mar / DEFAULT_ANNUALIZATION);
+		// MAR is an annual rate converted to a per-period rate geometrically.
+		SortinoOperation::UpdateValue(state, value - state.mar_cache.Get(mar, DEFAULT_ANNUALIZATION));
 	}
 
 	template <class INPUT_TYPE, class MAR_TYPE, class STATE, class OP>
@@ -132,17 +139,14 @@ struct SortinoWithMAROperation : public SortinoOperation {
 struct SortinoWithMARAnnualizationOperation : public SortinoOperation {
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value, double mar, double annualization) {
-		if (!std::isfinite(value) || !std::isfinite(mar)) {
-			throw InvalidInputException("Sortino returns and MAR must be finite");
-		}
 		if (annualization <= 0.0 || !std::isfinite(annualization)) {
-			throw InvalidInputException("Sortino annualization must be positive and finite");
+			throw InvalidInputException("fin_sortino: annualization must be positive and finite");
 		}
 		if (state.count > 0 && state.annualization != annualization) {
-			throw InvalidInputException("Sortino annualization must be constant within a group");
+			throw InvalidInputException("fin_sortino: annualization must be constant within a group");
 		}
 		state.annualization = annualization;
-		SortinoOperation::UpdateValue(state, value - mar / annualization);
+		SortinoOperation::UpdateValue(state, value - state.mar_cache.Get(mar, annualization));
 	}
 };
 

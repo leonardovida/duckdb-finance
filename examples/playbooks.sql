@@ -97,7 +97,7 @@ SELECT
   round(fin_total_return(r), 6) AS total_return,
   round(fin_volatility(r), 6) AS volatility,
   round(fin_sharpe(r), 6) AS sharpe,
-  round(fin_max_drawdown(r), 6) AS max_drawdown
+  round(fin_max_drawdown(r ORDER BY d), 6) AS max_drawdown
 FROM research_returns;
 
 SELECT

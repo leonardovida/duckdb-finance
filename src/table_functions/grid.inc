@@ -122,9 +122,9 @@ static GridSource BuildGridSource(const TableFunctionBindInput &input, const str
 	result.asset = OptionalNamedColumn(input, "asset_col", function_name);
 	auto seq = OptionalNamedColumn(input, "seq_col", function_name);
 	auto has_asset = !result.asset.empty();
-	// Primitive aggregates only: max() without seq_col, an ordered last() with it.
+	// Primitive aggregates only: max() without seq_col, the value at the largest seq with it.
 	auto dedupe = seq.empty() ? string("max(__finance_value)")
-	                          : string("last(__finance_value ORDER BY __finance_seq, __finance_value)");
+	                          : string("finance_last_by_internal(__finance_value::DOUBLE, __finance_seq)");
 	result.ctes = StringUtil::Format(
 	    "__finance_grid_points AS ("
 	    "  SELECT %s::TIMESTAMP + %s::INTERVAL * __finance_i AS __finance_ts FROM range(%llu) __finance_r(__finance_i)"

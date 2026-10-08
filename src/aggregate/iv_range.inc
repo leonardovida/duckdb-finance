@@ -1,21 +1,21 @@
 struct IVRangeState {
 	bool isset;
+	bool invalid;
 	double min_iv;
 	double max_iv;
 	double last_iv;
 	idx_t count;
 };
 
-static void ValidateIVObservation(double value) {
-	if (!std::isfinite(value) || value < 0.0) {
-		throw InvalidInputException("IV observations must be non-negative and finite");
-	}
+static bool IsValidIVObservation(double value) {
+	return std::isfinite(value) && value >= 0.0;
 }
 
 struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.isset = false;
+		state.invalid = false;
 		state.min_iv = 0.0;
 		state.max_iv = 0.0;
 		state.last_iv = 0.0;
@@ -24,7 +24,11 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 
 	template <class STATE>
 	static void UpdateValue(STATE &state, double value) {
-		ValidateIVObservation(value);
+		if (!IsValidIVObservation(value)) {
+			// Negative or non-finite IV makes the group's rank undefined.
+			state.invalid = true;
+			return;
+		}
 		if (!state.isset) {
 			state.isset = true;
 			state.min_iv = value;
@@ -38,11 +42,14 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.invalid = target.invalid || source.invalid;
 		if (!source.isset) {
 			return;
 		}
 		if (!target.isset) {
+			auto invalid = target.invalid;
 			target = source;
+			target.invalid = invalid;
 			return;
 		}
 		target.min_iv = std::min(target.min_iv, source.min_iv);
@@ -53,7 +60,7 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (!state.isset || state.count == 0 || state.max_iv == state.min_iv) {
+		if (state.invalid || !state.isset || state.count == 0 || state.max_iv == state.min_iv) {
 			finalize_data.ReturnNull();
 			return;
 		}
@@ -66,30 +73,51 @@ struct IVRangeOperation : public UnaryDoubleUpdateOperation<IVRangeOperation> {
 	}
 };
 
+// IV percentile: fraction of the prior observations strictly below the latest
+// observation. The history is kept for the exact count; window frames are
+// rebuilt into one reusable local state.
 struct IVPercentileState {
 	vector<double> *values;
+	FinWindowAux *window;
+	bool invalid;
 };
 
-struct IVPercentileOperation : public UnaryDoubleUpdateOperation<IVPercentileOperation> {
+struct IVPercentileOperation : public FinOperationDefaults {
+	static constexpr idx_t REQUIRED_ARGS = 1;
+	static constexpr bool ORDER_DEPENDENT = true;
+	static constexpr bool WINDOW_INCREMENTAL = true;
+
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.values = new vector<double>();
+		state.window = nullptr;
+		state.invalid = false;
 	}
 
 	template <class STATE>
-	static void UpdateValue(STATE &state, double value) {
-		ValidateIVObservation(value);
-		state.values->push_back(value);
+	static void WindowReset(STATE &state) {
+		state.values->clear();
+		state.invalid = false;
+	}
+
+	template <class STATE>
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t) {
+		if (!IsValidIVObservation(row.v[0])) {
+			state.invalid = true;
+			return;
+		}
+		state.values->push_back(row.v[0]);
 	}
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
+		target.invalid = target.invalid || source.invalid;
 		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
 	}
 
 	template <class T, class STATE>
 	static void Finalize(STATE &state, T &target, AggregateFinalizeData &finalize_data) {
-		if (state.values->size() < 2) {
+		if (state.invalid || state.values->size() < 2) {
 			finalize_data.ReturnNull();
 			return;
 		}
@@ -103,9 +131,7 @@ struct IVPercentileOperation : public UnaryDoubleUpdateOperation<IVPercentileOpe
 	static void Destroy(STATE &state, AggregateInputData &) {
 		delete state.values;
 		state.values = nullptr;
-	}
-
-	static bool IgnoreNull() {
-		return true;
+		delete state.window;
+		state.window = nullptr;
 	}
 };
