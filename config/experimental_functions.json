@@ -1,14 +1,3 @@
 {
-  "functions": [
-    {
-      "name": "fin_bootstrap_curve",
-      "reason": "treats every quoted rate as a zero rate instead of bootstrapping instrument cash flows",
-      "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
-    },
-    {
-      "name": "fin_curve_bootstrap",
-      "reason": "alias of fin_bootstrap_curve that treats every quoted rate as a zero rate",
-      "replacement": "bootstrap instrument-specific discount factors externally before interpolating in SQL"
-    }
-  ]
+  "functions": []
 }

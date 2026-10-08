@@ -141,14 +141,20 @@ INSERT INTO gold_source_options VALUES
 
 CREATE OR REPLACE TEMP TABLE gold_curve(
   inst VARCHAR,
+  kind VARCHAR,
   maturity DOUBLE,
-  rate DOUBLE
+  rate DOUBLE,
+  start_time DOUBLE
 );
 
+-- Rows are deliberately out of maturity order; the bootstrap sorts them.
 INSERT INTO gold_curve VALUES
-  ('bill', 0.5, 0.040),
-  ('note', 1.0, 0.045),
-  ('bond', 2.0, 0.050);
+  ('s5y', 'swap', 5.0, 0.041, NULL),
+  ('d3m', 'deposit', 0.25, 0.030, NULL),
+  ('f6x9', 'fra', 0.75, 0.034, 0.5),
+  ('d6m', 'deposit', 0.5, 0.032, NULL),
+  ('s2y', 'swap', 2.0, 0.036, NULL),
+  ('s3y', 'swap', 3.0, 0.038, NULL);
 
 CREATE OR REPLACE TEMP TABLE gold_current_weights(asset VARCHAR, weight DOUBLE);
 INSERT INTO gold_current_weights VALUES ('AAA', 0.60), ('BBB', 0.40);
