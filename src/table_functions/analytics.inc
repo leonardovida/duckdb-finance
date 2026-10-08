@@ -1,111 +1,216 @@
-static unique_ptr<TableRef> BootstrapCurveBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountAtLeast(input, 4, "fin_bootstrap_curve expects table_name, instrument_col, maturity_col, rate_col");
-	auto table = SqlTableName(input.inputs[0]);
-	auto instrument = SqlColumn(input.inputs[1]);
-	auto maturity = SqlColumn(input.inputs[2]);
-	auto rate = SqlColumn(input.inputs[3]);
-	auto compounding = input.inputs.size() >= 5 ? "coalesce(" + SqlLiteral(input.inputs[4]) + "::VARCHAR, 'continuous')"
-	                                            : "'continuous'";
+static string NormalizeCompoundingName(const Value &value, const string &function_name) {
+	auto compounding = StringUtil::Lower(RequireString(value, function_name, "compounding"));
+	StringUtil::Trim(compounding);
+	static const char *const ACCEPTED[] = {"continuous", "cont",      "cc",        "simple",        "periodic",
+	                                       "annual",     "annually",  "semiannual", "semi-annually", "semi",
+	                                       "quarterly",  "quarter",   "monthly",   "month",         "daily",
+	                                       "day",        nullptr};
+	for (idx_t i = 0; ACCEPTED[i]; i++) {
+		if (compounding == ACCEPTED[i]) {
+			return compounding;
+		}
+	}
+	throw InvalidInputException("%s: unknown compounding '%s' (expected continuous, simple, periodic, semiannual, "
+	                            "quarterly, monthly, or daily)",
+	                            function_name, compounding);
+}
+
+static unique_ptr<TableRef> BootstrapCurveSubquery(ClientContext &context, TableFunctionBindInput &input,
+                                                   const string &function_name) {
+	auto table = SqlSourceArg(input, 0, function_name);
+	auto instrument = SqlColumnArg(input, 1, function_name, "instrument_col");
+	auto maturity = SqlColumnArg(input, 2, function_name, "maturity_col");
+	auto rate = SqlColumnArg(input, 3, function_name, "rate_col");
+	auto compounding = input.inputs.size() >= 5 ? NormalizeCompoundingName(input.inputs[4], function_name)
+	                                            : string("continuous");
 	auto query = StringUtil::Format(
 	    "SELECT %s AS instrument, %s::DOUBLE AS maturity, %s::DOUBLE AS zero_rate, "
 	    "fin_discount_factor(%s::DOUBLE, %s::DOUBLE, %s) AS discount_factor "
-	    "FROM %s ORDER BY maturity",
-	    instrument, maturity, rate, rate, maturity, compounding, table);
+	    "FROM %s ORDER BY maturity, instrument",
+	    instrument, maturity, rate, rate, maturity, SqlStringLiteral(compounding), table);
 	return ParseSubquery(context, query);
 }
 
+static unique_ptr<TableRef> BootstrapCurveBindReplace(ClientContext &context, TableFunctionBindInput &input) {
+	return BootstrapCurveSubquery(context, input, "fin_bootstrap_curve");
+}
+
+static unique_ptr<TableRef> CurveBootstrapBindReplace(ClientContext &context, TableFunctionBindInput &input) {
+	return BootstrapCurveSubquery(context, input, "fin_curve_bootstrap");
+}
+
 static unique_ptr<TableRef> PortfolioOptimizeTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountAtLeast(input, 4,
-	                         "fin_portfolio_optimize_table expects table_name, asset_col, date_col, return_col");
-	auto table = SqlTableName(input.inputs[0]);
-	auto asset = SqlColumn(input.inputs[1]);
+	const string function_name = "fin_portfolio_optimize_table";
+	auto table = SqlSourceArg(input, 0, function_name);
+	auto asset = SqlColumnArg(input, 1, function_name, "asset_col");
+	auto date = SqlColumnArg(input, 2, function_name, "date_col");
+	auto ret = SqlColumnArg(input, 3, function_name, "return_col");
+	// date_col and return_col are bound (so misspelled names fail) but not used
+	// by the equal-weight placeholder.
 	auto query = StringUtil::Format(
-	    "WITH assets AS (SELECT DISTINCT %s AS asset FROM %s) "
-	    "SELECT asset, row_number() OVER (ORDER BY asset) - 1 AS asset_idx, 1.0 / count(*) OVER () AS weight "
-	    "FROM assets ORDER BY asset",
-	    asset, table);
+	    "WITH __finance_assets AS ("
+	    "  SELECT DISTINCT asset FROM (SELECT %s AS asset, %s AS __finance_date, %s AS __finance_ret FROM %s) "
+	    "  WHERE asset IS NOT NULL"
+	    ") "
+	    "SELECT asset, row_number() OVER (ORDER BY asset) - 1 AS asset_idx, 1.0::DOUBLE / count(*) OVER () AS weight "
+	    "FROM __finance_assets ORDER BY asset",
+	    asset, date, ret, table);
 	return ParseSubquery(context, query);
 }
 
 static unique_ptr<TableRef> PortfolioReturnTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountExactly(input, 4,
-	                         "fin_portfolio_return_table expects table_name, asset_col, weight_col, return_col");
-	auto table = SqlTableName(input.inputs[0]);
-	auto asset = SqlColumn(input.inputs[1]);
-	auto weight = SqlColumn(input.inputs[2]);
-	auto ret = SqlColumn(input.inputs[3]);
+	const string function_name = "fin_portfolio_return_table";
+	RequireInputCountBetween(input, 4, 5,
+	                         "fin_portfolio_return_table expects table_name, asset_col, weight_col, return_col[, "
+	                         "date_col]");
+	auto table = SqlSourceArg(input, 0, function_name);
+	auto asset = SqlColumnArg(input, 1, function_name, "asset_col");
+	auto weight = SqlColumnArg(input, 2, function_name, "weight_col");
+	auto ret = SqlColumnArg(input, 3, function_name, "return_col");
+	auto date = input.inputs.size() == 5 ? SqlColumnArg(input, 4, function_name, "date_col") : string();
+	auto date_select = date.empty() ? string() : date + " AS __finance_date, ";
+	auto date_group = date.empty() ? string() : string("__finance_date, ");
+	auto date_output = date.empty() ? string() : "__finance_date AS " + date + ", ";
 	auto query = StringUtil::Format(
-	    "WITH source AS ("
-	    "  SELECT %s::VARCHAR AS asset_id, %s::DOUBLE AS weight, %s::DOUBLE AS return_decimal FROM %s"
+	    "WITH __finance_positions AS ("
+	    "  SELECT %s__finance_asset, "
+	    "    CASE WHEN count(*) > 1 THEN error('fin_portfolio_return_table: duplicate asset ' || "
+	    "      __finance_asset || ' (one row per asset%s is required)') END AS __finance_check, "
+	    "    any_value(__finance_weight) AS __finance_weight, any_value(__finance_return) AS __finance_return "
+	    "  FROM (SELECT %s%s::VARCHAR AS __finance_asset, %s::DOUBLE AS __finance_weight, "
+	    "    %s::DOUBLE AS __finance_return FROM %s WHERE %s IS NOT NULL) "
+	    "  GROUP BY %s__finance_asset"
 	    ") "
-	    "SELECT fsum(weight * return_decimal) AS portfolio_return, fsum(weight) AS weight_sum, "
-	    "count(DISTINCT asset_id) AS asset_count "
-	    "FROM source",
-	    asset, weight, ret, table);
+	    "SELECT %sfsum(__finance_weight * __finance_return) AS portfolio_return, fsum(__finance_weight) AS weight_sum, "
+	    "count(__finance_asset) AS asset_count "
+	    "FROM __finance_positions WHERE __finance_check IS NULL%s%s",
+	    date_group, date.empty() ? "" : " and date", date_select, asset, weight, ret, table, asset, date_group,
+	    date_output,
+	    date.empty() ? "" : " GROUP BY __finance_date ORDER BY __finance_date", "");
 	return ParseSubquery(context, query);
 }
 
 static unique_ptr<TableRef> PortfolioVarianceTableBindReplace(ClientContext &context, TableFunctionBindInput &input) {
+	const string function_name = "fin_portfolio_variance_table";
 	RequireInputCountExactly(input, 7,
 	                         "fin_portfolio_variance_table expects weights_table, asset_col, weight_col, "
 	                         "covariance_table, asset_i_col, asset_j_col, covariance_col");
-	auto weights_table = SqlTableName(input.inputs[0]);
-	auto weight_asset = SqlColumn(input.inputs[1]);
-	auto weight = SqlColumn(input.inputs[2]);
-	auto covariance_table = SqlTableName(input.inputs[3]);
-	auto asset_i = SqlColumn(input.inputs[4]);
-	auto asset_j = SqlColumn(input.inputs[5]);
-	auto covariance = SqlColumn(input.inputs[6]);
+	auto weights_table = SqlSourceArg(input, 0, function_name, "weights_table");
+	auto weight_asset = SqlColumnArg(input, 1, function_name, "asset_col");
+	auto weight = SqlColumnArg(input, 2, function_name, "weight_col");
+	auto covariance_table = SqlSourceArg(input, 3, function_name, "covariance_table");
+	auto asset_i = SqlColumnArg(input, 4, function_name, "asset_i_col");
+	auto asset_j = SqlColumnArg(input, 5, function_name, "asset_j_col");
+	auto covariance = SqlColumnArg(input, 6, function_name, "covariance_col");
 	auto query = StringUtil::Format(
-	    "WITH weights AS ("
-	    "  SELECT %s::VARCHAR AS asset_id, %s::DOUBLE AS weight FROM %s"
-	    "), covariance AS ("
-	    "  SELECT %s::VARCHAR AS asset_i, %s::VARCHAR AS asset_j, %s::DOUBLE AS covariance FROM %s"
-	    "), risk AS ("
+	    "WITH __finance_weights AS ("
+	    "  SELECT %s::VARCHAR AS asset_id, CASE WHEN count(*) > 1 THEN "
+	    "    error('fin_portfolio_variance_table: duplicate weight for asset ' || %s::VARCHAR) "
+	    "    ELSE any_value(%s::DOUBLE) END AS weight "
+	    "  FROM %s WHERE %s IS NOT NULL GROUP BY 1"
+	    "), __finance_cov_input AS ("
+	    "  SELECT %s::VARCHAR AS asset_i, %s::VARCHAR AS asset_j, CASE WHEN count(*) > 1 THEN "
+	    "    error('fin_portfolio_variance_table: duplicate covariance for pair ' || %s::VARCHAR || ', ' || "
+	    "    %s::VARCHAR) ELSE any_value(%s::DOUBLE) END AS covariance "
+	    "  FROM %s WHERE %s IS NOT NULL AND %s IS NOT NULL GROUP BY 1, 2"
+	    "), __finance_cov AS ("
+	    "  SELECT asset_i, asset_j, covariance FROM __finance_cov_input "
+	    "  UNION ALL "
+	    "  SELECT c.asset_j, c.asset_i, c.covariance FROM __finance_cov_input c "
+	    "  WHERE c.asset_i <> c.asset_j AND NOT EXISTS ("
+	    "    SELECT 1 FROM __finance_cov_input m WHERE m.asset_i = c.asset_j AND m.asset_j = c.asset_i)"
+	    "), __finance_missing AS ("
+	    "  SELECT min(w.asset_id) AS asset_id FROM __finance_weights w "
+	    "  LEFT JOIN __finance_cov_input c ON c.asset_i = w.asset_id AND c.asset_j = w.asset_id "
+	    "  WHERE w.weight <> 0 AND c.covariance IS NULL"
+	    "), __finance_risk AS ("
 	    "  SELECT fsum(wi.weight * c.covariance * wj.weight) AS portfolio_variance "
-	    "  FROM covariance c "
-	    "  JOIN weights wi ON wi.asset_id = c.asset_i "
-	    "  JOIN weights wj ON wj.asset_id = c.asset_j"
+	    "  FROM __finance_cov c "
+	    "  JOIN __finance_weights wi ON wi.asset_id = c.asset_i "
+	    "  JOIN __finance_weights wj ON wj.asset_id = c.asset_j"
 	    ") "
-	    "SELECT portfolio_variance, sqrt(greatest(portfolio_variance, 0.0)) AS portfolio_volatility FROM risk",
-	    weight_asset, weight, weights_table, asset_i, asset_j, covariance, covariance_table);
+	    "SELECT portfolio_variance, CASE WHEN portfolio_variance IS NOT NULL THEN sqrt(greatest(portfolio_variance, "
+	    "0.0)) END AS portfolio_volatility FROM ("
+	    "  SELECT CASE "
+	    "    WHEN (SELECT asset_id FROM __finance_missing) IS NOT NULL THEN "
+	    "      error('fin_portfolio_variance_table: missing variance (diagonal covariance) for asset ' || "
+	    "      (SELECT asset_id FROM __finance_missing)) "
+	    "    WHEN (SELECT count(*) FROM __finance_weights) = 0 THEN NULL "
+	    "    ELSE coalesce(portfolio_variance, 0.0) END::DOUBLE AS portfolio_variance "
+	    "  FROM __finance_risk)",
+	    weight_asset, weight_asset, weight, weights_table, weight_asset, asset_i, asset_j, asset_i, asset_j, covariance,
+	    covariance_table, asset_i, asset_j);
 	return ParseSubquery(context, query);
 }
 
 static unique_ptr<TableRef> FactorReportBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountAtLeast(input, 5,
-	                         "fin_factor_report expects table_name, date_col, asset_col, factor_col, return_col");
-	auto table = SqlTableName(input.inputs[0]);
-	auto factor = SqlColumn(input.inputs[3]);
-	auto ret = SqlColumn(input.inputs[4]);
-	auto buckets = input.inputs.size() >= 6 ? input.inputs[5].GetValue<int32_t>() : 5;
-	if (buckets <= 1) {
-		throw BinderException("fin_factor_report buckets must be greater than 1");
+	const string function_name = "fin_factor_report";
+	auto table = SqlSourceArg(input, 0, function_name);
+	auto date = SqlColumnArg(input, 1, function_name, "date_col");
+	auto asset = SqlColumnArg(input, 2, function_name, "asset_col");
+	auto factor = SqlColumnArg(input, 3, function_name, "factor_col");
+	auto ret = SqlColumnArg(input, 4, function_name, "return_col");
+	int64_t buckets = 5;
+	if (input.inputs.size() >= 6) {
+		buckets = RequireInteger(input.inputs[5], function_name, "buckets");
 	}
-	auto high_quantile = 1.0 - 1.0 / double(buckets);
-	auto low_quantile = 1.0 / double(buckets);
+	if (buckets < 2 || buckets > 1000) {
+		throw InvalidInputException("%s: buckets must be between 2 and 1000", function_name);
+	}
+	// Cross-sectional statistics per date, then time-series averages across dates.
 	auto query = StringUtil::Format(
-	    "WITH source AS ("
-	    "  SELECT %s::DOUBLE AS factor, %s::DOUBLE AS ret FROM %s "
-	    "  WHERE %s IS NOT NULL AND %s IS NOT NULL"
-	    "), cuts AS ("
-	    "  SELECT quantile_cont(factor, %f) AS high_cut, quantile_cont(factor, %f) AS low_cut FROM source"
+	    "WITH __finance_factor_source AS ("
+	    "  SELECT %s AS __finance_date, %s AS __finance_asset, %s::DOUBLE AS __finance_factor, "
+	    "    %s::DOUBLE AS __finance_ret FROM %s "
+	    "  WHERE %s IS NOT NULL AND %s IS NOT NULL AND isfinite(%s::DOUBLE) AND isfinite(%s::DOUBLE)"
+	    "), __finance_factor_ranked AS ("
+	    "  SELECT *, "
+	    "    ntile(%lld) OVER (PARTITION BY __finance_date ORDER BY __finance_factor, __finance_asset) AS __finance_bucket, "
+	    "    rank() OVER (PARTITION BY __finance_date ORDER BY __finance_factor) "
+	    "      + (count(*) OVER (PARTITION BY __finance_date, __finance_factor) - 1) / 2.0 AS __finance_factor_rank, "
+	    "    rank() OVER (PARTITION BY __finance_date ORDER BY __finance_ret) "
+	    "      + (count(*) OVER (PARTITION BY __finance_date, __finance_ret) - 1) / 2.0 AS __finance_ret_rank "
+	    "  FROM __finance_factor_source"
+	    "), __finance_factor_dates AS ("
+	    "  SELECT __finance_date, "
+	    "    CASE WHEN isfinite(corr(__finance_factor, __finance_ret)) THEN corr(__finance_factor, __finance_ret) END AS ic, "
+	    "    CASE WHEN isfinite(corr(__finance_factor_rank, __finance_ret_rank)) "
+	    "      THEN corr(__finance_factor_rank, __finance_ret_rank) END AS rank_ic, avg(__finance_ret) AS mean_return, "
+	    "    avg(__finance_ret) FILTER (WHERE __finance_bucket = %lld) "
+	    "      - avg(__finance_ret) FILTER (WHERE __finance_bucket = 1) AS quantile_spread, count(*) AS n "
+	    "  FROM __finance_factor_ranked GROUP BY 1"
 	    ") "
-	    "SELECT corr(factor, ret) AS ic, avg(ret) AS mean_return, "
-	    "avg(ret) FILTER (WHERE factor >= high_cut) - "
-	    "avg(ret) FILTER (WHERE factor <= low_cut) AS quantile_spread "
-	    "FROM source, cuts",
-	    factor, ret, table, factor, ret, high_quantile, low_quantile);
+	    "SELECT avg(ic) AS ic, stddev_samp(ic) AS ic_std, avg(ic) / nullif(stddev_samp(ic), 0) AS ic_ir, "
+	    "avg(ic) / nullif(stddev_samp(ic) / sqrt(count(ic)), 0) AS ic_tstat, avg(rank_ic) AS rank_ic, "
+	    "avg(mean_return) AS mean_return, avg(quantile_spread) AS quantile_spread, count(ic) AS n_dates, "
+	    "sum(n)::BIGINT AS n_obs "
+	    "FROM __finance_factor_dates",
+	    date, asset, factor, ret, table, date, asset, factor, ret, static_cast<long long>(buckets),
+	    static_cast<long long>(buckets));
 	return ParseSubquery(context, query);
 }
 
 static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountAtLeast(input, 2, "fin_garch_fit expects table_name, return_col");
-	auto table = SqlTableName(input.inputs[0]);
-	auto ret = SqlColumn(input.inputs[1]);
+	const string function_name = "fin_garch_fit";
+	auto table = SqlSourceArg(input, 0, function_name);
+	auto ret = SqlColumnArg(input, 1, function_name, "return_col");
+	if (input.inputs.size() >= 3 && RequireInteger(input.inputs[2], function_name, "p") != 1) {
+		throw InvalidInputException("%s: only p = 1 is supported", function_name);
+	}
+	if (input.inputs.size() >= 4 && RequireInteger(input.inputs[3], function_name, "q") != 1) {
+		throw InvalidInputException("%s: only q = 1 is supported", function_name);
+	}
+	if (input.inputs.size() >= 5) {
+		auto distribution = StringUtil::Lower(RequireString(input.inputs[4], function_name, "distribution"));
+		StringUtil::Trim(distribution);
+		if (distribution != "normal") {
+			throw InvalidInputException("%s: unknown distribution '%s' (only 'normal' is supported)", function_name,
+			                            distribution);
+		}
+	}
 	auto query = StringUtil::Format(
-	    "SELECT 1 AS p, 1 AS q, 0.000001 AS omega, 0.05 AS alpha, 0.90 AS beta, "
-	    "var_samp(%s::DOUBLE) AS unconditional_variance, "
+	    "SELECT 1::BIGINT AS p, 1::BIGINT AS q, 0.000001::DOUBLE AS omega, 0.05::DOUBLE AS alpha, "
+	    "0.90::DOUBLE AS beta, var_samp(%s::DOUBLE) AS unconditional_variance, "
 	    "sqrt(var_samp(%s::DOUBLE) * 252.0) AS annualized_vol "
 	    "FROM %s",
 	    ret, ret, table);
@@ -113,10 +218,13 @@ static unique_ptr<TableRef> GarchFitBindReplace(ClientContext &context, TableFun
 }
 
 static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFunctionBindInput &input) {
+	const string function_name = "fin_calendar";
 	RequireInputCountBetween(input, 1, 3, "fin_calendar expects calendar, start_date, end_date");
-	auto calendar = SqlLiteral(input.inputs[0]);
-	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(input.inputs[1]) : CurrentDateSql(context);
-	auto end_date = input.inputs.size() >= 3 ? SqlLiteral(input.inputs[2]) : start_date;
+	auto calendar = SqlStringLiteral(RequireString(input.inputs[0], function_name, "calendar"));
+	auto start_date = input.inputs.size() >= 2 ? SqlLiteral(RequireArgument(input, 1, function_name, "start_date"))
+	                                           : CurrentDateSql(context);
+	auto end_date =
+	    input.inputs.size() >= 3 ? SqlLiteral(RequireArgument(input, 2, function_name, "end_date")) : start_date;
 	auto query = StringUtil::Format(
 	    "SELECT %s::VARCHAR AS calendar, CAST(generate_series AS DATE) AS date, "
 	    "fin_is_business_day(CAST(generate_series AS DATE), %s::VARCHAR) AS is_business_day, "
@@ -126,45 +234,71 @@ static unique_ptr<TableRef> CalendarBindReplace(ClientContext &context, TableFun
 	return ParseSubquery(context, query);
 }
 
+static string NamedColumnOr(const TableFunctionBindInput &input, const string &name, const string &fallback,
+                            const string &function_name) {
+	auto column = OptionalNamedColumn(input, name, function_name);
+	return column.empty() ? SqlIdentifier(fallback) : column;
+}
+
 static unique_ptr<TableRef> RebalanceTradesBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountAtLeast(input, 3,
-	                         "fin_rebalance_trades expects current_table, target_table, price_table[, portfolio_value]");
-	auto current_table = SqlTableName(input.inputs[0]);
-	auto target_table = SqlTableName(input.inputs[1]);
-	auto price_table = SqlTableName(input.inputs[2]);
-	auto portfolio_value = input.inputs.size() >= 4 ? SqlLiteral(input.inputs[3]) : "1.0";
+	const string function_name = "fin_rebalance_trades";
+	auto current_table = SqlSourceArg(input, 0, function_name, "current_table");
+	auto target_table = SqlSourceArg(input, 1, function_name, "target_table");
+	auto price_table = SqlSourceArg(input, 2, function_name, "price_table");
+	double portfolio_value = 1.0;
+	if (input.inputs.size() >= 4) {
+		portfolio_value = RequireFiniteDouble(input.inputs[3], function_name, "portfolio_value");
+	}
+	auto asset = NamedColumnOr(input, "asset_col", "asset", function_name);
+	auto weight = NamedColumnOr(input, "weight_col", "weight", function_name);
+	auto price = NamedColumnOr(input, "price_col", "price", function_name);
+	auto unique_rows = [&](const string &label, const string &value_column, const string &table) {
+		return StringUtil::Format(
+		    "SELECT %s AS asset, CASE WHEN count(*) > 1 THEN error('fin_rebalance_trades: duplicate asset ' || "
+		    "%s::VARCHAR || ' in %s') ELSE any_value(%s::DOUBLE) END AS value FROM %s WHERE %s IS NOT NULL GROUP BY 1",
+		    asset, asset, label, value_column, table, asset);
+	};
+	auto value_literal = DoubleLiteral(portfolio_value);
 	auto query = StringUtil::Format(
-	    "WITH current_w AS (SELECT asset, weight::DOUBLE AS current_weight FROM %s), "
-	    "target_w AS (SELECT asset, weight::DOUBLE AS target_weight FROM %s), "
-	    "prices AS (SELECT asset, price::DOUBLE AS price FROM %s), "
-	    "joined AS ("
-	    "  SELECT coalesce(c.asset, t.asset) AS asset, coalesce(c.current_weight, 0.0) AS current_weight, "
-	    "         coalesce(t.target_weight, 0.0) AS target_weight "
-	    "  FROM current_w c FULL OUTER JOIN target_w t USING (asset)"
+	    "WITH __finance_current_w AS (%s), __finance_target_w AS (%s), __finance_prices AS (%s), "
+	    "__finance_joined AS ("
+	    "  SELECT coalesce(c.asset, t.asset) AS asset, coalesce(c.value, 0.0) AS current_weight, "
+	    "         coalesce(t.value, 0.0) AS target_weight "
+	    "  FROM __finance_current_w c FULL OUTER JOIN __finance_target_w t ON c.asset = t.asset"
 	    ") "
-	    "SELECT j.asset, current_weight, target_weight, p.price, "
-	    "       (target_weight - current_weight) * %s::DOUBLE AS notional_delta, "
-	    "       ((target_weight - current_weight) * %s::DOUBLE) / nullif(p.price, 0) AS quantity_delta "
-	    "FROM joined j LEFT JOIN prices p USING (asset) ORDER BY asset",
-	    current_table, target_table, price_table, portfolio_value, portfolio_value);
+	    "SELECT j.asset AS %s, current_weight, target_weight, p.value AS %s, "
+	    "       (target_weight - current_weight) * %s AS notional_delta, "
+	    "       ((target_weight - current_weight) * %s) / nullif(p.value, 0) AS quantity_delta "
+	    "FROM __finance_joined j LEFT JOIN __finance_prices p ON j.asset = p.asset ORDER BY j.asset",
+	    unique_rows("current weights", weight, current_table), unique_rows("target weights", weight, target_table),
+	    unique_rows("prices", price, price_table), asset, price, value_literal, value_literal);
 	return ParseSubquery(context, query);
 }
 
 static unique_ptr<TableRef> FamaMacbethBindReplace(ClientContext &context, TableFunctionBindInput &input) {
-	RequireInputCountAtLeast(input, 5,
-	                         "fin_fama_macbeth expects table_name, date_col, asset_col, y_col, x_cols[, lags]");
-	auto table = SqlTableName(input.inputs[0]);
-	auto date_col = SqlColumn(input.inputs[1]);
-	auto y_col = SqlColumn(input.inputs[3]);
-	auto &x_children = ListValue::GetChildren(input.inputs[4]);
+	const string function_name = "fin_fama_macbeth";
+	auto table = SqlSourceArg(input, 0, function_name);
+	auto date_col = SqlColumnArg(input, 1, function_name, "date_col");
+	auto asset_col = SqlColumnArg(input, 2, function_name, "asset_col");
+	auto y_col = SqlColumnArg(input, 3, function_name, "y_col");
+	auto &x_list = RequireArgument(input, 4, function_name, "x_cols");
+	auto &x_children = ListValue::GetChildren(x_list);
 	if (x_children.empty()) {
-		throw BinderException("fin_fama_macbeth requires at least one x column");
+		throw InvalidInputException("%s: x_cols requires at least one column", function_name);
 	}
-	auto x_col = SqlIdentifier(x_children[0].GetValue<string>());
+	auto x_col = SqlColumn(x_children[0], function_name, "x_cols element");
+	if (input.inputs.size() >= 6) {
+		auto lags = RequireInteger(input.inputs[5], function_name, "lags");
+		if (lags < 0) {
+			throw InvalidInputException("%s: lags must be non-negative", function_name);
+		}
+	}
 	auto query = StringUtil::Format(
-	    "SELECT %s AS date, regr_intercept(%s::DOUBLE, %s::DOUBLE) AS intercept, "
-	    "regr_slope(%s::DOUBLE, %s::DOUBLE) AS beta, regr_r2(%s::DOUBLE, %s::DOUBLE) AS r2, count(*) AS n "
-	    "FROM %s GROUP BY date ORDER BY date",
-	    date_col, y_col, x_col, y_col, x_col, y_col, x_col, table);
+	    "SELECT __finance_date AS date, regr_intercept(__finance_y, __finance_x) AS intercept, "
+	    "regr_slope(__finance_y, __finance_x) AS beta, regr_r2(__finance_y, __finance_x) AS r2, "
+	    "regr_count(__finance_y, __finance_x)::BIGINT AS n "
+	    "FROM (SELECT %s AS __finance_date, %s AS __finance_asset, %s::DOUBLE AS __finance_y, "
+	    "%s::DOUBLE AS __finance_x FROM %s) GROUP BY 1 ORDER BY 1",
+	    date_col, asset_col, y_col, x_col, table);
 	return ParseSubquery(context, query);
 }

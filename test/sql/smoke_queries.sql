@@ -86,7 +86,7 @@ INSERT INTO ticks VALUES
   (TIMESTAMP '2026-01-01 09:30:01', 101, 20),
   (TIMESTAMP '2026-01-01 09:30:02', 99, 30);
 SELECT count(*) AS tick_bar_count FROM fin_tick_bars('ticks', 'ts', 'price');
-SELECT count(*) AS imbalance_bar_count FROM fin_imbalance_bars('ticks', 'ts', 'price', 'volume', 'signed');
+SELECT count(*) AS imbalance_bar_count FROM fin_imbalance_bars('ticks', 'ts', 'price', 'volume', 25.0, 'tick_rule');
 
 CREATE OR REPLACE TEMP TABLE grid_inputs(ts TIMESTAMP, value DOUBLE);
 INSERT INTO grid_inputs VALUES
