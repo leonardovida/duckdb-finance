@@ -39,6 +39,7 @@ namespace {
 
 } // namespace
 
+#include "aggregate/register_returns_risk.inc"
 #include "aggregate/register.inc"
 
 } // namespace duckdb
