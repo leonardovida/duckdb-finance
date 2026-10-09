@@ -3104,7 +3104,7 @@ FROM bounds;
 
 SELECT
   assert_true('constant session upper overflow', fin_session_date(make_timestamp(9223372036854775806), 'weekday', 'America/New_York') IS NULL),
-  assert_true('instant session lower overflow', fin_session_date(make_timestamp(-9223372036854775806)::TIMESTAMPTZ, 'NYSE') IS NULL),
+  assert_true('constant session lower overflow', fin_session_date(make_timestamp(-9223372036854775806), 'NYSE', 'UTC') IS NULL),
   assert_eq('last finite converted session date', fin_session_date(make_timestamp(9223372018854775806), 'weekday', 'America/New_York'), make_timestamp(9223372036854775806)::DATE),
   assert_eq('first finite converted session date', fin_session_date(make_timestamp(-9223372018854775806), 'NYSE', 'UTC'), make_timestamp(-9223372036854775806)::DATE),
   assert_eq('earliest unshifted session date', fin_session_date(make_timestamp(-9223372036854775806), 'weekday'), make_timestamp(-9223372036854775806)::DATE),
