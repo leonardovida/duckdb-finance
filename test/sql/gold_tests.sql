@@ -3087,6 +3087,32 @@ SELECT
   assert_true('session wall clock in utc', fin_is_regular_session(TIMESTAMP '2026-07-06 14:00:00', 'NYSE', 'UTC')),
   assert_eq('session date of utc instant', fin_session_date(TIMESTAMPTZ '2026-07-07 02:00:00+00', 'NYSE'), DATE '2026-07-06');
 
+-- Session timezone shifts must not wrap across the TIMESTAMP limits, including
+-- offsets that land exactly on DuckDB's infinity sentinels. Both scalar output
+-- types share the conversion, and VALUES exercises the nonconstant path.
+WITH bounds(micros, zone, calendar, invalid) AS (VALUES
+  (9223372036854775806::BIGINT, 'America/New_York', 'weekday', true),
+  (-9223372036854775806::BIGINT, 'UTC', 'NYSE', true),
+  (9223372018854775807::BIGINT, 'America/New_York', 'weekday', true),
+  (-9223372018854775807::BIGINT, 'UTC', 'NYSE', true),
+  (9223372018854775806::BIGINT, 'America/New_York', 'weekday', false),
+  (-9223372018854775806::BIGINT, 'UTC', 'NYSE', false)
+)
+SELECT assert_eq('session date boundary null', fin_session_date(make_timestamp(micros), calendar, zone) IS NULL, invalid),
+       assert_eq('session predicate boundary null', fin_is_regular_session(make_timestamp(micros), calendar, zone) IS NULL, invalid)
+FROM bounds;
+
+SELECT
+  assert_true('constant session upper overflow', fin_session_date(make_timestamp(9223372036854775806), 'weekday', 'America/New_York') IS NULL),
+  assert_true('instant session lower overflow', fin_session_date(make_timestamp(-9223372036854775806)::TIMESTAMPTZ, 'NYSE') IS NULL),
+  assert_eq('last finite converted session date', fin_session_date(make_timestamp(9223372018854775806), 'weekday', 'America/New_York'), make_timestamp(9223372036854775806)::DATE),
+  assert_eq('first finite converted session date', fin_session_date(make_timestamp(-9223372018854775806), 'NYSE', 'UTC'), make_timestamp(-9223372036854775806)::DATE),
+  assert_eq('earliest unshifted session date', fin_session_date(make_timestamp(-9223372036854775806), 'weekday'), make_timestamp(-9223372036854775806)::DATE),
+  assert_eq('earliest unshifted session predicate', fin_is_regular_session(make_timestamp(-9223372036854775806), 'weekday'), false),
+  assert_eq('far future nyse session key', fin_is_regular_session(TIMESTAMP '294247-01-08 12:00:00', 'NYSE'), true),
+  assert_eq('negative epoch session time', fin_is_regular_session(TIMESTAMP '1969-12-29 10:00:00', 'weekday'), true),
+  assert_eq('negative epoch outside session', fin_is_regular_session(TIMESTAMP '1969-12-29 01:00:00', 'weekday'), false);
+
 -- Price transforms and microstructure scalars.
 SELECT
   assert_near('avg price', fin_avg_price(open, high, low, close), 100.0, 1e-12),
