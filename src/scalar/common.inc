@@ -1287,7 +1287,7 @@ static bool IsNyseHoliday(date_t date) {
 static bool IsNyseEarlyClose(date_t date) {
 	int32_t y, m, d;
 	Date::Convert(date, y, m, d);
-	auto key = y * 10000 + m * 100 + d;
+	auto key = int64_t(y) * 10000 + m * 100 + d;
 	switch (key) {
 	case 19960705:
 	case 19971226:
@@ -1495,12 +1495,20 @@ static int64_t ZoneOffsetForUtc(SessionZone zone, int64_t utc_micros) {
 }
 
 //! Interpret a wall-clock time in `zone` as UTC (skipped/repeated hours resolve to standard time first).
-static int64_t ZoneLocalToUtc(SessionZone zone, int64_t local_micros) {
+static bool TryShiftSessionTime(int64_t micros, int64_t offset, int64_t &result) {
+	return TryAddOperator::Operation(micros, offset, result) && Timestamp::IsFinite(timestamp_t(result));
+}
+
+static bool ZoneLocalToUtc(SessionZone zone, int64_t local_micros, int64_t &utc) {
 	if (zone != SessionZone::NEW_YORK) {
-		return local_micros;
+		utc = local_micros;
+		return true;
 	}
-	int64_t guess = local_micros + 5 * MICROS_PER_HOUR;
-	return local_micros - NewYorkOffsetForUtc(guess);
+	int64_t guess;
+	if (!TryShiftSessionTime(local_micros, 5 * MICROS_PER_HOUR, guess)) {
+		return false;
+	}
+	return TryShiftSessionTime(local_micros, -NewYorkOffsetForUtc(guess), utc);
 }
 
 static SessionZone CalendarZone(BusinessCalendar calendar) {
@@ -1509,18 +1517,26 @@ static SessionZone CalendarZone(BusinessCalendar calendar) {
 
 //! Exchange-local wall clock (micros) for a timestamp. `input_zone` describes how the input is to be read;
 //! EXCHANGE means the input already is exchange-local wall-clock time.
-static int64_t ToExchangeLocal(int64_t micros, SessionZone input_zone, BusinessCalendar calendar) {
+static bool ToExchangeLocal(int64_t micros, SessionZone input_zone, BusinessCalendar calendar, int64_t &local) {
 	auto exchange_zone = CalendarZone(calendar);
 	if (input_zone == SessionZone::EXCHANGE || input_zone == exchange_zone) {
-		return micros;
+		local = micros;
+		return true;
 	}
-	auto utc = ZoneLocalToUtc(input_zone, micros);
-	return utc + ZoneOffsetForUtc(exchange_zone, utc);
+	int64_t utc;
+	if (!ZoneLocalToUtc(input_zone, micros, utc)) {
+		return false;
+	}
+	return TryShiftSessionTime(utc, ZoneOffsetForUtc(exchange_zone, utc), local);
 }
 
 static bool IsRegularSession(int64_t local_micros, BusinessCalendar calendar) {
 	auto days = FloorDiv(local_micros, MICROS_PER_DAY);
-	auto time_of_day = local_micros - days * MICROS_PER_DAY;
+	// The floor-day product can fall below INT64_MIN for the earliest timestamps.
+	auto time_of_day = local_micros % MICROS_PER_DAY;
+	if (time_of_day < 0) {
+		time_of_day += MICROS_PER_DAY;
+	}
 	auto date = date_t(int32_t(days));
 	if (!IsBusinessDay(date, calendar)) {
 		return false;

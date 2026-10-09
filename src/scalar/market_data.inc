@@ -848,7 +848,11 @@ static void ExecuteSession(DataChunk &args, Vector &result, FUNC func) {
 		}
 		auto cal = calendar.Get(input, row);
 		auto input_zone = instant ? SessionZone::UTC : zone.Get(input, row);
-		auto local = ToExchangeLocal(ts.value, input_zone, cal);
+		int64_t local;
+		if (!ToExchangeLocal(ts.value, input_zone, cal, local)) {
+			SetResultNull(result, row, args.size(), constant);
+			continue;
+		}
 		out[row] = func(local, cal);
 	}
 }
