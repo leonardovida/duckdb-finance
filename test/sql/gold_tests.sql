@@ -4381,6 +4381,23 @@ FROM fin_imbalance_bars('(FROM gold_ticks WHERE sym = ''X'')', 'ts', 'price', 's
 SELECT assert_eq('tick rule imbalance bars', list(imbalance ORDER BY bar_id), [25.0, -40.0, -5.0])
 FROM fin_imbalance_bars('(FROM gold_ticks WHERE sym = ''X'')', 'ts', 'price', 'volume', 15, 'tick_rule');
 
+-- Bar totals and volume presence reset at both closures and asset boundaries.
+-- A zero-volume bar has volume 0 but undefined VWAP; an all-NULL bar has NULL volume.
+SELECT
+  assert_eq('tick reset row count', count(*), 5::BIGINT),
+  assert_eq('tick reset volume', list(volume ORDER BY sym, bar_id), [2.0, NULL, 0.0, 3.0, NULL]),
+  assert_eq('tick reset vwap', list(vwap ORDER BY sym, bar_id), [10.0, NULL, NULL, 11.0, NULL]),
+  assert_eq('tick reset ticks', list(ticks ORDER BY sym, bar_id), [2::BIGINT, 2, 1, 2, 1])
+FROM fin_tick_bars('gold_bar_resets', 'ts', 'price', 2, asset_col := 'sym', volume_col := 'volume');
+
+-- Tick-rule price/sign history survives a bar closure, but starts fresh per asset.
+SELECT
+  assert_eq('tick rule reset row count', count(*), 5::BIGINT),
+  assert_eq('tick rule reset imbalance', list(imbalance ORDER BY sym, bar_id), [1.0, 1.0, 1.0, -1.0, 1.0]),
+  assert_eq('tick rule reset ticks', list(ticks ORDER BY sym, bar_id), [2::BIGINT, 1, 1, 1, 3])
+FROM fin_imbalance_bars('(SELECT *, 1.0 AS unit_volume FROM gold_bar_resets)',
+  'ts', 'price', 'unit_volume', 1, 'tick_rule', asset_col := 'sym');
+
 -- Exact multiples use a relative tolerance: ten volumes of 0.1 close a bar of 1.0.
 SELECT assert_eq('volume bars relative epsilon', list(ticks ORDER BY bar_id), [10::BIGINT, 10, 10])
 FROM fin_volume_bars('(SELECT TIMESTAMP ''2026-01-01'' + to_seconds(i) AS ts, 1.0 AS price, 0.1 AS volume FROM range(30) r(i))',
