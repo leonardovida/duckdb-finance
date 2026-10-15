@@ -221,3 +221,12 @@ WITH RECURSIVE g(t, h, r) AS (
   FROM g WHERE t < 299
 )
 SELECT t, r FROM g ORDER BY (t * 37) % 300;
+
+-- Small bar lifecycle fixture: NULL/zero volume and unchanged prices after closure.
+CREATE TEMP TABLE gold_bar_resets AS
+SELECT sym, TIMESTAMP '2026-01-01' + to_seconds(seq) AS ts, price, volume, seq
+FROM (VALUES
+  ('A', 1, 10.0, 2.0), ('A', 2, 11.0, NULL),
+  ('A', 3, 11.0, NULL), ('A', 4, 11.0, NULL), ('A', 5, 10.0, 0.0),
+  ('B', 1, 11.0, NULL), ('B', 2, 11.0, 3.0), ('B', 3, 12.0, NULL)
+) t(sym, seq, price, volume);

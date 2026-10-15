@@ -45,6 +45,22 @@ struct CompensatedSum {
 	}
 };
 
+// All per-bar totals start together at both asset boundaries and bar closures.
+// Tick-rule price/sign history belongs to the asset, so it is kept outside this state.
+struct BarAccumulator {
+	CompensatedSum metric;
+	CompensatedSum volume;
+	CompensatedSum notional;
+	bool has_volume = false;
+
+	void Reset() {
+		metric.Reset();
+		volume.Reset();
+		notional.Reset();
+		has_volume = false;
+	}
+};
+
 struct BarIndexState {
 	vector<BarRow> *bars;
 };
@@ -111,10 +127,7 @@ static void BarIndexWindowInit(AggregateInputData &, const WindowPartitionInput 
 	bool previous_key_null = false;
 	string previous_key;
 	int64_t bar = 0;
-	CompensatedSum metric_sum;
-	CompensatedSum volume_sum;
-	CompensatedSum notional_sum;
-	bool bar_has_volume = false;
+	BarAccumulator accumulator;
 	double sign = 0.0;
 	bool have_price = false;
 	double previous_price = 0.0;
@@ -160,10 +173,7 @@ static void BarIndexWindowInit(AggregateInputData &, const WindowPartitionInput 
 					previous_key = keys[key_idx].GetString();
 				}
 				bar = 0;
-				metric_sum.Reset();
-				volume_sum.Reset();
-				notional_sum.Reset();
-				bar_has_volume = false;
+				accumulator.Reset();
 				sign = 0.0;
 				have_price = false;
 			}
@@ -215,24 +225,21 @@ static void BarIndexWindowInit(AggregateInputData &, const WindowPartitionInput 
 			previous_price = price;
 
 			// Running totals within the open bar; the last row of a bar carries the bar totals.
-			metric_sum.Add(metric);
+			accumulator.metric.Add(metric);
 			if (volume_valid) {
 				auto traded = kind == BarKind::IMBALANCE_SIGNED ? std::fabs(volume) : volume;
-				volume_sum.Add(traded);
-				notional_sum.Add(price * traded);
-				bar_has_volume = true;
+				accumulator.volume.Add(traded);
+				accumulator.notional.Add(price * traded);
+				accumulator.has_volume = true;
 			}
-			auto total = metric_sum.Total();
-			bars[row] = {bar, volume_sum.Total(), notional_sum.Total(), total, bar_has_volume};
+			auto total = accumulator.metric.Total();
+			bars[row] = {bar, accumulator.volume.Total(), accumulator.notional.Total(), total, accumulator.has_volume};
 			auto reached = kind == BarKind::IMBALANCE_SIGNED || kind == BarKind::IMBALANCE_TICK_RULE
 			                   ? std::fabs(total) >= threshold * (1.0 - 1e-12)
 			                   : total >= threshold * (1.0 - 1e-12);
 			if (reached) {
 				bar++;
-				metric_sum.Reset();
-				volume_sum.Reset();
-				notional_sum.Reset();
-				bar_has_volume = false;
+				accumulator.Reset();
 			}
 		}
 	}
