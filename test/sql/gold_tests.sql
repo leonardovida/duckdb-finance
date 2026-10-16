@@ -3199,6 +3199,37 @@ FROM (VALUES (1.0, 1.0, 1), (2.0, 2.0, 2), (9.0, NULL, 3), (NULL, 5.0, 4)) t(p, 
 
 -- Vector, matrix, and portfolio helpers.
 SELECT
+  assert_eq('constant inverse-vol subnormals', fin_inverse_vol_weights([5e-324, 5e-324]), [0.5, 0.5]),
+  assert_eq('constant inverse-vol large singleton', fin_inverse_vol_weights([1e308]), [1.0]),
+  assert_eq('inverse-vol empty input', fin_inverse_vol_weights([]::DOUBLE[]), NULL),
+  assert_eq('inverse-vol NULL input', fin_inverse_vol_weights(NULL::DOUBLE[]), NULL);
+
+WITH weighted AS (
+  SELECT *, fin_inverse_vol_weights(vols) AS weights FROM gold_inverse_vol_weights
+)
+SELECT
+  assert_true('inverse-vol finite positive inputs produce weights', bool_and(weights IS NOT NULL)),
+  assert_true('inverse-vol preserves shape', bool_and(len(weights) = len(expected))),
+  assert_true('inverse-vol weights sum to one', bool_and(abs(list_sum(weights) - 1.0) < 1e-15))
+FROM weighted;
+
+WITH elements AS (
+  SELECT unnest(fin_inverse_vol_weights(vols)) AS actual, unnest(expected) AS expected
+  FROM gold_inverse_vol_weights
+)
+SELECT assert_true('inverse-vol analytic weights', bool_and(abs(actual - expected) <= 1e-15 * expected))
+FROM elements;
+
+SELECT assert_true('inverse-vol invalid elements remain NULL', bool_and(fin_inverse_vol_weights(vols) IS NULL))
+FROM (VALUES ([0.0, 1.0]::DOUBLE[]), ([-1.0, 1.0]), ([NULL, 1.0]),
+             (['Infinity'::DOUBLE, 1.0]), (['-Infinity'::DOUBLE, 1.0]), (['NaN'::DOUBLE, 1.0])) t(vols);
+
+-- Many small inverse-vol terms must contribute to the denominator.
+SELECT assert_near('inverse-vol compensated denominator',
+  fin_inverse_vol_weights(list_concat([1.0], (SELECT list(1e16::DOUBLE) FROM range(1000))))[1],
+  0.9999999999999, 1e-15);
+
+SELECT
   assert_near('dot', fin_dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]), 32.0, 1e-12),
   assert_near('vector sum', fin_vector_sum([1.0, 2.0, 3.0]), 6.0, 1e-12),
   assert_near('vector mean', fin_vector_mean([1.0, 2.0, 3.0]), 2.0, 1e-12),

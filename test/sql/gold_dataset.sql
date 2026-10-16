@@ -230,3 +230,17 @@ FROM (VALUES
   ('A', 3, 11.0, NULL), ('A', 4, 11.0, NULL), ('A', 5, 10.0, 0.0),
   ('B', 1, 11.0, NULL), ('B', 2, 11.0, 3.0), ('B', 3, 12.0, NULL)
 ) t(sym, seq, price, volume);
+
+-- Analytic inverse-volatility weights, invariant under a common positive scale.
+CREATE TEMP TABLE gold_inverse_vol_weights AS
+SELECT * FROM (VALUES
+  ('ordinary', [1.0, 2.0, 4.0]::DOUBLE[], [4.0/7, 2.0/7, 1.0/7]::DOUBLE[]),
+  ('tiny', [1e-308, 2e-308, 4e-308], [4.0/7, 2.0/7, 1.0/7]),
+  ('large', [1e307, 2e307, 4e307], [4.0/7, 2.0/7, 1.0/7]),
+  ('equal tiny', [1e-308, 1e-308], [0.5, 0.5]),
+  ('equal subnormal', [5e-324, 5e-324], [0.5, 0.5]),
+  ('subnormal ratio', [1e-320, 2e-320], [2.0/3, 1.0/3]),
+  ('singleton large', [1e308], [1.0]),
+  ('wide ratio', [5e-324, 1.0], [1.0, 5e-324]),
+  ('underflowing weight', [5e-324, 1e308], [1.0, 0.0])
+) t(label, vols, expected);
