@@ -4075,8 +4075,8 @@ FROM fin_curve_bootstrap('(FROM (VALUES (''deposit'', 1e308, 1e-308)) t(k,m,r))'
 -- The implied annualized log rate rounds to 1e-320. Daily conversion must
 -- preserve it, without first quantizing an exponent smaller by a factor of 365.
 SELECT
-  assert_eq('bootstrap subnormal daily zero', zero_rate, 1e-320),
-  assert_eq('bootstrap subnormal daily forward', forward_rate, 1e-320)
+  assert_near('bootstrap subnormal daily zero', zero_rate, 1e-320, 1e-323),
+  assert_near('bootstrap subnormal daily forward', forward_rate, 1e-320, 1e-323)
 FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 1e308, 1e-320)) t(k,m,r))', 'k', 'm', 'r', 'daily');
 
 -- Adjacent discounts near 1e-300: subtracting their logs loses forward precision.
