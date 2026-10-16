@@ -279,13 +279,12 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 			ok = ok && IsFinite(sum) && sum != 0.0;
 			factor = 1.0 / sum;
 		} else {
-			double sum = 0.0;
+			factor = std::numeric_limits<double>::infinity();
 			for (idx_t i = 0; ok && i < n; i++) {
 				ok = x[i] > 0.0 && IsFinite(x[i]);
-				sum += 1.0 / x[i];
+				factor = std::min(factor, x[i]);
 			}
-			ok = ok && n > 0 && IsFinite(sum);
-			factor = 1.0 / sum;
+			ok = ok && n > 0;
 		}
 		if (!ok) {
 			writer.SetNull(row, count);
@@ -297,7 +296,9 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 			if (op == ListOp::NORMALIZE) {
 				out[i] = x[i] * factor;
 			} else if (op == ListOp::INVERSE_VOL) {
-				out[i] = (1.0 / x[i]) * factor;
+				// Scaling by the smallest volatility keeps every ratio in [0, 1]
+				// and at least one at 1, even for subnormal or very large inputs.
+				out[i] = factor / x[i];
 			} else {
 				out[i] = x[i] * factor;
 			}
@@ -306,6 +307,12 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 		if (!ok) {
 			writer.SetNull(row, count);
 			continue;
+		}
+		if (op == ListOp::INVERSE_VOL) {
+			auto sum = CompensatedSum(out, n);
+			for (idx_t i = 0; i < n; i++) {
+				out[i] /= sum;
+			}
 		}
 		writer.Commit(row, n);
 	}
