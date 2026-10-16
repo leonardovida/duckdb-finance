@@ -79,16 +79,33 @@ static double DiscountFromRate(double rate, double t, int32_t compounding) {
 	return std::pow(base, -k * t);
 }
 
-// Rate with the given compounding implied by a growth factor (1 / discount) over t years.
-static double RateFromGrowth(double growth, double t, int32_t compounding) {
-	if (compounding == FINANCE_COMPOUNDING_CONTINUOUS) {
-		return std::log(growth) / t;
-	}
+// Rate implied by two positive finite discounts over t years. Forming their
+// ratio first can overflow or underflow even when the annualized rate fits.
+static double RateFromDiscounts(double start_discount, double end_discount, double t, int32_t compounding) {
+	auto difference = start_discount - end_discount;
 	if (compounding == FINANCE_COMPOUNDING_SIMPLE) {
-		return (growth - 1.0) / t;
+		auto growth_minus_one = difference / end_discount;
+		if (!std::isfinite(growth_minus_one) && t > 1.0) {
+			return difference / (end_discount * t);
+		}
+		return growth_minus_one / t;
+	}
+	// log1p preserves small changes between nearby discounts; separate logs
+	// handle the full finite discount range without an intermediate ratio.
+	auto log_growth = std::fabs(difference) <= 0.5 * end_discount
+	                      ? std::log1p(difference / end_discount)
+	                      : std::log(start_discount) - std::log(end_discount);
+	auto annual_log = log_growth / t;
+	if (compounding == FINANCE_COMPOUNDING_CONTINUOUS) {
+		return annual_log;
 	}
 	auto k = double(compounding);
-	return k * (std::pow(growth, 1.0 / (k * t)) - 1.0);
+	if (std::fabs(annual_log) < k * std::numeric_limits<double>::min()) {
+		// The nonlinear correction is unrepresentable here. Avoid losing bits
+		// by dividing a subnormal exponent by k only to multiply it back.
+		return annual_log;
+	}
+	return k * std::expm1(annual_log / k);
 }
 
 struct CurveNodes {
@@ -245,8 +262,8 @@ static vector<CurveOutputNode> BootstrapCurveRows(vector<CurveInputRow> &rows, i
 		nodes.discounts.push_back(discount);
 		CurveOutputNode node;
 		node.discount_factor = discount;
-		node.zero_rate = RateFromGrowth(1.0 / discount, row.maturity, compounding);
-		node.forward_rate = RateFromGrowth(previous_discount / discount, row.maturity - previous_time, compounding);
+		node.zero_rate = RateFromDiscounts(1.0, discount, row.maturity, compounding);
+		node.forward_rate = RateFromDiscounts(previous_discount, discount, row.maturity - previous_time, compounding);
 		result.push_back(node);
 	}
 	return result;
