@@ -86,7 +86,11 @@ static double RateFromDiscounts(double start_discount, double end_discount, doub
 	if (compounding == FINANCE_COMPOUNDING_SIMPLE) {
 		auto growth_minus_one = difference / end_discount;
 		if (!std::isfinite(growth_minus_one) && t > 1.0) {
-			return difference / (end_discount * t);
+			// Scale the quotient without rounding a subnormal discount * t.
+			int difference_exp, discount_exp, time_exp;
+			auto mantissa = std::frexp(difference, &difference_exp) / std::frexp(end_discount, &discount_exp) /
+			                std::frexp(t, &time_exp);
+			return std::scalbn(mantissa, difference_exp - discount_exp - time_exp);
 		}
 		return growth_minus_one / t;
 	}

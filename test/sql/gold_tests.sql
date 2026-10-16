@@ -4065,6 +4065,14 @@ SELECT
   assert_eq('bootstrap large simple first forward', forward_rate, zero_rate)
 FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 2.0, 8.988465674311579e307)) t(k,m,r))', 'k', 'm', 'r', 'simple');
 
+-- The FRA starts at the first deposit, after a higher-DF second deposit.
+-- Its simple forward from the previous node fits, but the DF ratio overflows
+-- and DF*elapsed is subnormal. Reference: Decimal on the emitted binary64 DFs.
+SELECT assert_near('bootstrap subnormal simple forward scaled', forward_rate / 1e307, 1.0120130374581675, 1e-14)
+FROM fin_curve_bootstrap('(FROM (VALUES (''deposit'', 1., 8.988465674311579e307, NULL),
+  (''deposit'', 2., 5e9, NULL), (''fra'', 1000000.25, 1e9, 1.)) t(k,m,r,s))',
+  'k', 'm', 'r', 'simple', start_col := 's') WHERE maturity = 1000000.25;
+
 -- DF = 1/2. Annual compounding is too close to one for pow(...)-1;
 -- k*T also overflows here. The annualized rate is ln(2)/1e308 to double precision.
 SELECT
