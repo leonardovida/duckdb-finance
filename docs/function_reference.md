@@ -476,6 +476,14 @@ variance.
 | `fin_validate_schema` | `fin_validate_schema('gold_prices', 'ohlcv')` | Validate a table's columns against a schema template. | One row per template column: `expected_type`, `required`, `present`, `actual_type`, `compatible` (any numeric for DOUBLE, DATE or TIMESTAMP variants for temporal columns), `status` (`ok`, `missing`, `missing_optional`, `type_mismatch`), and `valid`. Names match case-insensitively. Unknown kinds or missing tables raise an error. Every `table_name` argument accepts a table, view, or CTE name, or a parenthesized query such as `'(FROM read_parquet(''t.parquet''))'`. |
 | `fin_volume_bars` | `fin_volume_bars('gold_prices', 'ts', 'close', 'volume', 1000.0)` | Aggregate trades into volume bars that close once accumulated volume reaches the threshold. | Rows are ordered by (`asset_col`, ts, `seq_col`, price, volume), so ties are deterministic; rows with NULL ts or price (or NULL volume for volume-based bars) are skipped. AFML reset-accumulator convention (Lopez de Prado 2018, ch. 2.3): the bar closes on the first row whose running total reaches the threshold (relative tolerance 1e-12) and the next bar restarts at zero, so overshoot does not carry over. Returns [asset_col,] `bar_id` (0-based per asset), `start_ts`, `end_ts`, `open`, `high`, `low`, `close`, `volume`, `vwap`, `ticks`; the last bar of each asset may be incomplete. Volume must be finite and non-negative and the threshold positive, else an error. Named `asset_col`, `seq_col`. Every `table_name` argument accepts a table, view, or CTE name, or a parenthesized query such as `'(FROM read_parquet(''t.parquet''))'`. |
 
+For `fin_bootstrap_curve` and `fin_curve_bootstrap`, continuous and periodic
+output rates are reconstructed in log-discount space, including when a ratio
+of finite positive discounts would overflow or underflow. Small periodic rates
+use `expm1` to preserve changes close to zero. Subnormal discount factors have
+limited relative precision, so the recovered rate can differ from the input
+quote even when discount-factor repricing agrees. An implied rate outside the
+`DOUBLE` range can still be infinite.
+
 ### General Helpers
 
 | Function | Usage | Purpose | Returns / Notes |

@@ -4035,6 +4035,65 @@ FROM fin_bootstrap_curve('(FROM (VALUES (''ZERO'', 2.0, 0.055), ('' zero'', 1.0,
 SELECT assert_eq('bootstrap curve empty input', count(*), 0::BIGINT)
 FROM fin_bootstrap_curve('(SELECT ''swap'' AS k, 1.0 AS m, 0.05 AS r WHERE false)', 'k', 'm', 'r');
 
+-- Rate reconstruction must not overflow/underflow a discount-factor ratio.
+-- exp(-740) is subnormal: half a DF ulp changes the recovered rate by about 8e-6.
+-- Compare the continuous quote with that allowance and also reprice the stored DF.
+SELECT
+  assert_true('bootstrap subnormal continuous rates finite', isfinite(zero_rate) AND isfinite(forward_rate)),
+  assert_near('bootstrap subnormal continuous zero', zero_rate, 1.0, 1e-5),
+  assert_eq('bootstrap subnormal first forward', forward_rate, zero_rate),
+  assert_near('bootstrap subnormal continuous repricing', exp(-zero_rate * maturity), discount_factor, 5e-324)
+FROM fin_bootstrap_curve('(FROM (VALUES (''zero'', 740.0, 1.0)) t(k,m,r))', 'k', 'm', 'r');
+
+-- DF = 2^-1070 is exactly representable, even though its reciprocal is not.
+SELECT
+  assert_near('curve alias subnormal annual zero', zero_rate, 1.0, 1e-14),
+  assert_near('curve alias subnormal annual forward', forward_rate, 1.0, 1e-14),
+  assert_near('curve alias subnormal annual repricing', pow(1.0 + zero_rate, -maturity), discount_factor, 5e-324)
+FROM fin_curve_bootstrap('(FROM (VALUES (''zero'', 1070.0, 1.0)) t(k,m,r))', 'k', 'm', 'r', 'annual');
+
+-- Both discounts are finite; their ratio underflows to zero at the second node.
+SELECT
+  assert_near('bootstrap extreme continuous zero ' || maturity, zero_rate, rate, 1e-12),
+  assert_near('bootstrap extreme continuous forward ' || maturity, forward_rate,
+    CASE maturity WHEN 1.0 THEN 700.0 ELSE -1400.0 END, 1e-12)
+FROM fin_bootstrap_curve('(FROM (VALUES (''zero'', 1.0, 700.0), (''zero'', 2.0, -350.0)) t(k,m,r))', 'k', 'm', 'r');
+
+-- Forming the growth first would overflow, although the annualized simple rate fits.
+SELECT
+  assert_near('bootstrap large simple zero relative error', zero_rate / rate, 1.0, 1e-15),
+  assert_eq('bootstrap large simple first forward', forward_rate, zero_rate)
+FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 2.0, 8.988465674311579e307)) t(k,m,r))', 'k', 'm', 'r', 'simple');
+
+-- The FRA starts at the first deposit, after a higher-DF second deposit.
+-- Its simple forward from the previous node fits, but the DF ratio overflows
+-- and DF*elapsed is subnormal. Reference: Decimal on the emitted binary64 DFs.
+SELECT assert_near('bootstrap subnormal simple forward scaled', forward_rate / 1e307, 1.0120130374581675, 1e-14)
+FROM fin_curve_bootstrap('(FROM (VALUES (''deposit'', 1., 8.988465674311579e307, NULL),
+  (''deposit'', 2., 5e9, NULL), (''fra'', 1000000.25, 1e9, 1.)) t(k,m,r,s))',
+  'k', 'm', 'r', 'simple', start_col := 's') WHERE maturity = 1000000.25;
+
+-- DF = 1/2. Annual compounding is too close to one for pow(...)-1;
+-- k*T also overflows here. The annualized rate is ln(2)/1e308 to double precision.
+SELECT
+  assert_near('curve alias tiny quarterly zero scaled', zero_rate * 1e308, 0.6931471805599453, 1e-13),
+  assert_near('curve alias tiny quarterly forward scaled', forward_rate * 1e308, 0.6931471805599453, 1e-13)
+FROM fin_curve_bootstrap('(FROM (VALUES (''deposit'', 1e308, 1e-308)) t(k,m,r))', 'k', 'm', 'r', 'quarterly');
+
+-- The implied annualized log rate rounds to 1e-320. Daily conversion must
+-- preserve it, without first quantizing an exponent smaller by a factor of 365.
+SELECT
+  assert_near('bootstrap subnormal daily zero', zero_rate, 1e-320, 1e-323),
+  assert_near('bootstrap subnormal daily forward', forward_rate, 1e-320, 1e-323)
+FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 1e308, 1e-320)) t(k,m,r))', 'k', 'm', 'r', 'daily');
+
+-- Adjacent discounts near 1e-300: subtracting their logs loses forward precision.
+-- Simple quotes create DFs 1e-300 and 1e-300/(1+1e-12), respectively.
+-- Reference: 100-digit Decimal log ratio of the exact binary64 discounts.
+SELECT assert_near('bootstrap nearby discounts forward scaled', forward_rate * 1e12, 1.0001562974140539, 1e-12)
+FROM fin_bootstrap_curve('(FROM (VALUES (''deposit'', 1.0, 1e300, NULL), (''fra'', 2.0, 1e-12, 1.0)) t(k,m,r,s))',
+  'k', 'm', 'r', 'continuous', start_col := 's') WHERE maturity = 2.0;
+
 SELECT assert_eq('calendar rows', count(*), 3::BIGINT)
 FROM fin_calendar('weekday', DATE '2026-05-04', DATE '2026-05-06');
 
