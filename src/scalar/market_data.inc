@@ -216,8 +216,9 @@ static void TradeSignFunction(DataChunk &args, ExpressionState &, Vector &result
 	}
 }
 
-static unique_ptr<FunctionData> BindTradeSign(ClientContext &context, ScalarFunction &,
+static unique_ptr<FunctionData> BindTradeSign(ClientContext &context, ScalarFunction &bound_function,
                                               vector<unique_ptr<Expression>> &arguments) {
+	RejectNamedScalarArguments(bound_function, arguments);
 	if (arguments.size() >= 5) {
 		auto &method = *arguments[4];
 		if (!method.IsFoldable()) {

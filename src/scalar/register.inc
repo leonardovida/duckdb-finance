@@ -463,8 +463,10 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 		// Price transforms and microstructure scalars: standard NULL propagation.
 		auto add_market = [&](const char *name, idx_t arity, scalar_function_t func) {
 			vector<LogicalType> arguments(arity, FinanceLogicalType(LogicalTypeId::DOUBLE));
-			loader.RegisterFunction(ScalarFunction(FinanceFunctionName(name), std::move(arguments),
-			                                        FinanceLogicalType(LogicalTypeId::DOUBLE), std::move(func)));
+			ScalarFunction function(FinanceFunctionName(name), std::move(arguments),
+			                        FinanceLogicalType(LogicalTypeId::DOUBLE), std::move(func));
+			function.SetBindCallback(BindPositionalArguments);
+			loader.RegisterFunction(std::move(function));
 		};
 		add_market("fin_avg_price", 4, MarketScalarFunction<AvgPriceOp, 4>);
 		add_market("fin_typ_price", 3, MarketScalarFunction<TypPriceOp, 3>);

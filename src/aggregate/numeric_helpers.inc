@@ -54,28 +54,3 @@ static double ScaledRatio(double numerator, double numerator_scale, double denom
 	                (std::frexp(denominator, &c) * std::frexp(denominator_scale, &d));
 	return std::ldexp(mantissa, a + b + e - c - d);
 }
-
-static double ExponentialScaledRatio(double value, double scale, double divisor, double log_decay) {
-	if (value == 0.0 || scale == 0.0) {
-		return 0.0;
-	}
-	auto power = log_decay / std::log(2.0);
-	if (power < -8192.0) {
-		return 0.0;
-	}
-	int a, b, c;
-	auto integer_power = static_cast<int>(std::floor(power));
-	auto mantissa = std::frexp(value, &a) * std::frexp(scale, &b) / std::frexp(divisor, &c) *
-	                std::exp2(power - integer_power);
-	return std::ldexp(mantissa, a + b - c + integer_power);
-}
-
-static double DecayedMagnitude(double value, double scale, double log_decay) {
-	return value == 0.0 || scale == 0.0 ? -std::numeric_limits<double>::infinity()
-	                                 : std::log2(std::abs(value)) + std::log2(scale) + log_decay / std::log(2.0);
-}
-
-static double ScaleForMagnitude(double magnitude) {
-	auto power = std::min(1023.0, std::max(-1074.0, std::ceil(magnitude)));
-	return std::ldexp(1.0, static_cast<int>(power));
-}
