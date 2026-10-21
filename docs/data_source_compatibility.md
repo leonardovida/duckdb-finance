@@ -94,6 +94,57 @@ calculations, and unit tests. Use table-shaped functions for warehouse data,
 joined source feeds, or anything with asset identifiers that need to survive
 auditing.
 
+### Covariance from incomplete return histories
+
+[`examples/pairwise_covariance.sql`](../examples/pairwise_covariance.sql) builds
+long-form sample covariance rows from dated returns. It preserves the asset
+labels, emits both directions and the diagonal, and reports `n_obs` for every
+pair. Pairs with fewer than two shared finite observations have `NULL`
+covariance. This recipe needs the 0.3.0 `fin_cov_matrix(date, asset, return)`
+signature. Run it in a shell with that source build loaded:
+
+```sql
+.bail on
+.read examples/pairwise_covariance.sql
+```
+
+The sample compares pairwise deletion with complete-case deletion. For AAA/CCC,
+pairwise covariance is `0.0001` across three dates; complete-case covariance is
+`-0.0001` across the two dates shared by AAA, BBB, and CCC. Require one row per
+`(date, asset_id)` before joining returns, since duplicates multiply observations.
+Use the same return interval and decimal units for all assets.
+
+The second half selects an explicit portfolio universe and retains only dates
+where every selected asset has a finite return. `covariance_gate` reports four
+candidate dates, two complete dates, and two discarded dates. NULL/non-finite
+returns are counted and exclude the whole date. Missing assets remain in the
+universe and block the calculation. Duplicate selected asset/date keys, NULL
+selected dates, duplicate weights, and NULL/non-finite weights also block it.
+These are temporary example views and tables. Adapt their names and inputs to
+your schema; run against a consistent input snapshot.
+
+The gate checks **every** ordered covariance pair for two observations and a
+finite value, verifies the matrix labels against the selected assets, and calls
+`fin_matrix_is_psd` with relative tolerance `1e-10`. This is a numerical tolerance,
+not an economic accuracy claim. The example exposes the pairwise matrix's
+failed PSD check without repairing it. The complete-case matrix passes, and
+`complete_portfolio_risk` returns variance `0.0000245`, matching direct sample
+variance of the weighted complete-date returns. A blocked gate returns
+`ready = false` and NULL risk. No unchecked weights reach the table function.
+
+`fin_portfolio_variance_table` mirrors triangular input and treats missing
+off-diagonal pairs as zero, so its own checks cannot replace this coverage gate.
+PSD is sufficient here for a variance calculation, but does not imply positive
+definiteness or optimizer readiness: the two-date, three-asset sample is
+singular. Complete-case deletion can discard substantial history and bias an
+estimate when missingness is informative. Select the policy deliberately. Use
+same-interval decimal returns throughout; covariance and portfolio variance
+are in squared return units, with no automatic annualization.
+
+Run the executable recipe and its analytic/negative cases with
+`make covariance-example DUCKDB_ROOT=/path/to/duckdb`. Both `make check` and
+the native CI gate run this target.
+
 ## Naming Guidance
 
 Prefer descriptive canonical names at ingestion boundaries:

@@ -64,6 +64,8 @@ make check
 7. `make function-examples` to run every example in
    `docs/function_examples.sql` in a fresh database and check the
    `duckdb_functions()` description, example, and parameter names.
+8. `make covariance-example` to run the incomplete-history covariance recipe
+   and its analytic references, coverage gates, and invalid-input cases.
 
 After changing `docs/function_reference.md` purposes or
 `docs/function_examples.sql`, run `python3 scripts/generate_function_metadata.py`
