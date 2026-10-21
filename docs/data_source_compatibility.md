@@ -96,7 +96,7 @@ auditing.
 
 ### Covariance from incomplete return histories
 
-[`examples/pairwise_covariance.sql`](../examples/pairwise_covariance.sql) builds
+[`examples/pairwise_covariance.sql`](https://github.com/leonardovida/duckdb-finance/blob/main/examples/pairwise_covariance.sql) builds
 long-form sample covariance rows from dated returns. It preserves the asset
 labels, emits both directions and the diagonal, and reports `n_obs` for every
 pair. Pairs with fewer than two shared finite observations have `NULL`
@@ -129,8 +129,11 @@ finite value, verifies the matrix labels against the selected assets, and calls
 not an economic accuracy claim. The example exposes the pairwise matrix's
 failed PSD check without repairing it. The complete-case matrix passes, and
 `complete_portfolio_risk` returns variance `0.0000245`, matching direct sample
-variance of the weighted complete-date returns. A blocked gate returns
-`ready = false` and NULL risk. No unchecked weights reach the table function.
+variance of the weighted complete-date returns. No unchecked weights reach the
+table function. The risk view exposes `coverage_ready` separately and sets its
+final `ready` only when the computed variance is also finite and nonnegative.
+Blocked coverage or unusable computed risk returns `ready = false` and NULL
+risk; even finite weights can overflow the calculation.
 
 `fin_portfolio_variance_table` mirrors triangular input and treats missing
 off-diagonal pairs as zero, so its own checks cannot replace this coverage gate.

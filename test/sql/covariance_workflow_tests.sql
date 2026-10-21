@@ -12,6 +12,37 @@ FROM pairwise_covariance WHERE asset_i = 'AAA' AND asset_j = 'CCC';
 SELECT covariance_assert(NOT fin_matrix_is_psd(m.matrix, 1e-10))
 FROM (SELECT fin_cov_matrix(date, asset_id, return_decimal) AS m FROM selected_finite_returns);
 
+-- Independent sample-moment references for every core pair, including diagonal
+-- and coverage counts; also cross-check the native aggregate against the SQL.
+WITH expected AS (
+  SELECT [[1.0/6000, 1.0/5000, 1.0/10000], [1.0/5000, 1.0/2500, -1.0/5000],
+          [1.0/10000, -1.0/5000, 1.0/2500]] AS m,
+         [[4, 3, 3], [3, 3, 2], [3, 2, 3]] AS n
+), native AS (
+  SELECT fin_cov_matrix(date, asset_id, return_decimal) AS estimate FROM selected_finite_returns
+)
+SELECT covariance_assert(count(*) = 9 AND max(abs(c.covariance - m[i][j])) < 1e-15
+  AND max(abs(estimate.matrix[i][j] - m[i][j])) < 1e-15
+  AND bool_and(c.n_obs = n[i][j]))
+FROM pairwise_covariance c, expected, native,
+     (VALUES ('AAA', 1), ('BBB', 2), ('CCC', 3)) a(asset_i, i),
+     (VALUES ('AAA', 1), ('BBB', 2), ('CCC', 3)) b(asset_j, j)
+WHERE c.asset_i = a.asset_i AND c.asset_j = b.asset_j;
+
+-- A negative determinant independently proves that the symmetric pairwise
+-- matrix is not PSD. This oracle uses SQL covariance rows, not fin_matrix_is_psd.
+WITH rows AS (
+  SELECT asset_i, list(covariance ORDER BY asset_j) AS r FROM pairwise_covariance
+  WHERE asset_i <> 'DDD' AND asset_j <> 'DDD' GROUP BY asset_i
+), matrix AS (
+  SELECT list(r ORDER BY asset_i) AS m FROM rows
+), determinant AS (
+  SELECT m[1][1] * (m[2][2]*m[3][3] - m[2][3]*m[3][2])
+       - m[1][2] * (m[2][1]*m[3][3] - m[2][3]*m[3][1])
+       + m[1][3] * (m[2][1]*m[3][2] - m[2][2]*m[3][1]) AS d FROM matrix
+)
+SELECT covariance_assert(d < 0 AND abs(d + 1.0/125000000000) < 1e-24) FROM determinant;
+
 -- Independent exact reference: the two complete return vectors differ by
 -- [0.01, 0.02, -0.02]; sample covariance is their outer product divided by 2.
 WITH expected AS (
@@ -78,7 +109,22 @@ INSERT INTO sample_returns VALUES (NULL, 'AAA', 0.01);
 SELECT covariance_assert(NOT ready AND invalid_date_rows = 1) FROM covariance_gate;
 DELETE FROM sample_returns WHERE date IS NULL;
 
+-- Finite inputs can overflow computed risk. Coverage readiness alone is not
+-- risk readiness, and the final view must suppress non-finite/negative results.
+UPDATE sample_weights SET weight = CASE WHEN asset_id = 'AAA' THEN 1e308 ELSE 0 END;
+SELECT covariance_assert(ready) FROM covariance_gate;
+SELECT covariance_assert(coverage_ready AND NOT ready AND portfolio_variance IS NULL)
+FROM complete_portfolio_risk;
+DELETE FROM sample_weights;
+INSERT INTO sample_weights FROM saved_weights;
+
 UPDATE sample_weights SET weight = NULL WHERE asset_id = 'AAA';
+SELECT covariance_assert(NOT ready AND invalid_weights = 1) FROM covariance_gate;
+SELECT covariance_assert(NOT ready AND portfolio_variance IS NULL) FROM complete_portfolio_risk;
+UPDATE sample_weights SET weight = 'Infinity'::DOUBLE WHERE asset_id = 'AAA';
+SELECT covariance_assert(NOT ready AND invalid_weights = 1) FROM covariance_gate;
+SELECT covariance_assert(NOT ready AND portfolio_variance IS NULL) FROM complete_portfolio_risk;
+UPDATE sample_weights SET weight = 'NaN'::DOUBLE WHERE asset_id = 'AAA';
 SELECT covariance_assert(NOT ready AND invalid_weights = 1) FROM covariance_gate;
 SELECT covariance_assert(NOT ready AND portfolio_variance IS NULL) FROM complete_portfolio_risk;
 DELETE FROM sample_weights;

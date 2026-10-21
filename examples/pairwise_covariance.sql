@@ -115,10 +115,17 @@ CREATE OR REPLACE TEMP VIEW approved_weights AS
 SELECT * FROM sample_weights WHERE (SELECT ready FROM covariance_gate);
 
 CREATE OR REPLACE TEMP VIEW complete_portfolio_risk AS
-SELECT ready, portfolio_variance
-FROM covariance_gate CROSS JOIN fin_portfolio_variance_table(
-  'approved_weights', 'asset_id', 'weight',
-  'complete_covariance', 'asset_i', 'asset_j', 'covariance');
+WITH calculated AS (
+  SELECT ready AS coverage_ready, portfolio_variance
+  FROM covariance_gate CROSS JOIN fin_portfolio_variance_table(
+    'approved_weights', 'asset_id', 'weight',
+    'complete_covariance', 'asset_i', 'asset_j', 'covariance')
+), checked AS (
+  SELECT *, coalesce(coverage_ready AND isfinite(portfolio_variance)
+                    AND portfolio_variance >= 0, false) AS ready FROM calculated
+)
+SELECT coverage_ready, ready, CASE WHEN ready THEN portfolio_variance END AS portfolio_variance
+FROM checked;
 
 SELECT * FROM complete_portfolio_risk;
 -- Direct sample variance of the weighted returns 0.028 and 0.035 is 0.0000245.
