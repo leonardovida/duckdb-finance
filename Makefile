@@ -50,7 +50,12 @@ perf: debug
 benchmark: release
 	python3 scripts/benchmark_functions.py --duckdb "$(RELEASE_BUILD_DIR)/duckdb" --extension "$(RELEASE_BUILD_DIR)/extension/finance/finance.duckdb_extension" --scale "$(BENCH_SCALE)" --repeats "$(BENCH_REPEATS)" --output "$(BENCH_OUTPUT)"
 
-test: smoke gold function-examples
+.PHONY: covariance-example
+covariance-example: debug
+	{ cat examples/pairwise_covariance.sql; printf "\n"; cat test/sql/covariance_workflow_tests.sql; } > "$(BUILD_DIR)/finance-covariance-workflow.sql"
+	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(BUILD_DIR)/finance-covariance-workflow.sql" >/dev/null
+
+test: smoke gold function-examples covariance-example
 
 check-yaml:
 	ruby -e 'require "yaml"; Dir[".github/workflows/*.yml", ".github/ISSUE_TEMPLATE/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'
@@ -96,7 +101,7 @@ ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests ch
 
 ci-duckdb-smoke: smoke-quiet
 
-ci-duckdb: gold-quiet check-aggregate-numerics function-examples
+ci-duckdb: gold-quiet check-aggregate-numerics function-examples covariance-example
 
 ci: ci-static ci-duckdb
 
