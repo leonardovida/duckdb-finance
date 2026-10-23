@@ -3229,6 +3229,33 @@ SELECT assert_near('inverse-vol compensated denominator',
   fin_inverse_vol_weights(list_concat([1.0], (SELECT list(1e16::DOUBLE) FROM range(1000))))[1],
   0.9999999999999, 1e-15);
 
+-- Divide by the sum directly: its reciprocal can overflow for subnormal
+-- inputs even though every normalized element is finite. These binary64
+-- multiples of the smallest subnormal have exact sums and analytic ratios.
+SELECT
+  assert_eq('normalize smallest subnormal', fin_vector_normalize_sum([5e-324]), [1.0]),
+  assert_eq('normalize negative subnormal', fin_vector_normalize_sum([-5e-324]), [1.0]),
+  assert_eq('normalize tiny equal weights', fin_vector_normalize_sum([1e-320, 1e-320]), [0.5, 0.5]),
+  assert_eq('normalize subnormal with zero', fin_vector_normalize_sum([5e-324, 0.0]), [1.0, 0.0]),
+  assert_eq('normalize signed subnormals', fin_vector_normalize_sum([1e-323, -5e-324]), [2.0, -1.0]),
+  assert_eq('normalize huge singleton', fin_vector_normalize_sum([1e308]), [1.0]);
+
+-- Exercise nonconstant list offsets, NULL rows and selection vectors across
+-- several chunks, with ordinary values alongside the subnormal inputs.
+WITH rows AS MATERIALIZED (
+  SELECT i, CASE i % 4 WHEN 0 THEN [1e-320, 1e-320] WHEN 1 THEN [1e-323, -5e-324]
+                      WHEN 2 THEN NULL ELSE [2.0, 2.0] END AS x
+  FROM range(5000) t(i)
+)
+SELECT assert_true('normalize selected mixed-scale rows', bool_and(
+  fin_vector_normalize_sum(x) IS NOT DISTINCT FROM
+  CASE i % 4 WHEN 1 THEN [2.0, -1.0] WHEN 2 THEN NULL ELSE [0.5, 0.5] END))
+FROM rows WHERE i % 7 <> 0;
+
+SELECT assert_true('normalize invalid inputs remain NULL', bool_and(fin_vector_normalize_sum(x) IS NULL))
+FROM (VALUES ([]::DOUBLE[]), ([0.0]), ([1.0, -1.0]), ([1e308, 1e308]),
+             ([1e308, -1e308, 1e-320]), ([NULL, 1.0]), (['NaN'::DOUBLE]), (['Infinity'::DOUBLE])) t(x);
+
 SELECT
   assert_near('dot', fin_dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]), 32.0, 1e-12),
   assert_near('vector sum', fin_vector_sum([1.0, 2.0, 3.0]), 6.0, 1e-12),
