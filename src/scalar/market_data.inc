@@ -277,7 +277,7 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 				sum += x[i];
 			}
 			ok = ok && IsFinite(sum) && sum != 0.0;
-			factor = 1.0 / sum;
+			factor = sum;
 		} else {
 			factor = std::numeric_limits<double>::infinity();
 			for (idx_t i = 0; ok && i < n; i++) {
@@ -294,7 +294,8 @@ static void ListScalarFunction(DataChunk &args, ExpressionState &, Vector &resul
 		x = list.values + entry.offset;
 		for (idx_t i = 0; ok && i < n; i++) {
 			if (op == ListOp::NORMALIZE) {
-				out[i] = x[i] * factor;
+				// A finite nonzero sum can have an overflowing reciprocal.
+				out[i] = x[i] / factor;
 			} else if (op == ListOp::INVERSE_VOL) {
 				// Scaling by the smallest volatility keeps every ratio in [0, 1]
 				// and at least one at 1, even for subnormal or very large inputs.
