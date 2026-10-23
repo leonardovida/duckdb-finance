@@ -1,7 +1,6 @@
 struct DrawdownState {
 	bool isset;
 	bool invalid;
-	vector<double> *values;
 	FinWindowAux *window;
 	double nav;
 	double initial_nav;
@@ -25,7 +24,6 @@ struct DrawdownOperationBase : public FinOperationDefaults {
 
 	template <class STATE>
 	static void Initialize(STATE &state) {
-		state.values = new vector<double>();
 		state.window = nullptr;
 		Reset(state);
 	}
@@ -34,7 +32,6 @@ struct DrawdownOperationBase : public FinOperationDefaults {
 	static void Reset(STATE &state) {
 		state.isset = false;
 		state.invalid = false;
-		state.values->clear();
 		state.nav = 1.0;
 		state.initial_nav = 1.0;
 		state.current_drawdown = 0.0;
@@ -68,10 +65,6 @@ struct DrawdownOperationBase : public FinOperationDefaults {
 			return;
 		}
 		state.isset = true;
-		if (!state.window) {
-			// Retained only for order-preserving Combine; window frames never combine.
-			state.values->push_back(value);
-		}
 		state.nav = std::min(1.0, state.nav * (1.0 + value));
 		state.current_drawdown = state.nav - 1.0;
 		state.min_drawdown = std::min(state.min_drawdown, state.current_drawdown);
@@ -98,25 +91,28 @@ struct DrawdownOperationBase : public FinOperationDefaults {
 		UpdateValue(state, row.v[0]);
 	}
 
+	template <class STATE>
+	static bool HasRows(const STATE &state) {
+		return state.isset || state.invalid;
+	}
+
+	// Drawdowns depend on the running peak of the ordered series, so only a
+	// state that has not seen rows may take over another state's summary.
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		if (source.invalid) {
-			target.invalid = true;
-		}
-		if (!source.isset || target.invalid) {
+		if (!HasRows(source)) {
 			return;
 		}
-		// Drawdowns in the right-hand state depend on the peak reached by the
-		// left-hand state, so isolated summaries cannot be merged exactly.
-		for (auto value : *source.values) {
-			UpdateValue(target, value);
+		if (HasRows(target)) {
+			FinRejectUnorderedCombine(NAME::Name());
 		}
+		auto window = target.window;
+		target = source;
+		target.window = window;
 	}
 
 	template <class STATE>
 	static void Destroy(STATE &state, AggregateInputData &) {
-		delete state.values;
-		state.values = nullptr;
 		delete state.window;
 		state.window = nullptr;
 	}
@@ -280,18 +276,19 @@ struct DrawdownRiskOperation : public FinOperationDefaults {
 		state.values->push_back(value);
 	}
 
+	// Every counted row sets confidence_set, so it marks a state that has seen rows.
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
 		if (!source.confidence_set) {
 			return;
 		}
-		if (target.confidence_set && target.confidence != source.confidence) {
-			throw InvalidInputException("%s: confidence must be constant within a group", Name());
+		if (target.confidence_set) {
+			FinRejectUnorderedCombine(Name());
 		}
 		target.confidence = source.confidence;
 		target.confidence_set = true;
-		target.invalid = target.invalid || source.invalid;
-		target.values->insert(target.values->end(), source.values->begin(), source.values->end());
+		target.invalid = source.invalid;
+		*target.values = *source.values;
 	}
 
 	template <class T, class STATE>

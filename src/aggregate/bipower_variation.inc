@@ -1,25 +1,47 @@
 struct BipowerVariationState {
 	bool isset;
-	double first_absolute_return;
 	double last_absolute_return;
 	double product_sum;
 	double product_compensation;
 	double annualization;
 	idx_t count;
 	bool invalid;
+	bool annualization_set;
+	FinWindowAux *window;
 };
 
-struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVariationOperation> {
+// Bipower variation (Barndorff-Nielsen and Shephard, 2004) of the ordered
+// returns: (pi / 2) * annualization * sum |r_t| |r_(t-1)| / (n - 1). The
+// optional argument is the annualization factor.
+struct BipowerVariationOperation : public FinOperationDefaults {
+	static constexpr idx_t REQUIRED_ARGS = 1;
+	static constexpr bool ORDER_DEPENDENT = true;
+	static constexpr bool WINDOW_INCREMENTAL = true;
+
 	template <class STATE>
 	static void Initialize(STATE &state) {
+		state.window = nullptr;
+		WindowReset(state);
+	}
+
+	template <class STATE>
+	static void WindowReset(STATE &state) {
 		state.isset = false;
-		state.first_absolute_return = 0.0;
 		state.last_absolute_return = 0.0;
 		state.product_sum = 0.0;
 		state.product_compensation = 0.0;
 		state.annualization = DEFAULT_ANNUALIZATION;
 		state.count = 0;
 		state.invalid = false;
+		state.annualization_set = false;
+	}
+
+	// A NULL annualization skips the row (DuckDB's default NULL handling), so
+	// only a non-NULL constant is validated.
+	static void ValidateParameter(idx_t, double annualization, bool valid) {
+		if (valid && (!(annualization > 0.0) || !std::isfinite(annualization))) {
+			throw InvalidInputException("fin_bipower_variation: annualization must be positive and finite");
+		}
 	}
 
 	template <class STATE>
@@ -35,7 +57,16 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 	}
 
 	template <class STATE>
-	static void UpdateValue(STATE &state, double value) {
+	static void UpdateRow(STATE &state, const FinRow &row, idx_t input_count) {
+		if (input_count > 1 && (!state.annualization_set || row.v[1] != state.annualization)) {
+			ValidateParameter(1, row.v[1], true);
+			if (state.annualization_set) {
+				throw InvalidInputException("fin_bipower_variation: annualization must be constant within a group");
+			}
+			state.annualization = row.v[1];
+			state.annualization_set = true;
+		}
+		auto value = row.v[0];
 		if (!std::isfinite(value)) {
 			state.invalid = true;
 			return;
@@ -43,7 +74,6 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 		double absolute_return = std::fabs(value);
 		if (!state.isset) {
 			state.isset = true;
-			state.first_absolute_return = absolute_return;
 		} else {
 			AddProduct(state, state.last_absolute_return * absolute_return);
 		}
@@ -53,23 +83,15 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 
 	template <class STATE, class OP>
 	static void Combine(const STATE &source, STATE &target, AggregateInputData &) {
-		target.invalid = target.invalid || source.invalid;
-		if (!source.isset) {
+		if (!source.isset && !source.invalid) {
 			return;
 		}
-		if (!target.isset) {
-			auto invalid = target.invalid;
-			target = source;
-			target.invalid = invalid;
-			return;
+		if (target.isset || target.invalid) {
+			FinRejectUnorderedCombine("fin_bipower_variation");
 		}
-		if (target.annualization != source.annualization) {
-			throw InvalidInputException("fin_bipower_variation: annualization must be constant within a group");
-		}
-		AddProduct(target, target.last_absolute_return * source.first_absolute_return);
-		AddProduct(target, source.product_sum);
-		target.last_absolute_return = source.last_absolute_return;
-		target.count += source.count;
+		auto window = target.window;
+		target = source;
+		target.window = window;
 	}
 
 	template <class T, class STATE>
@@ -82,35 +104,9 @@ struct BipowerVariationOperation : public UnaryDoubleUpdateOperation<BipowerVari
 		target = HALF_PI * state.product_sum * state.annualization / static_cast<double>(state.count - 1);
 	}
 
-	static bool IgnoreNull() {
-		return true;
-	}
-};
-
-struct BipowerVariationWithAnnualizationOperation : public BipowerVariationOperation {
 	template <class STATE>
-	static void UpdateValue(STATE &state, double value, double annualization) {
-		if (!(annualization > 0.0) || !std::isfinite(annualization)) {
-			throw InvalidInputException("fin_bipower_variation: annualization must be positive and finite");
-		}
-		if (state.isset && state.annualization != annualization) {
-			throw InvalidInputException("fin_bipower_variation: annualization must be constant within a group");
-		}
-		state.annualization = annualization;
-		BipowerVariationOperation::UpdateValue(state, value);
-	}
-
-	template <class INPUT_TYPE, class ANNUALIZATION_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE &state, const INPUT_TYPE &input, const ANNUALIZATION_TYPE &annualization,
-	                              AggregateBinaryInput &, idx_t count) {
-		for (idx_t i = 0; i < count; i++) {
-			UpdateValue(state, static_cast<double>(input), static_cast<double>(annualization));
-		}
-	}
-
-	template <class INPUT_TYPE, class ANNUALIZATION_TYPE, class STATE, class OP>
-	static void Operation(STATE &state, const INPUT_TYPE &input, const ANNUALIZATION_TYPE &annualization,
-	                      AggregateBinaryInput &) {
-		UpdateValue(state, static_cast<double>(input), static_cast<double>(annualization));
+	static void Destroy(STATE &state, AggregateInputData &) {
+		delete state.window;
+		state.window = nullptr;
 	}
 };

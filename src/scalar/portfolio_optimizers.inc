@@ -636,26 +636,95 @@ static void PortfolioOptimizeScalarFunction(DataChunk &args, ExpressionState &, 
 	}
 }
 
+//! The portfolio weight macros (fin_min_variance_weights, ...) forward their parameters one to one to these
+//! internal kernels. The kernels declare ANY parameters and check them here, so an argument of the wrong type
+//! reports the public macro name and parameter instead of DuckDB's "no function matches" error, which would name
+//! the internal function.
+struct PortfolioMacroSignature {
+	const char *internal_name;
+	const char *public_name;
+	vector<const char *> parameters;
+	vector<LogicalType> types;
+};
+
+static const vector<PortfolioMacroSignature> &PortfolioMacroSignatures() {
+	static const vector<PortfolioMacroSignature> signatures = [] {
+		const auto DOUBLE = FinanceLogicalType(LogicalTypeId::DOUBLE);
+		const auto BOOLEAN = FinanceLogicalType(LogicalTypeId::BOOLEAN);
+		const auto BIGINT = FinanceLogicalType(LogicalTypeId::BIGINT);
+		const auto vector_type = LogicalType::LIST(DOUBLE);
+		const auto matrix_type = LogicalType::LIST(vector_type);
+		vector<PortfolioMacroSignature> result;
+		result.push_back({"finance_min_variance_weights_internal", "fin_min_variance_weights",
+		                  {"cov_matrix", "long_only"}, {matrix_type, BOOLEAN}});
+		result.push_back({"finance_max_sharpe_weights_internal", "fin_max_sharpe_weights",
+		                  {"mu", "cov_matrix", "risk_free", "long_only"}, {vector_type, matrix_type, DOUBLE, BOOLEAN}});
+		result.push_back({"finance_risk_parity_weights_internal", "fin_risk_parity_weights",
+		                  {"cov_matrix", "budgets", "tol", "max_iter"}, {matrix_type, vector_type, DOUBLE, BIGINT}});
+		result.push_back({"finance_black_litterman_internal", "fin_black_litterman_returns",
+		                  {"market_weights", "cov_matrix", "views_p", "views_q", "tau", "omega", "risk_aversion"},
+		                  {vector_type, matrix_type, matrix_type, vector_type, DOUBLE, matrix_type, DOUBLE}});
+		return result;
+	}();
+	return signatures;
+}
+
+static const PortfolioMacroSignature &FindPortfolioMacroSignature(const string &internal_name) {
+	for (auto &signature : PortfolioMacroSignatures()) {
+		if (internal_name == signature.internal_name) {
+			return signature;
+		}
+	}
+	throw InternalException("unknown portfolio kernel %s", internal_name);
+}
+
+static string PortfolioTypeDescription(const LogicalType &type) {
+	if (type.id() != LogicalTypeId::LIST) {
+		return type.ToString();
+	}
+	return ListType::GetChildType(type).id() == LogicalTypeId::LIST ? "a matrix (LIST of LIST of DOUBLE)"
+	                                                                 : "a vector (LIST of DOUBLE)";
+}
+
+static unique_ptr<FunctionData> BindPortfolioMacroArguments(ClientContext &context, ScalarFunction &bound_function,
+                                                            vector<unique_ptr<Expression>> &arguments) {
+	RejectNamedScalarArguments(bound_function, arguments);
+	auto &signature = FindPortfolioMacroSignature(bound_function.name);
+	for (idx_t i = 0; i < arguments.size() && i < signature.types.size(); i++) {
+		auto &expected = signature.types[i];
+		auto &actual = arguments[i]->return_type;
+		if (actual != expected && CastFunctionSet::ImplicitCastCost(context, actual, expected) < 0) {
+			throw BinderException("%s: %s must be %s, got %s", signature.public_name, signature.parameters[i],
+			                      PortfolioTypeDescription(expected), actual.ToString());
+		}
+		bound_function.arguments[i] = expected;
+	}
+	return nullptr;
+}
+
 static void RegisterPortfolioOptimizerScalars(ExtensionLoader &loader) {
 	const auto DOUBLE = FinanceLogicalType(LogicalTypeId::DOUBLE);
 	const auto BOOLEAN = FinanceLogicalType(LogicalTypeId::BOOLEAN);
-	const auto BIGINT = FinanceLogicalType(LogicalTypeId::BIGINT);
 	const auto vector_type = LogicalType::LIST(DOUBLE);
 	const auto matrix_type = LogicalType::LIST(vector_type);
 	auto add = [&](const string &name, vector<LogicalType> arguments, scalar_function_t function) {
 		ScalarFunction scalar(FinanceFunctionName(name), std::move(arguments), vector_type, std::move(function));
 		scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+		scalar.SetBindCallback(BindPositionalArguments);
 		loader.RegisterFunction(std::move(scalar));
 	};
-	add("finance_min_variance_weights_internal", {matrix_type, BOOLEAN},
-	    PortfolioWeightsFunction<PortfolioKernel::MIN_VARIANCE>);
-	add("finance_max_sharpe_weights_internal", {vector_type, matrix_type, DOUBLE, BOOLEAN},
-	    PortfolioWeightsFunction<PortfolioKernel::MAX_SHARPE>);
-	add("finance_risk_parity_weights_internal", {matrix_type, vector_type, DOUBLE, BIGINT},
-	    PortfolioWeightsFunction<PortfolioKernel::RISK_PARITY>);
-	add("finance_black_litterman_internal",
-	    {vector_type, matrix_type, matrix_type, vector_type, DOUBLE, matrix_type, DOUBLE},
-	    PortfolioWeightsFunction<PortfolioKernel::BLACK_LITTERMAN>);
+	auto add_macro_kernel = [&](const string &name, scalar_function_t function) {
+		auto &signature = FindPortfolioMacroSignature(name);
+		vector<LogicalType> arguments(signature.types.size(), LogicalType(LogicalTypeId::ANY));
+		ScalarFunction scalar(FinanceFunctionName(name), std::move(arguments), vector_type, std::move(function));
+		scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+		scalar.SetBindCallback(BindPortfolioMacroArguments);
+		loader.RegisterFunction(std::move(scalar));
+	};
+	add_macro_kernel("finance_min_variance_weights_internal", PortfolioWeightsFunction<PortfolioKernel::MIN_VARIANCE>);
+	add_macro_kernel("finance_max_sharpe_weights_internal", PortfolioWeightsFunction<PortfolioKernel::MAX_SHARPE>);
+	add_macro_kernel("finance_risk_parity_weights_internal", PortfolioWeightsFunction<PortfolioKernel::RISK_PARITY>);
+	add_macro_kernel("finance_black_litterman_internal", PortfolioWeightsFunction<PortfolioKernel::BLACK_LITTERMAN>);
 	const auto VARCHAR = FinanceLogicalType(LogicalTypeId::VARCHAR);
 	add("finance_portfolio_optimize_internal",
 	    {vector_type, matrix_type, VARCHAR, DOUBLE, BOOLEAN, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE},
