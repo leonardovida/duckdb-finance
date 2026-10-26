@@ -28,6 +28,7 @@ class SqlLogicTestParsingTests(unittest.TestCase):
         self.assertEqual(records[2].expected, ["1\t2.0", "0\t1.0"])
         self.assertEqual(records[2].sort, "rowsort")
         self.assertEqual(records[2].line, 12)
+        self.assertEqual(records[2].columns, 2)
 
     def test_unsupported_records_are_rejected(self):
         for text in ("query I valuesort\nSELECT 1\n----\n1\n", "loop i 0 2\n", "statement ok\nSELECT 1\n----\n1\n"):

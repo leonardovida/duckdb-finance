@@ -6,7 +6,8 @@ extension's tests; the release pipeline skips that runner, so this script keeps
 the records exercised by `make test`. It supports the subset the finance tests
 use: `require`, `statement ok`, `statement error` (the expected text must occur
 in the error message) and `query <types> [nosort|rowsort]` with tab-separated
-expected rows. Every record runs in a fresh in-memory database.
+expected rows. As in DuckDB's runner, the type string sets the expected column
+count. Every record runs in a fresh in-memory database.
 """
 import argparse
 import subprocess
@@ -23,6 +24,7 @@ class Record:
     sql: str
     expected: list[str] = field(default_factory=list)
     sort: str = "nosort"
+    columns: int = 0
 
 
 def sql_literal(value: str) -> str:
@@ -40,11 +42,13 @@ def parse(path: Path) -> list[Record]:
             continue
         header = line.split()
         start = i + 1
+        columns = 0
         if header[0] == "statement" and len(header) == 2 and header[1] in ("ok", "error"):
             kind = header[1]
             sort = "nosort"
         elif header[0] == "query" and len(header) in (2, 3):
             kind = "query"
+            columns = len(header[1])
             sort = header[2] if len(header) == 3 else "nosort"
             if sort not in ("nosort", "rowsort"):
                 raise ValueError(f"{path}:{start}: unsupported sort mode {sort!r}")
@@ -63,7 +67,7 @@ def parse(path: Path) -> list[Record]:
                 i += 1
         if kind == "ok" and expected:
             raise ValueError(f"{path}:{start}: statement ok cannot have expected output")
-        records.append(Record(start, kind, "\n".join(sql), expected, sort))
+        records.append(Record(start, kind, "\n".join(sql), expected, sort, columns))
     return records
 
 
@@ -93,6 +97,9 @@ def run(duckdb: str, extension: str, record: Record) -> str | None:
     if process.returncode != 0:
         return f"line {record.line}: unexpected error {error!r}"
     if record.kind == "query":
+        widths = {len(row.split("\t")) for row in output}
+        if widths and widths != {record.columns}:
+            return f"line {record.line}: expected {record.columns} columns, got {sorted(widths)}"
         actual = sorted(output) if record.sort == "rowsort" else output
         expected = sorted(record.expected) if record.sort == "rowsort" else record.expected
         if actual != expected:
