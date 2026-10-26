@@ -95,9 +95,9 @@ static AggregateFunction FinDoubleRowsAggregate(const string &name) {
 	                           AggregateFunction::StateInitialize<STATE, OP>, FinDoubleRowsScatter<STATE, OP, N>,
 	                           AggregateFunction::StateCombine<STATE, OP>,
 	                           AggregateFunction::StateFinalize<STATE, double, OP>,
-	                           FunctionNullHandling::DEFAULT_NULL_HANDLING, FinDoubleRowsSimpleUpdate<STATE, OP, N>);
+	                           FunctionNullHandling::DEFAULT_NULL_HANDLING,
+	                           FinClusterUpdate<FinDoubleRowsSimpleUpdate<STATE, OP, N>, FinDoubleRowsScatter<STATE, OP, N>>);
 	function.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
-	function.SetBindCallback(FinNamedArgumentsBind);
 	return NamedAggregateFunction(name, std::move(function));
 }
 
@@ -431,10 +431,10 @@ struct FinTwapOperation {
 		return value;
 	}
 	static double Time(date_t value) {
-		return Date::IsFinite(value) ? static_cast<double>(value.days) : std::numeric_limits<double>::infinity();
+		return value.IsFinite() ? static_cast<double>(value.days) : std::numeric_limits<double>::infinity();
 	}
 	static double Time(timestamp_t value) {
-		return Timestamp::IsFinite(value) ? static_cast<double>(value.value) : std::numeric_limits<double>::infinity();
+		return value.IsFinite() ? static_cast<double>(value.value) : std::numeric_limits<double>::infinity();
 	}
 	static double Time(timestamp_tz_t value) {
 		return Time(static_cast<timestamp_t>(value));
@@ -542,7 +542,7 @@ static void FinTwapWindow(AggregateInputData &, const WindowPartitionInput &part
 	}
 	double value;
 	if (FinTwapOperation::Value(state.twap, value)) {
-		FlatVector::GetData<double>(result)[rid] = value;
+		FlatVector::GetDataMutable<double>(result)[rid] = value;
 	} else {
 		FlatVector::SetNull(result, rid, true);
 	}
@@ -556,7 +556,6 @@ static AggregateFunction FinTwapAggregate(const LogicalType &time_type) {
 	function.SetStateDestructorCallback(AggregateFunction::StateDestroy<FinTwapAggState, FinTwapOperation>);
 	function.SetWindowCallback(FinTwapWindow<TIME>);
 	function.SetOrderDependent(AggregateOrderDependent::ORDER_DEPENDENT);
-	function.SetBindCallback(FinNamedArgumentsBind);
 	return NamedAggregateFunction("fin_twap", std::move(function));
 }
 
@@ -799,7 +798,7 @@ struct FinVolumeProfileOperation {
 
 	// Appends the profile of `state` as list row `row` of `result`.
 	static void Write(FinProfileState &state, Vector &result, idx_t row) {
-		auto entries = FlatVector::GetData<list_entry_t>(result);
+		auto entries = FlatVector::GetDataMutable<list_entry_t>(result);
 		auto offset = ListVector::GetListSize(result);
 		if (state.invalid || state.count == 0) {
 			FlatVector::SetNull(result, row, true);
@@ -827,11 +826,11 @@ struct FinVolumeProfileOperation {
 			}
 		}
 		ListVector::Reserve(result, offset + bins);
-		auto &child = ListVector::GetEntry(result);
+		auto &child = ListVector::GetChildMutable(result);
 		auto &fields = StructVector::GetEntries(child);
-		auto lows = FlatVector::GetData<double>(*fields[0]);
-		auto highs = FlatVector::GetData<double>(*fields[1]);
-		auto volumes = FlatVector::GetData<double>(*fields[2]);
+		auto lows = FlatVector::GetDataMutable<double>(fields[0]);
+		auto highs = FlatVector::GetDataMutable<double>(fields[1]);
+		auto volumes = FlatVector::GetDataMutable<double>(fields[2]);
 		for (idx_t i = 0; i < bins; i++) {
 			lows[offset + i] = state.min + static_cast<double>(i) * width;
 			highs[offset + i] = i + 1 == bins ? state.max : state.min + static_cast<double>(i + 1) * width;
@@ -895,7 +894,7 @@ static void FinVolumeProfileSimpleUpdate(Vector inputs[], AggregateInputData &, 
 	FinVolumeProfileUpdateRows(inputs, input_count, count, [&](idx_t) -> FinProfileState & { return state; });
 }
 
-static void FinVolumeProfileFinalize(Vector &states, AggregateInputData &, Vector &result, idx_t count,
+static void FinVolumeProfileFinalize(Vector &states, AggregateFinalizeInputData &, Vector &result, idx_t count,
                                      idx_t offset) {
 	UnifiedVectorFormat sdata;
 	FinanceToUnifiedFormat(states, count, sdata);
@@ -944,19 +943,16 @@ static void FinVolumeProfileWindow(AggregateInputData &, const WindowPartitionIn
 	FinVolumeProfileOperation::Write(state, result, rid);
 }
 
-static unique_ptr<FunctionData> FinVolumeProfileBind(ClientContext &context, AggregateFunction &function,
-                                                     vector<unique_ptr<Expression>> &arguments) {
-	FinRejectNamedArguments(function, arguments);
-	if (arguments.size() == 3) {
-		auto &bins = *arguments[2];
-		if (!bins.IsFoldable()) {
+static unique_ptr<FunctionData> FinVolumeProfileBind(BindAggregateFunctionInput &input) {
+	if (input.GetArguments().size() == 3) {
+		auto value = input.TryGetConstant(2);
+		if (!value) {
 			throw InvalidInputException("fin_volume_profile: bins must be a constant");
 		}
-		auto value = ExpressionExecutor::EvaluateScalar(context, bins, true);
-		if (value.IsNull()) {
+		if (value->IsNull()) {
 			throw InvalidInputException("fin_volume_profile: bins must not be NULL");
 		}
-		FinProfileBins(DoubleValue::Get(value.DefaultCastAs(LogicalType::DOUBLE)));
+		FinProfileBins(DoubleValue::Get(value->DefaultCastAs(LogicalType::DOUBLE)));
 	}
 	return nullptr;
 }
@@ -973,26 +969,26 @@ static LogicalType FinVolumeProfileType() {
 static void RegisterMarketVolumeAggregates(ExtensionLoader &loader) {
 	AggregateFunctionSet vwap(FinanceFunctionName("fin_vwap"));
 	vwap.AddFunction(FinDoubleRowsAggregate<FinSumPairState, FinVwapOperation, 2>("fin_vwap"));
-	loader.RegisterFunction(std::move(vwap));
+	FinanceRegisterFunction(loader, std::move(vwap));
 
 	AggregateFunctionSet ad_line(FinanceFunctionName("fin_ad_line"));
 	ad_line.AddFunction(FinDoubleRowsAggregate<FinSumPairState, FinAdLineOperation, 4>("fin_ad_line"));
-	loader.RegisterFunction(std::move(ad_line));
+	FinanceRegisterFunction(loader, std::move(ad_line));
 
 	AggregateFunctionSet amihud(FinanceFunctionName("fin_amihud_illiquidity"));
 	amihud.AddFunction(FinDoubleRowsAggregate<FinSumPairState, FinAmihudOperation, 2>("fin_amihud_illiquidity"));
-	loader.RegisterFunction(std::move(amihud));
+	FinanceRegisterFunction(loader, std::move(amihud));
 
 	AggregateFunctionSet kyle(FinanceFunctionName("fin_kyle_lambda"));
 	kyle.AddFunction(FinDoubleRowsAggregate<FinKyleLambdaState, FinKyleLambdaOperation, 2>("fin_kyle_lambda"));
-	loader.RegisterFunction(std::move(kyle));
+	FinanceRegisterFunction(loader, std::move(kyle));
 
 	AggregateFunctionSet twap(FinanceFunctionName("fin_twap"));
 	twap.AddFunction(FinTwapAggregate<timestamp_t>(FinanceLogicalType(LogicalTypeId::TIMESTAMP)));
 	twap.AddFunction(FinTwapAggregate<timestamp_tz_t>(FinanceLogicalType(LogicalTypeId::TIMESTAMP_TZ)));
 	twap.AddFunction(FinTwapAggregate<date_t>(FinanceLogicalType(LogicalTypeId::DATE)));
 	twap.AddFunction(FinTwapAggregate<double>(FinanceLogicalType(LogicalTypeId::DOUBLE)));
-	loader.RegisterFunction(std::move(twap));
+	FinanceRegisterFunction(loader, std::move(twap));
 
 	AggregateFunctionSet profile(FinanceFunctionName("fin_volume_profile"));
 	for (idx_t arity = 2; arity <= 3; arity++) {
@@ -1002,7 +998,8 @@ static void RegisterMarketVolumeAggregates(ExtensionLoader &loader) {
 		    AggregateFunction::StateInitialize<FinProfileState, FinVolumeProfileOperation,
 		                                       AggregateDestructorType::LEGACY>,
 		    FinVolumeProfileScatter, AggregateFunction::StateCombine<FinProfileState, FinVolumeProfileOperation>,
-		    FinVolumeProfileFinalize, FunctionNullHandling::DEFAULT_NULL_HANDLING, FinVolumeProfileSimpleUpdate);
+		    FinVolumeProfileFinalize, FunctionNullHandling::DEFAULT_NULL_HANDLING,
+		    FinClusterUpdate<FinVolumeProfileSimpleUpdate, FinVolumeProfileScatter>);
 		function.SetStateDestructorCallback(
 		    AggregateFunction::StateDestroy<FinProfileState, FinVolumeProfileOperation>);
 		function.SetBindCallback(FinVolumeProfileBind);
@@ -1011,5 +1008,5 @@ static void RegisterMarketVolumeAggregates(ExtensionLoader &loader) {
 		function.name = FinanceFunctionName("fin_volume_profile");
 		profile.AddFunction(std::move(function));
 	}
-	loader.RegisterFunction(std::move(profile));
+	FinanceRegisterFunction(loader, std::move(profile));
 }

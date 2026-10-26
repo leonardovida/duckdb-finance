@@ -40,7 +40,7 @@ static string SqlSource(const Value &value, const string &function_name, const s
 			throw BinderException("%s: %s query must be wrapped in parentheses", function_name, parameter);
 		}
 		auto query = trimmed.substr(1, trimmed.size() - 2);
-		Parser parser;
+		auto parser = Parser::GetBuiltinParser();
 		try {
 			parser.ParseQuery(query);
 		} catch (std::exception &ex) {
@@ -73,7 +73,7 @@ static string SqlSourceArg(const TableFunctionBindInput &input, idx_t index, con
 
 static optional_ptr<const Value> NamedArgument(const TableFunctionBindInput &input, const string &name) {
 	for (auto &entry : input.named_parameters) {
-		if (StringUtil::CIEquals(entry.first, name)) {
+		if (StringUtil::CIEquals(entry.first.GetIdentifierName(), name)) {
 			return &entry.second;
 		}
 	}
@@ -94,12 +94,12 @@ static double RequireFiniteDouble(const Value &value, const string &function_nam
 	if (value.IsNull()) {
 		throw BinderException("%s: %s cannot be NULL", function_name, parameter);
 	}
-	Value double_value;
 	string error;
-	if (!value.DefaultTryCastAs(LogicalType::DOUBLE, double_value, &error)) {
+	auto double_value = value.DefaultTryCastAs(LogicalType::DOUBLE, &error);
+	if (!double_value) {
 		throw InvalidInputException("%s: %s must be numeric: %s", function_name, parameter, error);
 	}
-	auto result = double_value.GetValue<double>();
+	auto result = double_value->GetValue<double>();
 	if (!std::isfinite(result)) {
 		throw InvalidInputException("%s: %s must be finite", function_name, parameter);
 	}
@@ -110,12 +110,12 @@ static int64_t RequireInteger(const Value &value, const string &function_name, c
 	if (value.IsNull()) {
 		throw BinderException("%s: %s cannot be NULL", function_name, parameter);
 	}
-	Value integer_value;
 	string error;
-	if (!value.DefaultTryCastAs(LogicalType::BIGINT, integer_value, &error)) {
+	auto integer_value = value.DefaultTryCastAs(LogicalType::BIGINT, &error);
+	if (!integer_value) {
 		throw InvalidInputException("%s: %s must be an integer: %s", function_name, parameter, error);
 	}
-	return integer_value.GetValue<int64_t>();
+	return integer_value->GetValue<int64_t>();
 }
 
 static string DoubleLiteral(double value) {
@@ -153,7 +153,7 @@ static void RequireInputCountBetween(const TableFunctionBindInput &input, idx_t 
 }
 
 static unique_ptr<TableRef> ParseSubquery(ClientContext &context, const string &query) {
-	Parser parser(context.GetParserOptions());
+	Parser parser(context);
 	parser.ParseQuery(query);
 	if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::SELECT_STATEMENT) {
 		throw ParserException("Finance table function generated an invalid SELECT statement");
@@ -167,10 +167,14 @@ static void RegisterBindReplace(ExtensionLoader &loader, const string &name, vec
                                 const vector<string> &named_varchar_parameters = {}) {
 	TableFunction function(FinanceFunctionName(name), std::move(args), nullptr, nullptr);
 	function.bind_replace = bind_replace;
-	for (auto &parameter : named_varchar_parameters) {
-		function.named_parameters[parameter] = LogicalType::VARCHAR;
+	if (!named_varchar_parameters.empty()) {
+		function.GetSignature().WithTypedKwargs("options", [&](TypedKwargs &options) {
+			for (auto &parameter : named_varchar_parameters) {
+				options.Add(Identifier(parameter), LogicalType::VARCHAR);
+			}
+		});
 	}
-	loader.RegisterFunction(std::move(function));
+	FinanceRegisterFunction(loader, std::move(function));
 }
 
 static void RegisterBindReplacePrefixes(ExtensionLoader &loader, const string &name, vector<LogicalType> required_args,
@@ -191,7 +195,7 @@ static void RegisterTableFunctionPrefixes(ExtensionLoader &loader, const string 
 	for (idx_t optional_count = 0; optional_count <= optional_args.size(); optional_count++) {
 		auto args = required_args;
 		args.insert(args.end(), optional_args.begin(), optional_args.begin() + optional_count);
-		loader.RegisterFunction(TableFunction(FinanceFunctionName(name), std::move(args), function, bind, init));
+		FinanceRegisterFunction(loader, TableFunction(FinanceFunctionName(name), std::move(args), function, bind, init));
 	}
 }
 

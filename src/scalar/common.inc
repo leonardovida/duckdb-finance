@@ -877,7 +877,7 @@ static bool IsLastDayOfFebruary(int32_t year, int32_t month, int32_t day) {
 }
 
 static double YearFrac(date_t start, date_t end, DayCount day_count) {
-	if (!Date::IsFinite(start) || !Date::IsFinite(end)) {
+	if (!start.IsFinite() || !end.IsFinite()) {
 		return FIN_NAN;
 	}
 	const int64_t days = int64_t(end.days) - int64_t(start.days);
@@ -945,7 +945,7 @@ static double YearFrac(date_t start, date_t end, DayCount day_count) {
 
 //! Accrued coupon interest between the last coupon date and settlement.
 static double AccruedInterest(date_t settle, date_t last, date_t next, double rate, double face, DayCount day_count) {
-	if (!Date::IsFinite(settle) || !Date::IsFinite(last) || !Date::IsFinite(next) || !IsFinite(rate) ||
+	if (!settle.IsFinite() || !last.IsFinite() || !next.IsFinite() || !IsFinite(rate) ||
 	    !IsFinite(face) || !(next.days > last.days) || settle.days < last.days || settle.days > next.days) {
 		return FIN_NAN;
 	}
@@ -1404,11 +1404,11 @@ static bool AdvanceWeekdays(int64_t &day, int64_t n, int direction) {
 			}
 		}
 	}
-	return Date::IsFinite(date_t(int32_t(day)));
+	return date_t(int32_t(day)).IsFinite();
 }
 
 static bool AdvanceBusinessDays(date_t start, int64_t n, int direction, BusinessCalendar calendar, date_t &out) {
-	if (!Date::IsFinite(start) || n < 0) {
+	if (!start.IsFinite() || n < 0) {
 		return false;
 	}
 	int64_t day = start.days;
@@ -1431,7 +1431,7 @@ static bool AdvanceBusinessDays(date_t start, int64_t n, int direction, Business
 		}
 	}
 	out = date_t(int32_t(day));
-	return Date::IsFinite(out);
+	return out.IsFinite();
 }
 
 //===--------------------------------------------------------------------===//
@@ -1496,7 +1496,7 @@ static int64_t ZoneOffsetForUtc(SessionZone zone, int64_t utc_micros) {
 
 //! Interpret a wall-clock time in `zone` as UTC (skipped/repeated hours resolve to standard time first).
 static bool TryShiftSessionTime(int64_t micros, int64_t offset, int64_t &result) {
-	return TryAddOperator::Operation(micros, offset, result) && Timestamp::IsFinite(timestamp_t(result));
+	return TryAddOperator::Operation(micros, offset, result) && timestamp_t(result).IsFinite();
 }
 
 static bool ZoneLocalToUtc(SessionZone zone, int64_t local_micros, int64_t &utc) {
@@ -2349,7 +2349,7 @@ struct DoubleListArg {
 	DoubleListArg(DataChunk &args, const PreparedInputs &input, idx_t col_p) : col(col_p) {
 		entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[col]);
 		auto &child = ListVector::GetChildMutable(args.data[col]);
-		FinanceFlatten(child, ListVector::GetListSize(args.data[col]));
+		child.Flatten();
 		validity = &FlatVector::Validity(child);
 		values = FlatVector::GetData<double>(child);
 	}
@@ -2378,11 +2378,11 @@ struct MatrixArg {
 	MatrixArg(DataChunk &args, const PreparedInputs &input, idx_t col_p) : col(col_p) {
 		entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[col]);
 		auto &rows_vec = ListVector::GetChildMutable(args.data[col]);
-		FinanceFlatten(rows_vec, ListVector::GetListSize(args.data[col]));
+		rows_vec.Flatten();
 		row_validity = &FlatVector::Validity(rows_vec);
 		rows = FlatVector::GetData<list_entry_t>(rows_vec);
 		auto &values_vec = ListVector::GetChildMutable(rows_vec);
-		FinanceFlatten(values_vec, ListVector::GetListSize(rows_vec));
+		values_vec.Flatten();
 		value_validity = &FlatVector::Validity(values_vec);
 		values = FlatVector::GetData<double>(values_vec);
 	}
@@ -2969,36 +2969,6 @@ static scalar_function_t WithFunctionName(const string &name, scalar_function_t 
 	};
 }
 
-//! DuckDB binds native scalar arguments by position and drops `name := value` names, so a named argument would be
-//! applied silently to the parameter at its position. The name survives as the argument expression's alias, so
-//! reject it at bind. Column, reference and lambda-parameter expressions carry their own name as alias and cannot be
-//! distinguished from a named argument, so they are not checked. Macro parameters substitute the caller's argument
-//! without its name, so SQL macros may call native functions with named macro parameters.
-static void RejectNamedScalarArguments(const ScalarFunction &function, const vector<unique_ptr<Expression>> &arguments) {
-	for (auto &argument : arguments) {
-		switch (argument->GetExpressionClass()) {
-		case ExpressionClass::BOUND_COLUMN_REF:
-		case ExpressionClass::BOUND_REF:
-		case ExpressionClass::BOUND_LAMBDA_REF:
-			continue;
-		default:
-			break;
-		}
-		if (argument->GetAlias().empty()) {
-			continue;
-		}
-		throw InvalidInputException("%s: named argument '%s := ...' is not supported; native scalar arguments bind by "
-		                            "position, so pass every argument positionally",
-		                            function.name, argument->GetAlias());
-	}
-}
-
-static unique_ptr<FunctionData> BindPositionalArguments(ClientContext &, ScalarFunction &bound_function,
-                                                        vector<unique_ptr<Expression>> &arguments) {
-	RejectNamedScalarArguments(bound_function, arguments);
-	return nullptr;
-}
-
 //! Temporal overloads are declared as ANY with a high cast score so DATE (and TIMESTAMP for session functions)
 //! keep winning for DATE values, NULLs and string literals; separate TIMESTAMP and TIMESTAMPTZ overloads would
 //! make '2026-01-02' literals ambiguous. The score also tells the bind which shape the position expects.
@@ -3026,17 +2996,17 @@ static bool IsTemporalArgument(const LogicalType &type) {
 
 //! Resolve temporal ANY positions: DATE positions accept DATE/TIMESTAMP/TIMESTAMPTZ and bind as a cast to DATE
 //! (TIMESTAMPTZ uses the session TimeZone through DuckDB's ICU cast), so kernels only ever see DATE values.
-//! Instant positions accept TIMESTAMPTZ only.
-static unique_ptr<FunctionData> BindTemporalArguments(ClientContext &, ScalarFunction &bound_function,
-                                                      vector<unique_ptr<Expression>> &arguments) {
-	RejectNamedScalarArguments(bound_function, arguments);
-	for (idx_t i = 0; i < bound_function.arguments.size() && i < arguments.size(); i++) {
-		auto &declared = bound_function.arguments[i];
+//! Instant positions accept TIMESTAMPTZ only. DuckDB 2.0 adds argument casts after this callback.
+static void ResolveTemporalArguments(ResolveScalarFunctionTypesInput &input) {
+	auto &bound_function = input.GetBoundFunction();
+	auto &declared_types = bound_function.GetArguments();
+	for (idx_t i = 0; i < declared_types.size() && i < input.GetArgumentCount(); i++) {
+		auto &declared = declared_types[i];
 		if (declared.id() != LogicalTypeId::ANY) {
 			continue;
 		}
 		auto score = AnyType::GetCastScore(declared);
-		auto &actual = arguments[i]->return_type;
+		auto &actual = input.GetArgumentType(i);
 		if (score == TEMPORAL_DATE_SCORE && IsTemporalArgument(actual)) {
 			declared = FinanceLogicalType(LogicalTypeId::DATE);
 		} else if (score == TEMPORAL_DATE_LIST_SCORE && actual.id() == LogicalTypeId::LIST &&
@@ -3048,25 +3018,22 @@ static unique_ptr<FunctionData> BindTemporalArguments(ClientContext &, ScalarFun
 			const char *expected = score == TEMPORAL_DATE_LIST_SCORE ? "a LIST of DATE, TIMESTAMP or TIMESTAMPTZ"
 			                       : score == TEMPORAL_INSTANT_SCORE ? "TIMESTAMP or TIMESTAMPTZ"
 			                                                         : "DATE, TIMESTAMP or TIMESTAMPTZ";
-			throw BinderException("%s: argument %llu must be %s, got %s", bound_function.name, (unsigned long long)(i + 1),
-			                      expected, actual.ToString());
+			throw BinderException("%s: argument %llu must be %s, got %s", bound_function.GetName().GetIdentifierName(),
+			                      (unsigned long long)(i + 1), expected, actual.ToString());
 		}
 	}
-	return nullptr;
 }
 
 static void AddScalar(ExtensionLoader &loader, const string &name, vector<LogicalType> args, LogicalType ret,
                       scalar_function_t func) {
 	ScalarFunction scalar(FinanceFunctionName(name), std::move(args), std::move(ret), WithFunctionName(name, func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-	scalar.SetBindCallback(BindPositionalArguments);
-	loader.RegisterFunction(std::move(scalar));
+	FinanceRegisterFunction(loader, std::move(scalar));
 }
 
 static void AddOverload(ScalarFunctionSet &set, vector<LogicalType> args, LogicalType ret, scalar_function_t func) {
-	ScalarFunction scalar(std::move(args), std::move(ret), WithFunctionName(set.name, func));
+	ScalarFunction scalar(std::move(args), std::move(ret), WithFunctionName(set.name.GetIdentifierName(), func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-	scalar.SetBindCallback(BindPositionalArguments);
 	set.AddFunction(std::move(scalar));
 }
 
@@ -3083,9 +3050,9 @@ static void AddDateOverloads(ScalarFunctionSet &set, const vector<LogicalType> &
 			arg = TemporalAnyType(TEMPORAL_DATE_LIST_SCORE);
 		}
 	}
-	ScalarFunction scalar(std::move(variant), ret, WithFunctionName(set.name, func));
+	ScalarFunction scalar(std::move(variant), ret, WithFunctionName(set.name.GetIdentifierName(), func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-	scalar.SetBindCallback(BindTemporalArguments);
+	scalar.SetResolveTypesCallback(ResolveTemporalArguments);
 	set.AddFunction(std::move(scalar));
 }
 
@@ -3095,9 +3062,9 @@ static void AddInstantOverloads(ScalarFunctionSet &set, const vector<LogicalType
 	AddOverload(set, args, ret, func);
 	auto variant = args;
 	variant[0] = TemporalAnyType(TEMPORAL_INSTANT_SCORE);
-	ScalarFunction scalar(std::move(variant), ret, WithFunctionName(set.name, func));
+	ScalarFunction scalar(std::move(variant), ret, WithFunctionName(set.name.GetIdentifierName(), func));
 	scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-	scalar.SetBindCallback(BindTemporalArguments);
+	scalar.SetResolveTypesCallback(ResolveTemporalArguments);
 	set.AddFunction(std::move(scalar));
 }
 
@@ -3124,5 +3091,5 @@ static void RegisterOptionFunction(ExtensionLoader &loader, const string &name, 
 		spec_args.push_back(optional_arg);
 		AddOverload(set, spec_args, FinanceLogicalType(LogicalTypeId::DOUBLE), func);
 	}
-	loader.RegisterFunction(std::move(set));
+	FinanceRegisterFunction(loader, std::move(set));
 }

@@ -35,7 +35,7 @@ static GridSpec GridSpecFromInputs(const TableFunctionBindInput &input, const st
 	auto start = start_value.GetValue<timestamp_t>();
 	auto end = end_value.GetValue<timestamp_t>();
 	auto step = step_value.GetValue<interval_t>();
-	if (!Timestamp::IsFinite(start) || !Timestamp::IsFinite(end)) {
+	if (!start.IsFinite() || !end.IsFinite()) {
 		throw InvalidInputException("%s: start_ts and end_ts must be finite", function_name);
 	}
 	if (start > end) {

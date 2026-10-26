@@ -154,7 +154,7 @@ static void SortinoSimpleUpdate(Vector inputs[], AggregateInputData &input_data,
                                  data_ptr_t state_ptr, idx_t count) {
 	D_ASSERT(input_count == 1);
 	auto &state = *reinterpret_cast<SortinoState *>(state_ptr);
-	bool eligible = inputs[0].GetVectorType() == VectorType::FLAT_VECTOR && FlatVector::Validity(inputs[0]).AllValid() &&
+	bool eligible = inputs[0].GetVectorType() == VectorType::FLAT_VECTOR && FlatVector::Validity(inputs[0]).CannotHaveNull() &&
 	                (state.count == 0 || state.scale == 1.0) &&
 	                (state.downside_scale == 0.0 || state.downside_scale == 1.0);
 	auto values = eligible ? FlatVector::GetData<double>(inputs[0]) : nullptr;

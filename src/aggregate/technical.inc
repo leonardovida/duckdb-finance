@@ -1985,14 +1985,14 @@ struct TechDriver {
 				FlatVector::SetNull(result, index, true);
 				return;
 			}
-			FlatVector::GetData<double>(result)[index] = out[0];
+			FlatVector::GetDataMutable<double>(result)[index] = out[0];
 			return;
 		}
 		auto &children = StructVector::GetEntries(result);
 		for (idx_t f = 0; f < OP::FIELD_COUNT; f++) {
-			auto &child = *children[f];
+			auto &child = children[f];
 			if (std::isfinite(out[f])) {
-				FlatVector::GetData<double>(child)[index] = out[f];
+				FlatVector::GetDataMutable<double>(child)[index] = out[f];
 			} else {
 				FlatVector::SetNull(child, index, true);
 			}
@@ -2088,7 +2088,7 @@ static void TechUpdateRows(Vector inputs[], AggregateInputData &aggr_input_data,
 	UnifiedVectorFormat formats[TECH_MAX_INPUTS + TECH_MAX_PARAMS];
 	const double *data[TECH_MAX_INPUTS + TECH_MAX_PARAMS];
 	for (idx_t c = 0; c < OP::INPUTS + parameters; c++) {
-		inputs[c].ToUnifiedFormat(count, formats[c]);
+		inputs[c].ToUnifiedFormat(formats[c]);
 		data[c] = c < OP::INPUTS || TechNumericParameter<OP>(c - OP::INPUTS)
 		              ? UnifiedVectorFormat::GetData<double>(formats[c])
 		              : nullptr;
@@ -2131,7 +2131,7 @@ template <class OP>
 static void TechScatterUpdate(Vector inputs[], AggregateInputData &aggr_input_data, idx_t, Vector &states,
                               idx_t count) {
 	UnifiedVectorFormat sdata;
-	states.ToUnifiedFormat(count, sdata);
+	states.ToUnifiedFormat(sdata);
 	auto state_values = UnifiedVectorFormat::GetData<TechState<OP> *>(sdata);
 	TechUpdateRows<OP>(inputs, aggr_input_data, count,
 	                   [&](idx_t i) -> TechState<OP> & { return *state_values[sdata.sel->get_index(i)]; });
@@ -2145,9 +2145,9 @@ static void TechSimpleUpdate(Vector inputs[], AggregateInputData &aggr_input_dat
 }
 
 template <class OP>
-static void TechFinalize(Vector &states, AggregateInputData &, Vector &result, idx_t count, idx_t offset) {
+static void TechFinalize(Vector &states, AggregateFinalizeInputData &, Vector &result, idx_t count, idx_t offset) {
 	UnifiedVectorFormat sdata;
-	states.ToUnifiedFormat(count, sdata);
+	states.ToUnifiedFormat(sdata);
 	auto state_values = UnifiedVectorFormat::GetData<TechState<OP> *>(sdata);
 	for (idx_t i = 0; i < count; i++) {
 		TechDriver<OP>::Write(*state_values[sdata.sel->get_index(i)], result, i + offset);
@@ -2176,7 +2176,7 @@ static void TechWindow(AggregateInputData &aggr_input_data, const WindowPartitio
 	auto &aux = *state.window;
 	aux.Initialize(partition);
 	const auto &filter_mask = partition.filter_mask;
-	bool all_valid = filter_mask.AllValid();
+	bool all_valid = filter_mask.CannotHaveNull();
 	for (idx_t c = 0; c < partition.all_valid.size(); c++) {
 		all_valid = all_valid && partition.all_valid[c];
 	}
@@ -2268,9 +2268,8 @@ static double TechParseMaType(const char *name, const string &text) {
 }
 
 template <class OP>
-static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFunction &function,
-                                         vector<unique_ptr<Expression>> &arguments) {
-	FinRejectNamedArguments(function, arguments);
+static unique_ptr<FunctionData> TechBind(BindAggregateFunctionInput &input) {
+	auto &arguments = input.GetArguments();
 	auto data = make_uniq<TechBindData>();
 	auto specs = OP::Params();
 	for (idx_t j = 0; j < OP::PARAM_COUNT; j++) {
@@ -2288,12 +2287,12 @@ static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFuncti
 		dynamic = true;
 	}
 	for (idx_t j = 0; j < provided; j++) {
-		auto &argument = *arguments[OP::INPUTS + j];
 		auto &spec = specs[j];
-		if (!argument.IsFoldable()) {
+		auto constant = input.TryGetConstant(OP::INPUTS + j);
+		if (!constant) {
 			continue;
 		}
-		auto value = ExpressionExecutor::EvaluateScalar(context, argument, true);
+		auto &value = *constant;
 		if (value.IsNull()) {
 			throw InvalidInputException("%s: %s must not be NULL", OP::NAME, spec.name);
 		}
@@ -2312,10 +2311,8 @@ static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFuncti
 		return std::move(data);
 	}
 	OP::Validate(OP::NAME, data->values);
-	// The parameters now live in the bind data; the aggregate only sees prices.
-	while (arguments.size() > OP::INPUTS) {
-		Function::EraseArgument(function, arguments, arguments.size() - 1);
-	}
+	// The parameters now live in the bind data; the constant arguments stay in the call but the update and window
+	// callbacks only read the price inputs.
 	return std::move(data);
 }
 
@@ -2324,7 +2321,7 @@ static unique_ptr<FunctionData> TechBind(ClientContext &context, AggregateFuncti
 // example to share common subplans), and calls that differ only in their
 // parameters would otherwise look identical.
 static void TechSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data,
-                          const AggregateFunction &) {
+                          const BoundAggregateFunction &) {
 	auto &data = bind_data->Cast<TechBindData>();
 	vector<double> values(data.values, data.values + TECH_MAX_PARAMS);
 	serializer.WriteProperty(100, "values", values);
@@ -2332,7 +2329,7 @@ static void TechSerialize(Serializer &serializer, const optional_ptr<FunctionDat
 	serializer.WriteProperty(102, "provided", data.provided);
 }
 
-static unique_ptr<FunctionData> TechDeserialize(Deserializer &deserializer, AggregateFunction &) {
+static unique_ptr<FunctionData> TechDeserialize(Deserializer &deserializer, BoundAggregateFunction &) {
 	auto result = make_uniq<TechBindData>();
 	auto values = deserializer.ReadProperty<vector<double>>(100, "values");
 	for (idx_t i = 0; i < TECH_MAX_PARAMS && i < values.size(); i++) {
@@ -2373,7 +2370,7 @@ static void RegisterTechnicalIndicator(ExtensionLoader &loader) {
 		                           AggregateFunction::StateInitialize<STATE, DRIVER, AggregateDestructorType::LEGACY>,
 		                           TechScatterUpdate<OP>, AggregateFunction::StateCombine<STATE, DRIVER>,
 		                           TechFinalize<OP>, FunctionNullHandling::DEFAULT_NULL_HANDLING,
-		                           TechSimpleUpdate<OP>);
+		                           FinClusterUpdate<TechSimpleUpdate<OP>, TechScatterUpdate<OP>>);
 		function.SetStateDestructorCallback(AggregateFunction::StateDestroy<STATE, DRIVER>);
 		function.SetBindCallback(TechBind<OP>);
 		function.SetWindowCallback(TechWindow<OP>);
@@ -2383,7 +2380,7 @@ static void RegisterTechnicalIndicator(ExtensionLoader &loader) {
 		function.name = FinanceFunctionName(OP::NAME);
 		set.AddFunction(std::move(function));
 	}
-	loader.RegisterFunction(std::move(set));
+	FinanceRegisterFunction(loader, std::move(set));
 }
 
 static void RegisterTechnicalAggregates(ExtensionLoader &loader) {

@@ -8,20 +8,12 @@
 #include "duckdb/common/types/time.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/value.hpp"
-#if !FINANCE_OLD_DUCKDB_VECTOR_API
-#include "duckdb/common/vector/list_vector.hpp"
-#include "duckdb/common/vector/string_vector.hpp"
-#include "duckdb/common/vector/struct_vector.hpp"
-#else
-#define CanHaveNull() AllValid() == false
-#define GetChildMutable GetEntry
-#define GetDataMutable GetData
-#endif
 #include "duckdb/common/vector_operations/binary_executor.hpp"
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
 #include "duckdb/common/vector_operations/unary_executor.hpp"
 #include "duckdb/function/cast/cast_function_set.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 
 #include <algorithm>
@@ -35,20 +27,6 @@
 
 namespace duckdb {
 namespace {
-
-#if FINANCE_OLD_DUCKDB_VECTOR_API
-#define FINANCE_STRUCT_CHILD(child) (*(child))
-#else
-#define FINANCE_STRUCT_CHILD(child) (child)
-#endif
-
-static void FinanceFlatten(Vector &vector, idx_t count) {
-#if FINANCE_OLD_DUCKDB_VECTOR_API
-	vector.Flatten(count);
-#else
-	vector.Flatten();
-#endif
-}
 
 #include "scalar/common.inc"
 #include "scalar/distributions.inc"

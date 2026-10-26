@@ -3,11 +3,7 @@
 // sorts before computing, so results never depend on thread count or row order.
 
 static Vector &StatListChild(Vector &list) {
-#if FINANCE_OLD_DUCKDB_VECTOR_API
-	return ListVector::GetEntry(list);
-#else
 	return ListVector::GetChildMutable(list);
-#endif
 }
 
 //===--------------------------------------------------------------------===//
@@ -194,16 +190,15 @@ struct DecayOperation : public FinOperationDefaults {
 // Validates a constant half-life at bind. INTERVAL half-lives are read as
 // microseconds (timestamps are epoch microseconds); months count as 30 days.
 template <class OP>
-static unique_ptr<FunctionData> DecayBind(ClientContext &context, AggregateFunction &function,
-                                          vector<unique_ptr<Expression>> &arguments) {
-	FinRejectNamedArguments(function, arguments);
+static unique_ptr<FunctionData> DecayBind(BindAggregateFunctionInput &input) {
+	auto &arguments = input.GetArguments();
 	const idx_t column = arguments.size() - 1;
-	auto &argument = arguments[column];
-	if (!argument->IsFoldable()) {
+	auto constant = input.TryGetConstant(column);
+	if (!constant) {
 		return nullptr;
 	}
-	if (argument->return_type.id() == LogicalTypeId::INTERVAL) {
-		auto value = ExpressionExecutor::EvaluateScalar(context, *argument, true);
+	auto &value = *constant;
+	if (arguments[column]->GetReturnType().id() == LogicalTypeId::INTERVAL) {
 		if (value.IsNull()) {
 			OP::ValidateHalflife(OP::Name(), StatNaN(), false);
 		}
@@ -213,7 +208,6 @@ static unique_ptr<FunctionData> DecayBind(ClientContext &context, AggregateFunct
 		}
 		OP::ValidateHalflife(OP::Name(), double(micros), true);
 	} else {
-		auto value = ExpressionExecutor::EvaluateScalar(context, *argument, true);
 		OP::ValidateHalflife(OP::Name(), value.IsNull() ? StatNaN() : DoubleValue::Get(value.DefaultCastAs(LogicalType::DOUBLE)),
 		                     !value.IsNull());
 	}
@@ -479,8 +473,10 @@ struct OlsOperation {
 	}
 };
 
-static void OlsInitialize(const AggregateFunction &, data_ptr_t state) {
-	reinterpret_cast<OlsState *>(state)->data = nullptr;
+static void OlsInitialize(AggregateStateInput &, data_ptr_t *states, idx_t count) {
+	for (idx_t i = 0; i < count; i++) {
+		reinterpret_cast<OlsState *>(states[i])->data = nullptr;
+	}
 }
 
 static void OlsUpdateRows(Vector inputs[], idx_t count, const std::function<OlsState &(idx_t)> &state_for_row) {
@@ -572,7 +568,7 @@ static void OlsCombine(Vector &source, Vector &target, AggregateInputData &, idx
 }
 
 template <bool INTERCEPT>
-static void OlsFinalize(Vector &states, AggregateInputData &, Vector &result, idx_t count, idx_t offset) {
+static void OlsFinalize(Vector &states, AggregateFinalizeInputData &, Vector &result, idx_t count, idx_t offset) {
 	UnifiedVectorFormat sdata;
 	FinanceToUnifiedFormat(states, count, sdata);
 	auto state_ptrs = UnifiedVectorFormat::GetData<OlsState *>(sdata);
@@ -596,9 +592,8 @@ static AggregateFunction OlsAggregate(const string &name) {
 	AggregateFunction result({LogicalType::DOUBLE, LogicalType::LIST(LogicalType::DOUBLE)},
 	                         OlsOperation<INTERCEPT>::ReturnType(), AggregateFunction::StateSize<OlsState>,
 	                         OlsInitialize, OlsScatterUpdate, OlsCombine, OlsFinalize<INTERCEPT>,
-	                         FunctionNullHandling::SPECIAL_HANDLING, OlsSimpleUpdate);
+	                         FunctionNullHandling::SPECIAL_HANDLING, FinClusterUpdate<OlsSimpleUpdate, OlsScatterUpdate>);
 	result.SetStateDestructorCallback(OlsDestroy);
-	result.SetBindCallback(FinNamedArgumentsBind);
 	result.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	result.name = FinanceFunctionName(name);
 	return result;
@@ -639,8 +634,10 @@ struct CovMatrixState {
 	CovMatrixData *data;
 };
 
-static void CovMatrixInitialize(const AggregateFunction &, data_ptr_t state) {
-	reinterpret_cast<CovMatrixState *>(state)->data = nullptr;
+static void CovMatrixInitialize(AggregateStateInput &, data_ptr_t *states, idx_t count) {
+	for (idx_t i = 0; i < count; i++) {
+		reinterpret_cast<CovMatrixState *>(states[i])->data = nullptr;
+	}
 }
 
 static double StatReadKey(const UnifiedVectorFormat &format, PhysicalType type, idx_t index) {
@@ -808,7 +805,7 @@ static Value CovMatrixCompute(CovMatrixData &data) {
 }
 
 template <bool CORRELATION>
-static void CovMatrixFinalize(Vector &states, AggregateInputData &, Vector &result, idx_t count, idx_t offset) {
+static void CovMatrixFinalize(Vector &states, AggregateFinalizeInputData &, Vector &result, idx_t count, idx_t offset) {
 	UnifiedVectorFormat sdata;
 	FinanceToUnifiedFormat(states, count, sdata);
 	auto state_ptrs = UnifiedVectorFormat::GetData<CovMatrixState *>(sdata);
@@ -828,13 +825,9 @@ static void CovMatrixDestroy(Vector &states, AggregateInputData &, idx_t count) 
 }
 
 // The asset argument accepts any type; it is cast to VARCHAR labels at bind.
-static unique_ptr<FunctionData> CovMatrixBind(ClientContext &context, AggregateFunction &function,
-                                              vector<unique_ptr<Expression>> &arguments) {
-	FinRejectNamedArguments(function, arguments);
-	if (arguments[1]->return_type.id() != LogicalTypeId::VARCHAR) {
-		arguments[1] = BoundCastExpression::AddCastToType(context, std::move(arguments[1]), LogicalType::VARCHAR);
-	}
-	function.arguments[1] = LogicalType::VARCHAR;
+// DuckDB adds the cast to the bound argument types after this callback.
+static unique_ptr<FunctionData> CovMatrixBind(BindAggregateFunctionInput &input) {
+	input.GetBoundFunction().GetArguments()[1] = LogicalType::VARCHAR;
 	return nullptr;
 }
 
@@ -845,14 +838,15 @@ static void RegisterCovMatrixSet(ExtensionLoader &loader, const string &name) {
 		AggregateFunction function({key_type, LogicalType::ANY, LogicalType::DOUBLE}, CovMatrixReturnType<CORRELATION>(),
 		                           AggregateFunction::StateSize<CovMatrixState>, CovMatrixInitialize,
 		                           CovMatrixScatterUpdate, CovMatrixCombine, CovMatrixFinalize<CORRELATION>,
-		                           FunctionNullHandling::SPECIAL_HANDLING, CovMatrixSimpleUpdate);
+		                           FunctionNullHandling::SPECIAL_HANDLING,
+		                           FinClusterUpdate<CovMatrixSimpleUpdate, CovMatrixScatterUpdate>);
 		function.SetStateDestructorCallback(CovMatrixDestroy);
 		function.SetBindCallback(CovMatrixBind);
 		function.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 		function.name = FinanceFunctionName(name);
 		set.AddFunction(std::move(function));
 	}
-	loader.RegisterFunction(std::move(set));
+	FinanceRegisterFunction(loader, std::move(set));
 }
 
 //===--------------------------------------------------------------------===//
@@ -880,8 +874,8 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 	}
 	FinRegisterSet(loader, "fin_rolling_beta",
 	               {FinAggregate<BetaState, BetaOperation>("fin_rolling_beta", {DOUBLE, DOUBLE})});
-	loader.RegisterFunction(OlsAggregate<true>("fin_ols"));
-	loader.RegisterFunction(OlsAggregate<false>("fin_ols_no_intercept"));
+	FinanceRegisterFunction(loader, OlsAggregate<true>("fin_ols"));
+	FinanceRegisterFunction(loader, OlsAggregate<false>("fin_ols_no_intercept"));
 	RegisterCovMatrixSet<false>(loader, "fin_cov_matrix");
 	RegisterCovMatrixSet<true>(loader, "fin_corr_matrix");
 	FinRegisterSet(loader, "fin_ks_test",
@@ -891,17 +885,17 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 
 	// Internal kernels behind SQL macros (macros provide named parameters,
 	// hashing of categorical inputs and ordering-key normalization).
-	loader.RegisterFunction(
+	FinanceRegisterFunction(loader, 
 	    StatStructAggregate<StatHistoryState, AnovaOperation>("finance_anova_oneway_internal", {DOUBLE, BIGINT}));
-	loader.RegisterFunction(StatScalarAggregate<StatHistoryState, CorrelationOperation<0>>(
+	FinanceRegisterFunction(loader, StatScalarAggregate<StatHistoryState, CorrelationOperation<0>>(
 	    "finance_rank_corr_internal", {DOUBLE, DOUBLE, VARCHAR}));
-	loader.RegisterFunction(StatScalarAggregate<StatHistoryState, CorrelationOperation<1>>(
+	FinanceRegisterFunction(loader, StatScalarAggregate<StatHistoryState, CorrelationOperation<1>>(
 	    "finance_factor_ic_internal", {DOUBLE, DOUBLE, VARCHAR}));
-	loader.RegisterFunction(StatScalarAggregate<StatHistoryState, MutualInformationOperation>(
+	FinanceRegisterFunction(loader, StatScalarAggregate<StatHistoryState, MutualInformationOperation>(
 	    "finance_mutual_information_internal", {DOUBLE, DOUBLE, BIGINT}));
-	loader.RegisterFunction(StatScalarAggregate<StatHistoryState, CategoricalAssociationOperation<0>>(
+	FinanceRegisterFunction(loader, StatScalarAggregate<StatHistoryState, CategoricalAssociationOperation<0>>(
 	    "finance_cramers_v_internal", {BIGINT, BIGINT, BOOLEAN}));
-	loader.RegisterFunction(StatScalarAggregate<StatHistoryState, CategoricalAssociationOperation<1>>(
+	FinanceRegisterFunction(loader, StatScalarAggregate<StatHistoryState, CategoricalAssociationOperation<1>>(
 	    "finance_theils_u_internal", {BIGINT, BIGINT}));
 
 	AggregateFunctionSet turnover(FinanceFunctionName("finance_factor_turnover_internal"));
@@ -933,13 +927,13 @@ static void RegisterStatisticsAggregates(ExtensionLoader &loader) {
 		garch_fit.AddFunction(
 		    StatStructAggregate<StatHistoryState, GarchFitOperation>("finance_garch11_fit_internal", {DOUBLE, key}));
 	}
-	loader.RegisterFunction(std::move(turnover));
-	loader.RegisterFunction(std::move(autocorr));
-	loader.RegisterFunction(std::move(crosscorr));
-	loader.RegisterFunction(std::move(hurst));
-	loader.RegisterFunction(std::move(half_life));
-	loader.RegisterFunction(std::move(adf));
-	loader.RegisterFunction(std::move(ljung_box));
-	loader.RegisterFunction(std::move(newey_west));
-	loader.RegisterFunction(std::move(garch_fit));
+	FinanceRegisterFunction(loader, std::move(turnover));
+	FinanceRegisterFunction(loader, std::move(autocorr));
+	FinanceRegisterFunction(loader, std::move(crosscorr));
+	FinanceRegisterFunction(loader, std::move(hurst));
+	FinanceRegisterFunction(loader, std::move(half_life));
+	FinanceRegisterFunction(loader, std::move(adf));
+	FinanceRegisterFunction(loader, std::move(ljung_box));
+	FinanceRegisterFunction(loader, std::move(newey_west));
+	FinanceRegisterFunction(loader, std::move(garch_fit));
 }

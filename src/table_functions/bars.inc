@@ -90,7 +90,7 @@ static void BarIndexUpdate(Vector[], AggregateInputData &, idx_t, Vector &, idx_
 	throw InvalidInputException("__finance_bar_index can only be used as a window function");
 }
 
-static void BarIndexFinalize(Vector &, AggregateInputData &, Vector &, idx_t, idx_t) {
+static void BarIndexFinalize(Vector &, AggregateFinalizeInputData &, Vector &, idx_t, idx_t) {
 	throw InvalidInputException("__finance_bar_index can only be used as a window function");
 }
 
@@ -254,13 +254,13 @@ static void BarIndexWindow(AggregateInputData &, const WindowPartitionInput &, c
 	}
 	auto &entry = (*state.bars)[row];
 	auto &children = StructVector::GetEntries(result);
-	FlatVector::GetData<int64_t>(*children[0])[rid] = entry.bar;
-	FlatVector::GetData<double>(*children[1])[rid] = entry.volume;
-	FlatVector::GetData<double>(*children[2])[rid] = entry.notional;
-	FlatVector::GetData<double>(*children[3])[rid] = entry.metric;
+	FlatVector::GetDataMutable<int64_t>(children[0])[rid] = entry.bar;
+	FlatVector::GetDataMutable<double>(children[1])[rid] = entry.volume;
+	FlatVector::GetDataMutable<double>(children[2])[rid] = entry.notional;
+	FlatVector::GetDataMutable<double>(children[3])[rid] = entry.metric;
 	if (!entry.has_volume) {
-		FlatVector::SetNull(*children[1], rid, true);
-		FlatVector::SetNull(*children[2], rid, true);
+		FlatVector::SetNull(children[1], rid, true);
+		FlatVector::SetNull(children[2], rid, true);
 	}
 }
 

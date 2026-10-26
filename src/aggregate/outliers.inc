@@ -170,7 +170,7 @@ struct OutlierCountRowOperation : public OutlierCountOperation {
 };
 
 static bool AppendFlatOutliers(Vector &input, OutlierCountState &state, idx_t count) {
-	if (input.GetVectorType() != VectorType::FLAT_VECTOR || !FlatVector::Validity(input).AllValid()) {
+	if (input.GetVectorType() != VectorType::FLAT_VECTOR || !FlatVector::Validity(input).CannotHaveNull()) {
 		return false;
 	}
 	auto values = FlatVector::GetData<double>(input);
@@ -208,7 +208,7 @@ static void OutlierCountSimpleUpdate(Vector inputs[], AggregateInputData &input_
 		return;
 	}
 	auto &state = *reinterpret_cast<OutlierCountState *>(state_ptr);
-	bool eligible = inputs[0].GetVectorType() == VectorType::FLAT_VECTOR && FlatVector::Validity(inputs[0]).AllValid();
+	bool eligible = inputs[0].GetVectorType() == VectorType::FLAT_VECTOR && FlatVector::Validity(inputs[0]).CannotHaveNull();
 	double threshold = 3.0;
 	if (WITH_THRESHOLD) {
 		eligible = eligible && inputs[1].GetVectorType() == VectorType::CONSTANT_VECTOR &&

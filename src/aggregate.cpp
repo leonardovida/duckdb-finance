@@ -9,9 +9,6 @@
 #include "duckdb/planner/expression/bound_cast_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/common/types/interval.hpp"
-#if !FINANCE_OLD_DUCKDB_VECTOR_API
-#include "duckdb/common/vector/list_vector.hpp"
-#endif
 #include "duckdb/common/serializer/serializer.hpp"
 #include "duckdb/common/serializer/deserializer.hpp"
 

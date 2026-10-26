@@ -88,6 +88,6 @@ static AggregateFunctionSet ValueAtKeySet(const string &name) {
 }
 
 static void RegisterValueAtKeyAggregates(ExtensionLoader &loader) {
-	loader.RegisterFunction(ValueAtKeySet<true>("finance_last_by_internal"));
-	loader.RegisterFunction(ValueAtKeySet<false>("finance_first_by_internal"));
+	FinanceRegisterFunction(loader, ValueAtKeySet<true>("finance_last_by_internal"));
+	FinanceRegisterFunction(loader, ValueAtKeySet<false>("finance_first_by_internal"));
 }
