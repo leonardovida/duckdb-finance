@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DUCKDB_VERSION: v1.5.6
+  DUCKDB_VERSION: v2.0.0
 
 jobs:
   smoke:
@@ -43,11 +43,11 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL \
-            "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" \
-            -o duckdb_cli.zip
-          unzip -q duckdb_cli.zip
+            "https://install.duckdb.org/${DUCKDB_VERSION}/duckdb-cli-linux-amd64.tar.gz" \
+            -o duckdb_cli.tar.gz
+          tar -xzf duckdb_cli.tar.gz duckdb
           chmod +x duckdb
-          ./duckdb --version
+          ./duckdb -no-agent --version
 
       - name: Run community install smoke
-        run: ./duckdb -batch < examples/community_install_smoke.sql
+        run: ./duckdb -no-agent -batch < examples/community_install_smoke.sql

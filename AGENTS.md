@@ -32,8 +32,9 @@ make test
 make check
 ```
 
-`make test` runs the smoke SQL, the gold SQL, and every function example in
-`docs/function_examples.sql` through:
+`make test` runs the smoke SQL, the sqllogictest records in `test/sql/*.test`,
+the gold SQL, and every function example in `docs/function_examples.sql`
+through:
 
 ```sh
 make test DUCKDB_ROOT=/path/to/duckdb
@@ -54,8 +55,13 @@ failures, crashes, and nonzero exits as failures.
 - Use `apply_patch` for manual edits.
 - Do not run destructive git commands or clean untracked files unless explicitly
   requested.
-- `duckdb_functions()` works on DuckDB v1.5.6 (`make function-examples` uses
-  it); an older local debug build was observed to crash on that path.
+- The extension targets DuckDB v2.0.0. Register native functions through
+  `FinanceRegisterFunction` so they get documented parameter names (DuckDB 2.0
+  binds `name := value` natively) and are marked fallible (DuckDB 2.0 turns an
+  error thrown by a non-fallible function into an internal error).
+- Change argument types in a scalar `resolve_types` callback, not in `bind`:
+  DuckDB 2.0 casts scalar arguments before calling `bind`.
+- Write SQL lambdas as `lambda x: ...`; DuckDB 2.0 rejects `x -> ...` by default.
 - When adding or changing a `fin_*` function, add focused coverage in
   `test/sql/gold_tests.sql` and keep the fixture small in
   `test/sql/gold_dataset.sql`.
