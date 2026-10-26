@@ -16,6 +16,42 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
 SELECT assert_eq('release version', fin_version(), 'finance 0.3.0');
 
+-- NULL inputs skip the entire liquidity row, even when another input is non-finite.
+CREATE TEMP TABLE liquidity_null_rows AS SELECT * FROM (VALUES
+  (1, 1, 10.0, 2.0, 12.0, 8.0, 10.0),
+  (1, 2, 20.0, 4.0, 22.0, 18.0, 21.0),
+  (1, 3, NULL, 'Infinity'::DOUBLE, NULL, 18.0, 21.0),
+  (1, 4, 'Infinity'::DOUBLE, NULL, 22.0, 18.0, 21.0),
+  (2, 1, 10.0, 2.0, 12.0, 8.0, 10.0),
+  (2, 2, 20.0, 4.0, 22.0, 18.0, 21.0),
+  (2, 3, NULL, 'Infinity'::DOUBLE, NULL, 18.0, 21.0),
+  (2, 4, 'Infinity'::DOUBLE, NULL, 22.0, 18.0, 21.0),
+  (2, 5, NULL, 'Infinity'::DOUBLE, 22.0, NULL, 21.0),
+  (2, 6, NULL, 'Infinity'::DOUBLE, 22.0, 18.0, NULL)
+) t(g, i, p, v, h, l, c);
+
+SELECT assert_near('vwap skips null pairs', fin_vwap(p, v), 50.0 / 3.0, 1e-12),
+       assert_near('amihud skips null pairs', fin_amihud_illiquidity(p, v), 5.0, 1e-12),
+       assert_near('kyle skips null pairs', fin_kyle_lambda(p, v), 5.0, 1e-12)
+FROM liquidity_null_rows WHERE g = 1;
+
+SELECT g, assert_near('grouped vwap skips null pairs', fin_vwap(p, v), 50.0 / 3.0, 1e-12),
+       assert_near('grouped ad skips null rows', fin_ad_line(h, l, c, v), 2.0, 1e-12),
+       assert_near('grouped amihud skips null pairs', fin_amihud_illiquidity(p, v), 5.0, 1e-12),
+       assert_near('grouped kyle skips null pairs', fin_kyle_lambda(p, v), 5.0, 1e-12)
+FROM liquidity_null_rows GROUP BY g ORDER BY g;
+
+SELECT assert_near('window vwap skips null pairs', vwap, 50.0 / 3.0, 1e-12),
+       assert_near('window ad skips null rows', ad, 2.0, 1e-12)
+FROM (SELECT i, fin_vwap(p, v) OVER w AS vwap, fin_ad_line(h, l, c, v) OVER w AS ad
+      FROM liquidity_null_rows WHERE g = 2
+      WINDOW w AS (ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)) WHERE i = 6;
+
+SELECT assert_eq('vwap rejects nonfinite row', fin_vwap(p, v), NULL),
+       assert_eq('amihud rejects nonfinite row', fin_amihud_illiquidity(p, v), NULL),
+       assert_eq('kyle rejects nonfinite row', fin_kyle_lambda(p, v), NULL)
+FROM (VALUES (1.0, 2.0), ('Infinity'::DOUBLE, 1.0)) t(p, v);
+
 -- Repository sweep regressions: NULLs must never be read as native values.
 SELECT
   assert_near('irr tiny amounts', fin_irr([-1e-20, 2e-20]), 1.0, 1e-10),
