@@ -88,10 +88,11 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	                           AggregateFunction::UnaryAggregate<OutlierCountState, double, int64_t, OutlierCountOperation,
 	                                                              AggregateDestructorType::LEGACY>(DOUBLE, BIGINT));
 	outlier_count.SetStateDestructorCallback(AggregateFunction::StateDestroy<OutlierCountState, OutlierCountOperation>);
-	outlier_count.SetStateSimpleUpdateCallback(OutlierCountSimpleUpdate<false>);
+	outlier_count.SetStateClusterUpdateCallback(
+	    FinClusterUpdate<OutlierCountSimpleUpdate<false>,
+	                     AggregateFunction::UnaryScatterUpdate<OutlierCountState, double, OutlierCountOperation>>);
 	outlier_count.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	outlier_count.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-	outlier_count.SetBindCallback(FinNamedArgumentsBind);
 	outlier_count.SetWindowCallback(FinWindow<OutlierCountState, OutlierCountRowOperation, int64_t>);
 	outlier_count_set.AddFunction(outlier_count);
 	auto outlier_count_threshold =
@@ -99,17 +100,19 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	                                                                                            DOUBLE, BIGINT);
 	outlier_count_threshold.SetStateDestructorCallback(
 	    AggregateFunction::StateDestroy<OutlierCountState, OutlierCountWithThresholdOperation>);
-	outlier_count_threshold.SetStateSimpleUpdateCallback(OutlierCountSimpleUpdate<true>);
+	outlier_count_threshold.SetStateClusterUpdateCallback(
+	    FinClusterUpdate<OutlierCountSimpleUpdate<true>,
+	                     AggregateFunction::BinaryScatterUpdate<OutlierCountState, double, double,
+	                                                            OutlierCountWithThresholdOperation>>);
 	outlier_count_threshold.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
 	outlier_count_threshold.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-	outlier_count_threshold.SetBindCallback(FinNamedArgumentsBind);
 	outlier_count_threshold.SetWindowCallback(FinWindow<OutlierCountState, OutlierCountRowOperation, int64_t>);
 	outlier_count_set.AddFunction(outlier_count_threshold);
 	auto outlier_count_method = FinWindowAggregate<OutlierCountState, OutlierCountRowOperation, int64_t>(
 	    "fin_outlier_count", {DOUBLE, VARCHAR, DOUBLE}, BIGINT);
 	outlier_count_method.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
 	outlier_count_set.AddFunction(outlier_count_method);
-	loader.RegisterFunction(std::move(outlier_count_set));
+	FinanceRegisterFunction(loader, std::move(outlier_count_set));
 
 	AggregateFunctionSet quantile_spread_set(FinanceFunctionName("fin_quantile_spread"));
 	auto quantile_spread =
@@ -118,30 +121,28 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	                                                               AggregateDestructorType::LEGACY>(DOUBLE, DOUBLE, DOUBLE));
 	quantile_spread.SetStateDestructorCallback(
 	    AggregateFunction::StateDestroy<QuantileSpreadState, QuantileSpreadOperation>);
-	quantile_spread.SetBindCallback(FinNamedArgumentsBind);
 	quantile_spread_set.AddFunction(quantile_spread);
 	auto quantile_spread_buckets =
 	    TernaryDoubleAggregate<QuantileSpreadState, double, double, int32_t, QuantileSpreadWithBucketsOperation>(
 	        "fin_quantile_spread", DOUBLE, DOUBLE, FinanceLogicalType(LogicalTypeId::INTEGER));
 	quantile_spread_buckets.SetStateDestructorCallback(
 	    AggregateFunction::StateDestroy<QuantileSpreadState, QuantileSpreadWithBucketsOperation>);
-	quantile_spread_buckets.SetBindCallback(FinNamedArgumentsBind);
 	quantile_spread_set.AddFunction(quantile_spread_buckets);
-	loader.RegisterFunction(std::move(quantile_spread_set));
+	FinanceRegisterFunction(loader, std::move(quantile_spread_set));
 
 	auto weighted_mean =
 	    TernaryDoubleAggregate<WeightedMomentsState, double, double, double, WeightedMomentsOperation<true>>(
 	        "finance_weighted_mean_internal", DOUBLE, DOUBLE, DOUBLE);
 	weighted_mean.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
-	loader.RegisterFunction(weighted_mean);
+	FinanceRegisterFunction(loader, weighted_mean);
 
 	auto weighted_variance =
 	    TernaryDoubleAggregate<WeightedMomentsState, double, double, double, WeightedMomentsOperation<false>>(
 	        "finance_weighted_var_internal", DOUBLE, DOUBLE, DOUBLE);
 	weighted_variance.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);
-	loader.RegisterFunction(weighted_variance);
+	FinanceRegisterFunction(loader, weighted_variance);
 
-	loader.RegisterFunction(FinWindowAggregate<IVRangeState, IVRangeOperation>("fin_iv_rank", FinDoubles(1)));
-	loader.RegisterFunction(
+	FinanceRegisterFunction(loader, FinWindowAggregate<IVRangeState, IVRangeOperation>("fin_iv_rank", FinDoubles(1)));
+	FinanceRegisterFunction(loader, 
 	    FinWindowAggregate<IVPercentileState, IVPercentileOperation>("fin_iv_percentile", FinDoubles(1)));
 }

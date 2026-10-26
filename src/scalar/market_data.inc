@@ -16,7 +16,7 @@ static void MarketScalarFunction(DataChunk &args, ExpressionState &, Vector &res
 	for (idx_t c = 0; c < N; c++) {
 		FinanceToUnifiedFormat(args.data[c], count, formats[c]);
 		data[c] = UnifiedVectorFormat::GetData<double>(formats[c]);
-		all_valid = all_valid && formats[c].validity.AllValid();
+		all_valid = all_valid && formats[c].validity.CannotHaveNull();
 	}
 	const idx_t rows = constant && count > 0 ? idx_t(1) : count;
 	double in[N];
@@ -216,19 +216,16 @@ static void TradeSignFunction(DataChunk &args, ExpressionState &, Vector &result
 	}
 }
 
-static unique_ptr<FunctionData> BindTradeSign(ClientContext &context, ScalarFunction &bound_function,
-                                              vector<unique_ptr<Expression>> &arguments) {
-	RejectNamedScalarArguments(bound_function, arguments);
-	if (arguments.size() >= 5) {
-		auto &method = *arguments[4];
-		if (!method.IsFoldable()) {
+static unique_ptr<FunctionData> BindTradeSign(BindScalarFunctionInput &input) {
+	if (input.GetArguments().size() >= 5) {
+		auto value = input.TryGetConstant(4);
+		if (!value) {
 			throw InvalidInputException("fin_trade_sign: method must be a constant");
 		}
-		auto value = ExpressionExecutor::EvaluateScalar(context, method, true);
-		if (value.IsNull()) {
+		if (value->IsNull()) {
 			throw InvalidInputException("fin_trade_sign: method must be a non-NULL constant");
 		}
-		ParseTradeSignRule(StringValue::Get(value.DefaultCastAs(LogicalType::VARCHAR)));
+		ParseTradeSignRule(StringValue::Get(value->DefaultCastAs(LogicalType::VARCHAR)));
 	}
 	return nullptr;
 }
@@ -488,8 +485,8 @@ static void MatrixShapeFunction(DataChunk &args, ExpressionState &, Vector &resu
 	PreparedInputs input(args);
 	MatrixArg matrix(args, input, 0);
 	auto &children = StructVector::GetEntries(result);
-	auto rows_out = FlatVector::GetDataMutable<int64_t>(FINANCE_STRUCT_CHILD(children[0]));
-	auto cols_out = FlatVector::GetDataMutable<int64_t>(FINANCE_STRUCT_CHILD(children[1]));
+	auto rows_out = FlatVector::GetDataMutable<int64_t>(children[0]);
+	auto cols_out = FlatVector::GetDataMutable<int64_t>(children[1]);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
 		idx_t n_rows, n_cols;
@@ -653,8 +650,8 @@ static void ValidateOhlcFunction(DataChunk &args, ExpressionState &, Vector &res
 	SetResultVectorType(result, constant);
 	PreparedInputs input(args);
 	auto &children = StructVector::GetEntries(result);
-	auto &reason_vector = FINANCE_STRUCT_CHILD(children[1]);
-	auto ok = FlatVector::GetDataMutable<bool>(FINANCE_STRUCT_CHILD(children[0]));
+	auto &reason_vector = children[1];
+	auto ok = FlatVector::GetDataMutable<bool>(children[0]);
 	auto reason = FlatVector::GetDataMutable<string_t>(reason_vector);
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	for (idx_t row = 0; row < row_count; row++) {
@@ -774,7 +771,7 @@ static void BusinessDayFunction(DataChunk &args, ExpressionState &, Vector &resu
 	ConfigArg<BusinessCalendar> calendar(args, 1, ParseCalendar, BusinessCalendar::WEEKDAY);
 	ExecuteBool(args, result, [&](const PreparedInputs &input, idx_t row) {
 		auto date = input.GetDate(0, row);
-		if (!Date::IsFinite(date)) {
+		if (!date.IsFinite()) {
 			return -1;
 		}
 		return IsBusinessDay(date, calendar.Get(input, row)) ? 1 : 0;
@@ -824,7 +821,7 @@ static void BusinessDaysBetweenFunction(DataChunk &args, ExpressionState &, Vect
 		}
 		auto start = input.GetDate(0, row);
 		auto end = input.GetDate(1, row);
-		if (!Date::IsFinite(start) || !Date::IsFinite(end)) {
+		if (!start.IsFinite() || !end.IsFinite()) {
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}
@@ -851,7 +848,7 @@ static void ExecuteSession(DataChunk &args, Vector &result, FUNC func) {
 			continue;
 		}
 		auto ts = input.GetTimestamp(0, row);
-		if (!Timestamp::IsFinite(ts)) {
+		if (!ts.IsFinite()) {
 			SetResultNull(result, row, args.size(), constant);
 			continue;
 		}

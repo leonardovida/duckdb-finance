@@ -10,7 +10,7 @@ Clone DuckDB and this repository, then point `DUCKDB_ROOT` at the DuckDB
 checkout:
 
 ```sh
-git clone https://github.com/duckdb/duckdb.git /path/to/duckdb
+git clone --branch v2.0.0 https://github.com/duckdb/duckdb.git /path/to/duckdb
 git clone https://github.com/leonardovida/duckdb-finance.git /path/to/duckdb-finance
 cd /path/to/duckdb-finance
 ```

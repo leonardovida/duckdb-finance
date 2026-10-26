@@ -273,12 +273,14 @@ static vector<CurveOutputNode> BootstrapCurveRows(vector<CurveInputRow> &rows, i
 	return result;
 }
 
-static void CurveBootstrapInitialize(const AggregateFunction &, data_ptr_t state_p) {
-	auto &state = *reinterpret_cast<CurveBootstrapState *>(state_p);
-	state.rows = nullptr;
-	state.compounding = FINANCE_COMPOUNDING_CONTINUOUS;
-	state.frequency = 1;
-	state.function_name = nullptr;
+static void CurveBootstrapInitialize(AggregateStateInput &, data_ptr_t *states, idx_t count) {
+	for (idx_t i = 0; i < count; i++) {
+		auto &state = *reinterpret_cast<CurveBootstrapState *>(states[i]);
+		state.rows = nullptr;
+		state.compounding = FINANCE_COMPOUNDING_CONTINUOUS;
+		state.frequency = 1;
+		state.function_name = nullptr;
+	}
 }
 
 static void CurveBootstrapUpdate(Vector inputs[], AggregateInputData &, idx_t, Vector &states, idx_t count) {
@@ -374,11 +376,11 @@ static void CurveBootstrapCombine(Vector &source, Vector &target, AggregateInput
 	}
 }
 
-static void CurveBootstrapFinalize(Vector &states, AggregateInputData &, Vector &result, idx_t count, idx_t offset) {
+static void CurveBootstrapFinalize(Vector &states, AggregateFinalizeInputData &, Vector &result, idx_t count, idx_t offset) {
 	UnifiedVectorFormat state_format;
 	FinanceToUnifiedFormat(states, count, state_format);
 	auto state_ptrs = UnifiedVectorFormat::GetData<CurveBootstrapState *>(state_format);
-	auto list_entries = FlatVector::GetData<list_entry_t>(result);
+	auto list_entries = FlatVector::GetDataMutable<list_entry_t>(result);
 	for (idx_t i = 0; i < count; i++) {
 		auto &state = *state_ptrs[state_format.sel->get_index(i)];
 		vector<CurveInputRow> empty;
@@ -388,17 +390,17 @@ static void CurveBootstrapFinalize(Vector &states, AggregateInputData &, Vector 
 
 		auto list_offset = ListVector::GetListSize(result);
 		ListVector::Reserve(result, list_offset + nodes.size());
-		auto &child = ListVector::GetEntry(result);
+		auto &child = ListVector::GetChildMutable(result);
 		auto &fields = StructVector::GetEntries(child);
-		auto &instrument_vector = *fields[0];
-		auto &type_vector = *fields[1];
-		auto instruments = FlatVector::GetData<string_t>(instrument_vector);
-		auto types = FlatVector::GetData<string_t>(type_vector);
-		auto maturities = FlatVector::GetData<double>(*fields[2]);
-		auto rates = FlatVector::GetData<double>(*fields[3]);
-		auto discounts = FlatVector::GetData<double>(*fields[4]);
-		auto zero_rates = FlatVector::GetData<double>(*fields[5]);
-		auto forward_rates = FlatVector::GetData<double>(*fields[6]);
+		auto &instrument_vector = fields[0];
+		auto &type_vector = fields[1];
+		auto instruments = FlatVector::GetDataMutable<string_t>(instrument_vector);
+		auto types = FlatVector::GetDataMutable<string_t>(type_vector);
+		auto maturities = FlatVector::GetDataMutable<double>(fields[2]);
+		auto rates = FlatVector::GetDataMutable<double>(fields[3]);
+		auto discounts = FlatVector::GetDataMutable<double>(fields[4]);
+		auto zero_rates = FlatVector::GetDataMutable<double>(fields[5]);
+		auto forward_rates = FlatVector::GetDataMutable<double>(fields[6]);
 		for (idx_t n = 0; n < nodes.size(); n++) {
 			auto target = list_offset + n;
 			auto &row = rows[n];
@@ -490,9 +492,11 @@ static void RegisterCurveBootstrap(ExtensionLoader &loader, const string &name,
 		vector<LogicalType> args(4 + optional_count, LogicalType::VARCHAR);
 		TableFunction function(FinanceFunctionName(name), std::move(args), nullptr, nullptr);
 		function.bind_replace = bind_replace;
-		function.named_parameters["instrument_col"] = LogicalType::VARCHAR;
-		function.named_parameters["start_col"] = LogicalType::VARCHAR;
-		function.named_parameters["fixed_frequency"] = LogicalType::BIGINT;
-		loader.RegisterFunction(std::move(function));
+		function.GetSignature().WithTypedKwargs("options", [](TypedKwargs &options) {
+			options.Add("instrument_col", LogicalType::VARCHAR);
+			options.Add("start_col", LogicalType::VARCHAR);
+			options.Add("fixed_frequency", LogicalType::BIGINT);
+		});
+		FinanceRegisterFunction(loader, std::move(function));
 	}
 }

@@ -1,5 +1,5 @@
 void RegisterFinanceScalars(ExtensionLoader &loader) {
-	loader.RegisterFunction(ScalarFunction(FinanceFunctionName("fin_version"), {}, FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceVersionFunction));
+	FinanceRegisterFunction(loader, ScalarFunction(FinanceFunctionName("fin_version"), {}, FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceVersionFunction));
 
 	AddScalar(loader, "fin_norm_pdf", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), NormPDFFunction);
 	AddScalar(loader, "fin_norm_cdf", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), NormCDFFunction);
@@ -15,7 +15,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(safe_div, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), SafeDivFunction);
 	AddOverload(safe_div, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            SafeDivFunction);
-	loader.RegisterFunction(std::move(safe_div));
+	FinanceRegisterFunction(loader, std::move(safe_div));
 	AddScalar(loader, "fin_bps", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), BpsFunction);
 	AddScalar(loader, "fin_from_bps", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), FromBpsFunction);
 	AddScalar(loader, "fin_clip", {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -24,13 +24,13 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(round_tick, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), RoundToTickFunction);
 	AddOverload(round_tick, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            RoundToTickFunction);
-	loader.RegisterFunction(std::move(round_tick));
+	FinanceRegisterFunction(loader, std::move(round_tick));
 
 	ScalarFunctionSet yearfrac(FinanceFunctionName("fin_yearfrac"));
 	AddDateOverloads(yearfrac, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), YearFracFunction);
 	AddDateOverloads(yearfrac, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            YearFracFunction);
-	loader.RegisterFunction(std::move(yearfrac));
+	FinanceRegisterFunction(loader, std::move(yearfrac));
 
 	ScalarFunctionSet discount(FinanceFunctionName("fin_discount_factor"));
 	AddOverload(discount, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), DiscountFactorFunction);
@@ -38,7 +38,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            DiscountFactorFunction);
 	AddOverload(discount, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::BIGINT)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), DiscountFactorFunction);
-	loader.RegisterFunction(std::move(discount));
+	FinanceRegisterFunction(loader, std::move(discount));
 
 	ScalarFunctionSet rate_from_discount(FinanceFunctionName("fin_rate_from_discount"));
 	AddOverload(rate_from_discount, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -48,7 +48,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(rate_from_discount,
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::BIGINT)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), RateFromDiscountFunction);
-	loader.RegisterFunction(std::move(rate_from_discount));
+	FinanceRegisterFunction(loader, std::move(rate_from_discount));
 	ScalarFunctionSet forward_rate(FinanceFunctionName("fin_forward_rate"));
 	AddOverload(forward_rate,
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -57,19 +57,19 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), ForwardRateFunction);
-	loader.RegisterFunction(std::move(forward_rate));
+	FinanceRegisterFunction(loader, std::move(forward_rate));
 	ScalarFunctionSet pv(FinanceFunctionName("fin_present_value"));
 	AddOverload(pv, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            PresentValueFunction);
 	AddOverload(pv, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), PresentValueFunction);
-	loader.RegisterFunction(std::move(pv));
+	FinanceRegisterFunction(loader, std::move(pv));
 	ScalarFunctionSet fv(FinanceFunctionName("fin_future_value"));
 	AddOverload(fv, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            FutureValueFunction);
 	AddOverload(fv, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), FutureValueFunction);
-	loader.RegisterFunction(std::move(fv));
+	FinanceRegisterFunction(loader, std::move(fv));
 
 	ScalarFunctionSet annuity(FinanceFunctionName("fin_annuity_payment"));
 	AddOverload(annuity, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -80,7 +80,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), AnnuityPaymentFunction);
-	loader.RegisterFunction(std::move(annuity));
+	FinanceRegisterFunction(loader, std::move(annuity));
 
 	ScalarFunctionSet bond_price(FinanceFunctionName("fin_bond_price"));
 	AddOverload(bond_price, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -91,7 +91,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BondPriceFunction);
-	loader.RegisterFunction(std::move(bond_price));
+	FinanceRegisterFunction(loader, std::move(bond_price));
 	ScalarFunctionSet bond_ytm(FinanceFunctionName("fin_bond_ytm"));
 	AddOverload(bond_ytm, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            BondYTMFunction);
@@ -101,7 +101,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BondYTMFunction);
-	loader.RegisterFunction(std::move(bond_ytm));
+	FinanceRegisterFunction(loader, std::move(bond_ytm));
 	ScalarFunctionSet duration(FinanceFunctionName("fin_bond_duration"));
 	AddOverload(duration, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            BondDurationFunction);
@@ -115,7 +115,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BondDurationFunction);
-	loader.RegisterFunction(std::move(duration));
+	FinanceRegisterFunction(loader, std::move(duration));
 	ScalarFunctionSet convexity(FinanceFunctionName("fin_bond_convexity"));
 	AddOverload(convexity, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            BondConvexityFunction);
@@ -125,7 +125,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BondConvexityFunction);
-	loader.RegisterFunction(std::move(convexity));
+	FinanceRegisterFunction(loader, std::move(convexity));
 	ScalarFunctionSet dv01(FinanceFunctionName("fin_dv01"));
 	AddOverload(dv01, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), DV01Function);
 	AddOverload(dv01, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)},
@@ -134,7 +134,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), DV01Function);
-	loader.RegisterFunction(std::move(dv01));
+	FinanceRegisterFunction(loader, std::move(dv01));
 	ScalarFunctionSet accrued(FinanceFunctionName("fin_accrued_interest"));
 	AddDateOverloads(accrued, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), AccruedInterestFunction);
@@ -145,7 +145,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), AccruedInterestFunction);
-	loader.RegisterFunction(std::move(accrued));
+	FinanceRegisterFunction(loader, std::move(accrued));
 	auto list_double = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));
 	auto list_date = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DATE));
 	ScalarFunctionSet npv(FinanceFunctionName("fin_npv"));
@@ -154,13 +154,13 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(npv, {list_double, list_double, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), NPVWithTimesFunction);
 	AddOverload(npv, {list_double, list_double, FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            NPVWithTimesFunction);
-	loader.RegisterFunction(std::move(npv));
+	FinanceRegisterFunction(loader, std::move(npv));
 	ScalarFunctionSet irr(FinanceFunctionName("fin_irr"));
 	AddOverload(irr, {list_double}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { CashflowListFunction(args, state, result, CashflowKind::IRR); });
 	AddOverload(irr, {list_double, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { CashflowListFunction(args, state, result, CashflowKind::IRR); });
-	loader.RegisterFunction(std::move(irr));
+	FinanceRegisterFunction(loader, std::move(irr));
 	AddScalar(loader, "fin_mirr", {list_double, FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { CashflowListFunction(args, state, result, CashflowKind::MIRR); });
 	ScalarFunctionSet xirr(FinanceFunctionName("fin_xirr"));
@@ -168,7 +168,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { CashflowListFunction(args, state, result, CashflowKind::XIRR); });
 	AddDateOverloads(xirr, {list_double, list_date, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { CashflowListFunction(args, state, result, CashflowKind::XIRR); });
-	loader.RegisterFunction(std::move(xirr));
+	FinanceRegisterFunction(loader, std::move(xirr));
 	AddScalar(loader, "fin_interpolate_curve", {list_double, list_double, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { CurveListFunction(args, state, result, CurveKind::INTERPOLATE); });
 	AddScalar(loader, "fin_curve_zero_rate", {list_double, list_double, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -197,7 +197,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(forward_price,
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), ForwardPriceFunction);
-	loader.RegisterFunction(std::move(forward_price));
+	FinanceRegisterFunction(loader, std::move(forward_price));
 	ScalarFunctionSet parity(FinanceFunctionName("fin_put_call_parity"));
 	AddOverload(parity,
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -207,7 +207,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), PutCallParityFunction);
-	loader.RegisterFunction(std::move(parity));
+	FinanceRegisterFunction(loader, std::move(parity));
 	ScalarFunctionSet d1(FinanceFunctionName("fin_bsm_d1"));
 	AddOverload(d1, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                 FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -216,7 +216,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	                 FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMD1Function);
 	AddOverload(d1, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMD1Function);
-	loader.RegisterFunction(std::move(d1));
+	FinanceRegisterFunction(loader, std::move(d1));
 	ScalarFunctionSet d2(FinanceFunctionName("fin_bsm_d2"));
 	AddOverload(d2, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                 FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -225,7 +225,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	                 FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMD2Function);
 	AddOverload(d2, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMD2Function);
-	loader.RegisterFunction(std::move(d2));
+	FinanceRegisterFunction(loader, std::move(d2));
 	ScalarFunctionSet bsm_price(FinanceFunctionName("fin_bsm_price"));
 	AddOverload(bsm_price, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -234,7 +234,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMPriceFunction);
 	AddOverload(bsm_price, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMPriceFunction);
-	loader.RegisterFunction(std::move(bsm_price));
+	FinanceRegisterFunction(loader, std::move(bsm_price));
 	ScalarFunctionSet bsm_delta(FinanceFunctionName("fin_bsm_delta"));
 	AddOverload(bsm_delta, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -243,7 +243,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	                        FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMDeltaFunction);
 	AddOverload(bsm_delta, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMDeltaFunction);
-	loader.RegisterFunction(std::move(bsm_delta));
+	FinanceRegisterFunction(loader, std::move(bsm_delta));
 	ScalarFunctionSet gamma(FinanceFunctionName("fin_bsm_gamma"));
 	AddOverload(gamma, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                    FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -252,7 +252,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	                    FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMGammaFunction);
 	AddOverload(gamma, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMGammaFunction);
-	loader.RegisterFunction(std::move(gamma));
+	FinanceRegisterFunction(loader, std::move(gamma));
 	ScalarFunctionSet bsm_vega(FinanceFunctionName("fin_bsm_vega"));
 	AddOverload(bsm_vega, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                       FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -265,7 +265,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
 	AddOverload(bsm_vega, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
 	AddOverload(bsm_vega, {OptionSpecType(), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMVegaFunction);
-	loader.RegisterFunction(std::move(bsm_vega));
+	FinanceRegisterFunction(loader, std::move(bsm_vega));
 	RegisterOptionFunction(loader, "fin_bsm_theta", BSMThetaFunction,
 	                       {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                       {FinanceLogicalType(LogicalTypeId::VARCHAR)});
@@ -282,7 +282,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            GreeksType(), BSMGreeksFunction);
 	AddOverload(greeks, {OptionSpecType()}, GreeksType(), BSMGreeksFunction);
-	loader.RegisterFunction(std::move(greeks));
+	FinanceRegisterFunction(loader, std::move(greeks));
 	ScalarFunctionSet all(FinanceFunctionName("fin_bsm_all"));
 	AddOverload(all,
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -293,7 +293,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            BSMAllType(), BSMAllFunction);
 	AddOverload(all, {OptionSpecType()}, BSMAllType(), BSMAllFunction);
-	loader.RegisterFunction(std::move(all));
+	FinanceRegisterFunction(loader, std::move(all));
 	ScalarFunctionSet iv(FinanceFunctionName("fin_bsm_implied_vol"));
 	AddOverload(iv,
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -318,7 +318,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMImpliedVolFunction);
 	AddOverload(iv, {OptionSpecType(), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), BSMImpliedVolFunction);
-	loader.RegisterFunction(std::move(iv));
+	FinanceRegisterFunction(loader, std::move(iv));
 	RegisterOptionFunction(loader, "fin_bsm_prob_itm", BSMProbITMFunction);
 	RegisterOptionFunction(loader, "fin_bsm_prob_touch", BSMProbTouchFunction);
 	RegisterOptionFunction(loader, "fin_bsm_elasticity", BSMElasticityFunction);
@@ -343,7 +343,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	             FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BSMPriceDatesFunction);
-	loader.RegisterFunction(std::move(price_dates));
+	FinanceRegisterFunction(loader, std::move(price_dates));
 	AddScalar(loader, "fin_black76_price",
 	          {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	           FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -365,7 +365,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), Black76ImpliedVolFunction);
-	loader.RegisterFunction(std::move(black_iv));
+	FinanceRegisterFunction(loader, std::move(black_iv));
 	AddScalar(loader, "fin_bachelier_price",
 	          {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	           FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -387,7 +387,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BachelierImpliedVolFunction);
-	loader.RegisterFunction(std::move(bach_iv));
+	FinanceRegisterFunction(loader, std::move(bach_iv));
 	ScalarFunctionSet binomial(FinanceFunctionName("fin_binomial_price"));
 	AddOverload(binomial, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                       FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -408,7 +408,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BIGINT),
 	             FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BinomialPriceFunction);
-	loader.RegisterFunction(std::move(binomial));
+	FinanceRegisterFunction(loader, std::move(binomial));
 	ScalarFunctionSet digital(FinanceFunctionName("fin_digital_price"));
 	AddOverload(digital, {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                      FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -421,7 +421,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), DigitalPriceFunction);
 	AddOverload(digital, {OptionSpecType()}, FinanceLogicalType(LogicalTypeId::DOUBLE), DigitalPriceFunction);
 	AddOverload(digital, {OptionSpecType(), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE), DigitalPriceFunction);
-	loader.RegisterFunction(std::move(digital));
+	FinanceRegisterFunction(loader, std::move(digital));
 	RegisterOptionFunction(loader, "fin_asset_or_nothing_price", AssetOrNothingPriceFunction);
 	RegisterOptionFunction(loader, "fin_asian_geometric_price", AsianGeometricPriceFunction);
 	ScalarFunctionSet barrier(FinanceFunctionName("fin_barrier_price"));
@@ -439,7 +439,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), BarrierPriceFunction);
-	loader.RegisterFunction(std::move(barrier));
+	FinanceRegisterFunction(loader, std::move(barrier));
 	ScalarFunctionSet sabr(FinanceFunctionName("fin_sabr_vol"));
 	AddOverload(sabr,
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -449,7 +449,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	             FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::DOUBLE), SABRVolFunction);
-	loader.RegisterFunction(std::move(sabr));
+	FinanceRegisterFunction(loader, std::move(sabr));
 	AddScalar(loader, "fin_svi_total_variance",
 	          {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	           FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
@@ -465,8 +465,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 			vector<LogicalType> arguments(arity, FinanceLogicalType(LogicalTypeId::DOUBLE));
 			ScalarFunction function(FinanceFunctionName(name), std::move(arguments),
 			                        FinanceLogicalType(LogicalTypeId::DOUBLE), std::move(func));
-			function.SetBindCallback(BindPositionalArguments);
-			loader.RegisterFunction(std::move(function));
+			FinanceRegisterFunction(loader, std::move(function));
 		};
 		add_market("fin_avg_price", 4, MarketScalarFunction<AvgPriceOp, 4>);
 		add_market("fin_typ_price", 3, MarketScalarFunction<TypPriceOp, 3>);
@@ -491,7 +490,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 			function.SetBindCallback(BindTradeSign);
 			trade_sign.AddFunction(std::move(function));
 		}
-		loader.RegisterFunction(std::move(trade_sign));
+		FinanceRegisterFunction(loader, std::move(trade_sign));
 	}
 
 	auto double_list = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));
@@ -516,7 +515,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { BinaryListFunction(args, state, result, BinaryListOp::TURNOVER); });
 	ScalarFunctionSet equal_weights(FinanceFunctionName("fin_equal_weights"));
 		AddOverload(equal_weights, {FinanceLogicalType(LogicalTypeId::BIGINT)}, double_list, EqualWeightsFunction);
-	loader.RegisterFunction(std::move(equal_weights));
+	FinanceRegisterFunction(loader, std::move(equal_weights));
 	AddScalar(loader, "fin_inverse_vol_weights", {double_list}, double_list,
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { ListScalarFunction(args, state, result, ListOp::INVERSE_VOL); });
 	child_list_t<LogicalType> shape_children;
@@ -533,13 +532,13 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	ScalarFunctionSet matrix_psd(FinanceFunctionName("fin_matrix_is_psd"));
 	AddOverload(matrix_psd, {matrix_type}, FinanceLogicalType(LogicalTypeId::BOOLEAN), MatrixIsPsdFunction);
 	AddOverload(matrix_psd, {matrix_type, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), MatrixIsPsdFunction);
-	loader.RegisterFunction(std::move(matrix_psd));
+	FinanceRegisterFunction(loader, std::move(matrix_psd));
 	ScalarFunctionSet nearest_psd(FinanceFunctionName("fin_nearest_psd"));
 	AddOverload(nearest_psd, {matrix_type}, matrix_type,
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { MatrixNestedFunction(args, state, result, MatrixOp::NEAREST_PSD); });
 	AddOverload(nearest_psd, {matrix_type, FinanceLogicalType(LogicalTypeId::VARCHAR)}, matrix_type,
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { MatrixNestedFunction(args, state, result, MatrixOp::NEAREST_PSD); });
-	loader.RegisterFunction(std::move(nearest_psd));
+	FinanceRegisterFunction(loader, std::move(nearest_psd));
 	AddScalar(loader, "fin_portfolio_return", {double_list, double_list}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	          [](DataChunk &args, ExpressionState &state, Vector &result) { BinaryListFunction(args, state, result, BinaryListOp::DOT); });
 	AddScalar(loader, "fin_portfolio_expected_return", {double_list, double_list}, FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -552,7 +551,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(portfolio_sharpe, {double_list, double_list, matrix_type}, FinanceLogicalType(LogicalTypeId::DOUBLE), PortfolioSharpeFunction);
 	AddOverload(portfolio_sharpe, {double_list, double_list, matrix_type, FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
 	            PortfolioSharpeFunction);
-	loader.RegisterFunction(std::move(portfolio_sharpe));
+	FinanceRegisterFunction(loader, std::move(portfolio_sharpe));
 	RegisterPortfolioOptimizerScalars(loader);
 
 	AddScalar(loader, "fin_validate_ohlc",
@@ -561,16 +560,16 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	ScalarFunctionSet valid_return(FinanceFunctionName("fin_validate_return"));
 	AddOverload(valid_return, {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), ValidateReturnFunction);
 	AddOverload(valid_return, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), ValidateReturnFunction);
-	loader.RegisterFunction(std::move(valid_return));
+	FinanceRegisterFunction(loader, std::move(valid_return));
 	AddScalar(loader, "fin_is_finite", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsFiniteFunction);
 	ScalarFunctionSet is_price(FinanceFunctionName("fin_is_price"));
 	AddOverload(is_price, {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsPriceFunction);
 	AddOverload(is_price, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BOOLEAN)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsPriceFunction);
-	loader.RegisterFunction(std::move(is_price));
+	FinanceRegisterFunction(loader, std::move(is_price));
 	ScalarFunctionSet is_rate(FinanceFunctionName("fin_is_rate"));
 	AddOverload(is_rate, {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsRateFunction);
 	AddOverload(is_rate, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BOOLEAN)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsRateFunction);
-	loader.RegisterFunction(std::move(is_rate));
+	FinanceRegisterFunction(loader, std::move(is_rate));
 	AddScalar(loader, "fin_is_vol", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsVolFunction);
 	ScalarFunctionSet outlier(FinanceFunctionName("fin_is_outlier_zscore"));
 	AddOverload(outlier, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN),
@@ -578,7 +577,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(outlier,
 	            {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)},
 	            FinanceLogicalType(LogicalTypeId::BOOLEAN), IsOutlierZScoreFunction);
-	loader.RegisterFunction(std::move(outlier));
+	FinanceRegisterFunction(loader, std::move(outlier));
 	AddScalar(loader, "fin_parse_option_kind", {FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::VARCHAR), ParseOptionKindFunction);
 	AddScalar(loader, "fin_parse_exercise_style", {FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::VARCHAR),
 	          ParseExerciseStyleFunction);
@@ -589,7 +588,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	ScalarFunctionSet is_bd(FinanceFunctionName("fin_is_business_day"));
 	AddDateOverloads(is_bd, {FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), BusinessDayFunction);
 	AddDateOverloads(is_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), BusinessDayFunction);
-	loader.RegisterFunction(std::move(is_bd));
+	FinanceRegisterFunction(loader, std::move(is_bd));
 	ScalarFunctionSet next_bd(FinanceFunctionName("fin_next_business_day"));
 	AddDateOverloads(next_bd, {FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, 1); });
@@ -599,7 +598,7 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, 1); });
 	AddDateOverloads(next_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, 1); });
-	loader.RegisterFunction(std::move(next_bd));
+	FinanceRegisterFunction(loader, std::move(next_bd));
 	ScalarFunctionSet prev_bd(FinanceFunctionName("fin_prev_business_day"));
 	AddDateOverloads(prev_bd, {FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, -1); });
@@ -609,21 +608,21 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, -1); });
 	AddDateOverloads(prev_bd, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            [](DataChunk &args, ExpressionState &state, Vector &result) { NextPrevBusinessDayFunction(args, state, result, -1); });
-	loader.RegisterFunction(std::move(prev_bd));
+	FinanceRegisterFunction(loader, std::move(prev_bd));
 	ScalarFunctionSet bd_between(FinanceFunctionName("fin_business_days_between"));
 	AddDateOverloads(bd_between, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE)}, FinanceLogicalType(LogicalTypeId::BIGINT), BusinessDaysBetweenFunction);
 	AddDateOverloads(bd_between, {FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::DATE), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::BIGINT),
 	            BusinessDaysBetweenFunction);
-	loader.RegisterFunction(std::move(bd_between));
+	FinanceRegisterFunction(loader, std::move(bd_between));
 	ScalarFunctionSet session_date(FinanceFunctionName("fin_session_date"));
 	AddInstantOverloads(session_date, {FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DATE), SessionDateFunction);
 	AddOverload(session_date, {FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::DATE),
 	            SessionDateFunction);
-	loader.RegisterFunction(std::move(session_date));
+	FinanceRegisterFunction(loader, std::move(session_date));
 	ScalarFunctionSet regular_session(FinanceFunctionName("fin_is_regular_session"));
 	AddInstantOverloads(regular_session, {FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::VARCHAR)}, FinanceLogicalType(LogicalTypeId::BOOLEAN),
 	            RegularSessionFunction);
 	AddOverload(regular_session, {FinanceLogicalType(LogicalTypeId::TIMESTAMP), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	            FinanceLogicalType(LogicalTypeId::BOOLEAN), RegularSessionFunction);
-	loader.RegisterFunction(std::move(regular_session));
+	FinanceRegisterFunction(loader, std::move(regular_session));
 }

@@ -1,11 +1,11 @@
 void RegisterFinanceTableFunctions(ExtensionLoader &loader) {
-	loader.RegisterFunction(TableFunction(FinanceFunctionName("fin_schema_template"), {FinanceLogicalType(LogicalTypeId::VARCHAR)}, SchemaTemplateFunction,
+	FinanceRegisterFunction(loader, TableFunction(FinanceFunctionName("fin_schema_template"), {FinanceLogicalType(LogicalTypeId::VARCHAR)}, SchemaTemplateFunction,
 	                                      SchemaTemplateBind, RowsInit));
 	RegisterBindReplace(loader, "fin_validate_schema",
 	                    {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR)},
 	                    ValidateSchemaBindReplace);
-	loader.RegisterFunction(BarIndexAggregate());
-	loader.RegisterFunction(CurveBootstrapAggregate());
+	FinanceRegisterFunction(loader, BarIndexAggregate());
+	FinanceRegisterFunction(loader, CurveBootstrapAggregate());
 
 	auto list_double = LogicalType::LIST(FinanceLogicalType(LogicalTypeId::DOUBLE));
 	auto list_list_double = LogicalType::LIST(list_double);

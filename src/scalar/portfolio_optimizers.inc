@@ -686,20 +686,19 @@ static string PortfolioTypeDescription(const LogicalType &type) {
 	                                                                 : "a vector (LIST of DOUBLE)";
 }
 
-static unique_ptr<FunctionData> BindPortfolioMacroArguments(ClientContext &context, ScalarFunction &bound_function,
-                                                            vector<unique_ptr<Expression>> &arguments) {
-	RejectNamedScalarArguments(bound_function, arguments);
-	auto &signature = FindPortfolioMacroSignature(bound_function.name);
-	for (idx_t i = 0; i < arguments.size() && i < signature.types.size(); i++) {
+static void ResolvePortfolioMacroArguments(ResolveScalarFunctionTypesInput &input) {
+	auto &bound_function = input.GetBoundFunction();
+	auto &signature = FindPortfolioMacroSignature(bound_function.GetName().GetIdentifierName());
+	auto &context = input.GetClientContext();
+	for (idx_t i = 0; i < input.GetArgumentCount() && i < signature.types.size(); i++) {
 		auto &expected = signature.types[i];
-		auto &actual = arguments[i]->return_type;
+		auto &actual = input.GetArgumentType(i);
 		if (actual != expected && CastFunctionSet::ImplicitCastCost(context, actual, expected) < 0) {
 			throw BinderException("%s: %s must be %s, got %s", signature.public_name, signature.parameters[i],
 			                      PortfolioTypeDescription(expected), actual.ToString());
 		}
-		bound_function.arguments[i] = expected;
+		bound_function.GetArguments()[i] = expected;
 	}
-	return nullptr;
 }
 
 static void RegisterPortfolioOptimizerScalars(ExtensionLoader &loader) {
@@ -710,16 +709,15 @@ static void RegisterPortfolioOptimizerScalars(ExtensionLoader &loader) {
 	auto add = [&](const string &name, vector<LogicalType> arguments, scalar_function_t function) {
 		ScalarFunction scalar(FinanceFunctionName(name), std::move(arguments), vector_type, std::move(function));
 		scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-		scalar.SetBindCallback(BindPositionalArguments);
-		loader.RegisterFunction(std::move(scalar));
+		FinanceRegisterFunction(loader, std::move(scalar));
 	};
 	auto add_macro_kernel = [&](const string &name, scalar_function_t function) {
 		auto &signature = FindPortfolioMacroSignature(name);
 		vector<LogicalType> arguments(signature.types.size(), LogicalType(LogicalTypeId::ANY));
 		ScalarFunction scalar(FinanceFunctionName(name), std::move(arguments), vector_type, std::move(function));
 		scalar.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-		scalar.SetBindCallback(BindPortfolioMacroArguments);
-		loader.RegisterFunction(std::move(scalar));
+		scalar.SetResolveTypesCallback(ResolvePortfolioMacroArguments);
+		FinanceRegisterFunction(loader, std::move(scalar));
 	};
 	add_macro_kernel("finance_min_variance_weights_internal", PortfolioWeightsFunction<PortfolioKernel::MIN_VARIANCE>);
 	add_macro_kernel("finance_max_sharpe_weights_internal", PortfolioWeightsFunction<PortfolioKernel::MAX_SHARPE>);

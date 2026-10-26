@@ -165,7 +165,7 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 	if (kind == CashflowKind::XIRR) {
 		date_entries = UnifiedVectorFormat::GetData<list_entry_t>(input.formats[1]);
 		auto &date_child = ListVector::GetChildMutable(args.data[1]);
-		FinanceFlatten(date_child, ListVector::GetListSize(args.data[1]));
+		date_child.Flatten();
 		date_validity = &FlatVector::Validity(date_child);
 		date_values = FlatVector::GetData<date_t>(date_child);
 	}
@@ -201,7 +201,7 @@ static void CashflowListFunction(DataChunk &args, ExpressionState &, Vector &res
 				for (idx_t i = 0; valid && i < date_entry.length; i++) {
 					auto pos = date_entry.offset + i;
 					valid = (!date_validity->CanHaveNull() || date_validity->RowIsValid(pos)) &&
-					        Date::IsFinite(date_values[pos]);
+					        date_values[pos].IsFinite();
 				}
 				if (!valid) {
 					break;

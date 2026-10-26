@@ -414,25 +414,24 @@ struct StatHistoryBase : public FinOperationDefaults {
 };
 
 // Bind for internal aggregates called from SQL macros: validates constant
-// configuration once (so invalid settings fail even on empty input). Macro
-// parameters arrive positionally, so named-argument rejection does not apply.
+// configuration once (so invalid settings fail even on empty input).
 template <class OP>
-static unique_ptr<FunctionData> StatInternalBind(ClientContext &context, AggregateFunction &function,
-                                                 vector<unique_ptr<Expression>> &arguments) {
-	for (idx_t c = OP::CONFIG_START; c < arguments.size(); c++) {
-		auto &argument = *arguments[c];
-		if (!argument.IsFoldable()) {
+static unique_ptr<FunctionData> StatInternalBind(BindAggregateFunctionInput &input) {
+	auto &argument_types = input.GetBoundFunction().GetArguments();
+	for (idx_t c = OP::CONFIG_START; c < input.GetArguments().size(); c++) {
+		auto constant = input.TryGetConstant(c);
+		if (!constant) {
 			continue;
 		}
-		auto value = ExpressionExecutor::EvaluateScalar(context, argument, true);
+		auto &value = *constant;
 		if (value.IsNull()) {
 			OP::ValidateParameter(c, StatNaN(), false);
 			continue;
 		}
-		if (function.arguments[c].id() == LogicalTypeId::VARCHAR) {
+		if (argument_types[c].id() == LogicalTypeId::VARCHAR) {
 			auto text = StringValue::Get(value.DefaultCastAs(LogicalType::VARCHAR));
 			OP::ValidateParameter(c, OP::ParseText(c, string_t(text.c_str(), static_cast<uint32_t>(text.size()))), true);
-		} else if (function.arguments[c].id() == LogicalTypeId::BOOLEAN) {
+		} else if (argument_types[c].id() == LogicalTypeId::BOOLEAN) {
 			OP::ValidateParameter(c, BooleanValue::Get(value.DefaultCastAs(LogicalType::BOOLEAN)) ? 1.0 : 0.0, true);
 		} else {
 			OP::ValidateParameter(c, DoubleValue::Get(value.DefaultCastAs(LogicalType::DOUBLE)), true);
@@ -450,7 +449,7 @@ static void StatRequireInteger(const char *name, const char *parameter, double v
 
 // Finalize for operations that return a STRUCT of DOUBLE fields.
 template <class STATE, class OP>
-static void StatStructFinalize(Vector &states, AggregateInputData &, Vector &result, idx_t count, idx_t offset) {
+static void StatStructFinalize(Vector &states, AggregateFinalizeInputData &, Vector &result, idx_t count, idx_t offset) {
 	UnifiedVectorFormat sdata;
 	FinanceToUnifiedFormat(states, count, sdata);
 	auto state_ptrs = UnifiedVectorFormat::GetData<STATE *>(sdata);
@@ -502,7 +501,7 @@ static AggregateFunction StatStructAggregate(const string &name, vector<LogicalT
 	                         AggregateFunction::StateInitialize<STATE, OP, AggregateDestructorType::LEGACY>,
 	                         FinScatterUpdate<STATE, OP>, AggregateFunction::StateCombine<STATE, OP>,
 	                         StatStructFinalize<STATE, OP>, FunctionNullHandling::SPECIAL_HANDLING,
-	                         FinSimpleUpdate<STATE, OP>);
+	                         FinClusterUpdate<FinSimpleUpdate<STATE, OP>, FinScatterUpdate<STATE, OP>>);
 	result.SetStateDestructorCallback(AggregateFunction::StateDestroy<STATE, OP>);
 	result.SetBindCallback(StatInternalBind<OP>);
 	result.SetOrderDependent(AggregateOrderDependent::NOT_ORDER_DEPENDENT);

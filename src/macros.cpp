@@ -123,7 +123,8 @@ static unique_ptr<CreateMacroInfo> BuildMacroInfo(const FinanceMacro &macro) {
 	}
 	auto parameters = definition.substr(1, close - 1);
 	auto expression_sql = TrimCopy(remainder.substr(2));
-	auto expressions = Parser::ParseExpressionList(expression_sql);
+	auto parser = Parser::GetBuiltinParser();
+	auto expressions = parser.ParseExpressionList(expression_sql);
 	if (expressions.size() != 1) {
 		throw InternalException("Expected a single expression for finance macro %s", macro.name);
 	}
@@ -140,7 +141,7 @@ static unique_ptr<CreateMacroInfo> BuildMacroInfo(const FinanceMacro &macro) {
 		}
 		auto name = UnquoteIdentifier(parameter.substr(0, default_pos));
 		auto default_sql = TrimCopy(parameter.substr(default_pos + 2));
-		auto default_expression = Parser::ParseExpressionList(default_sql);
+		auto default_expression = parser.ParseExpressionList(default_sql);
 		if (default_expression.size() != 1) {
 			throw InternalException("Expected a single default expression for finance macro %s", macro.name);
 		}
@@ -150,13 +151,8 @@ static unique_ptr<CreateMacroInfo> BuildMacroInfo(const FinanceMacro &macro) {
 
 	auto info = make_uniq<CreateMacroInfo>(CatalogType::MACRO_ENTRY);
 	info->macros.push_back(std::move(function));
-#if FINANCE_HAS_DUCKDB_IDENTIFIER
 	info->SetSchema(FinanceFunctionName(DEFAULT_SCHEMA));
 	info->SetFunctionName(FinanceFunctionName(macro.name));
-#else
-	info->schema = DEFAULT_SCHEMA;
-	info->name = macro.name;
-#endif
 	info->temporary = true;
 	info->internal = true;
 	return info;

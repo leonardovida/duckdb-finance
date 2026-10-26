@@ -25,7 +25,7 @@ public:
 				throw InvalidInputException("option spec must come from fin_option_spec or fin_option_spec_dates");
 			}
 			for (idx_t i = 0; i < children.size(); i++) {
-				FinanceToUnifiedFormat(FINANCE_STRUCT_CHILD(children[i]), args.size(), spec_children[i]);
+				FinanceToUnifiedFormat(children[i], args.size(), spec_children[i]);
 			}
 		}
 		column_count = args.ColumnCount();
@@ -108,7 +108,7 @@ private:
 template <class FUNC>
 static void ExecuteOption(DataChunk &args, ExpressionState &state, Vector &result, FUNC func) {
 	auto &bound = state.expr.Cast<BoundFunctionExpression>();
-	OptionReader reader(args, bound.function.name);
+	OptionReader reader(args, bound.Function().GetName().GetIdentifierName());
 	auto extra = reader.ExtraOffset();
 	ExecuteDouble(args, result, [&](const PreparedInputs &input, idx_t row) {
 		OptionRow o;
@@ -248,7 +248,7 @@ static void ExecuteStructRows(DataChunk &args, Vector &result, FUNC func) {
 	auto &children = StructVector::GetEntries(result);
 	array<double *, N> out;
 	for (idx_t i = 0; i < N; i++) {
-		out[i] = FlatVector::GetDataMutable<double>(FINANCE_STRUCT_CHILD(children[i]));
+		out[i] = FlatVector::GetDataMutable<double>(children[i]);
 	}
 	auto row_count = constant && args.size() > 0 ? idx_t(1) : args.size();
 	array<double, N> values;

@@ -150,7 +150,7 @@ def main():
             profile = args.profile_dir / f"{name}.json"
             profile.unlink(missing_ok=True)
             sql += f"PRAGMA profiling_output={sql_literal(str(profile.resolve()))};\n{query};\n"
-    process = subprocess.run([args.duckdb, "-init", "/dev/null", "-unsigned", "-json"], input=sql, text=True, capture_output=True)
+    process = subprocess.run([args.duckdb, "-no-agent", "-init", "/dev/null", "-unsigned", "-json"], input=sql, text=True, capture_output=True)
     if process.returncode:
         raise RuntimeError(process.stderr or process.stdout)
     try:

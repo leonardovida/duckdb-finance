@@ -39,7 +39,7 @@ on:
       duckdb_ref:
         description: "DuckDB ref to build against"
         required: true
-        default: "v1.5.6"
+        default: "v2.0.0"
       target:
         description: "Make target to run"
         required: true
@@ -60,7 +60,7 @@ jobs:
   duckdb:
     name: ${{ inputs.target || 'ci-duckdb' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     steps:
       - name: Check out extension
@@ -73,9 +73,17 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: duckdb/duckdb
-          ref: ${{ inputs.duckdb_ref || 'v1.5.6' }}
+          ref: ${{ inputs.duckdb_ref || 'v2.0.0' }}
           path: duckdb
           fetch-depth: 1
+
+      # A DuckDB 2.0 debug build with sanitizers (DuckDB, its core extensions and
+      # this extension) needs about 30 GB; drop preinstalled toolchains we do not use.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
 
       - name: Install build dependencies
         run: |
@@ -92,9 +100,9 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref || 'v1.5.6' }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref || 'v2.0.0' }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref || 'v1.5.6' }}-
+            ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref || 'v2.0.0' }}-
 
       - name: Reset compiler cache stats
         run: ccache --zero-stats
@@ -118,4 +126,4 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ~/.cache/ccache
-          key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref || 'v1.5.6' }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: ${{ runner.os }}-duckdb-finance-${{ inputs.duckdb_ref || 'v2.0.0' }}-${{ hashFiles('duckdb-finance/CMakeLists.txt', 'duckdb-finance/extension_config.cmake', 'duckdb-finance/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}

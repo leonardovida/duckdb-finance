@@ -27,24 +27,7 @@ struct RowsGlobalState : public GlobalTableFunctionState {
 };
 
 static void SetOutputCardinality(DataChunk &output, idx_t count) {
-#if FINANCE_HAS_FLAT_VECTOR_SET_SIZE
-	for (auto &vector : output.data) {
-		FlatVector::SetSize(vector, count);
-	}
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#elif defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-	output.SetCardinality(count);
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#elif defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+	output.SetChildCardinality(count);
 }
 
 static vector<SchemaRow> SchemaRows(const string &kind, const string &function_name) {
@@ -99,7 +82,7 @@ static vector<SchemaRow> SchemaRows(const string &kind, const string &function_n
 }
 
 static unique_ptr<FunctionData> SchemaTemplateBind(ClientContext &, TableFunctionBindInput &input,
-                                                   vector<LogicalType> &return_types, vector<string> &names) {
+                                                   vector<LogicalType> &return_types, vector<Identifier> &names) {
 	names = {"schema_kind", "column_name", "logical_type", "required", "description"};
 	return_types = {FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::VARCHAR), FinanceLogicalType(LogicalTypeId::BOOLEAN),
 	                FinanceLogicalType(LogicalTypeId::VARCHAR)};
@@ -262,7 +245,7 @@ struct PortfolioOptimizeBindData : public FunctionData {
 };
 
 static unique_ptr<FunctionData> PortfolioOptimizeBind(ClientContext &, TableFunctionBindInput &input,
-                                                      vector<LogicalType> &return_types, vector<string> &names) {
+                                                      vector<LogicalType> &return_types, vector<Identifier> &names) {
 	names = {"asset_idx", "weight"};
 	return_types = {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::DOUBLE)};
 	const string function_name = "fin_portfolio_optimize";
@@ -277,8 +260,8 @@ static void PortfolioOptimizeFunction(ClientContext &, TableFunctionInput &data_
 	auto &bind_data = data_p.bind_data->Cast<PortfolioOptimizeBindData>();
 	auto &state = data_p.global_state->Cast<RowsGlobalState>();
 	idx_t count = 0;
-	auto asset_idx = FlatVector::GetData<int64_t>(output.data[0]);
-	auto weights = FlatVector::GetData<double>(output.data[1]);
+	auto asset_idx = FlatVector::GetDataMutable<int64_t>(output.data[0]);
+	auto weights = FlatVector::GetDataMutable<double>(output.data[1]);
 	while (state.offset < bind_data.weights.size() && count < STANDARD_VECTOR_SIZE) {
 		asset_idx[count] = NumericCast<int64_t>(state.offset);
 		weights[count] = bind_data.weights[state.offset];
@@ -307,7 +290,7 @@ struct HRPBindData : public FunctionData {
 };
 
 static unique_ptr<FunctionData> HRPWeightsBind(ClientContext &, TableFunctionBindInput &input,
-                                               vector<LogicalType> &return_types, vector<string> &names) {
+                                               vector<LogicalType> &return_types, vector<Identifier> &names) {
 	names = {"asset_idx", "asset", "weight"};
 	return_types = {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::VARCHAR),
 	                FinanceLogicalType(LogicalTypeId::DOUBLE)};
@@ -341,14 +324,14 @@ static void HRPWeightsFunction(ClientContext &, TableFunctionInput &data_p, Data
 	auto &bind_data = data_p.bind_data->Cast<HRPBindData>();
 	auto &state = data_p.global_state->Cast<RowsGlobalState>();
 	idx_t count = 0;
-	auto asset_idx = FlatVector::GetData<int64_t>(output.data[0]);
-	auto weights = FlatVector::GetData<double>(output.data[2]);
+	auto asset_idx = FlatVector::GetDataMutable<int64_t>(output.data[0]);
+	auto weights = FlatVector::GetDataMutable<double>(output.data[2]);
 	while (state.offset < bind_data.weights.size() && count < STANDARD_VECTOR_SIZE) {
 		asset_idx[count] = NumericCast<int64_t>(state.offset);
 		if (bind_data.labels.empty()) {
 			FlatVector::SetNull(output.data[1], count, true);
 		} else {
-			FlatVector::GetData<string_t>(output.data[1])[count] =
+			FlatVector::GetDataMutable<string_t>(output.data[1])[count] =
 			    StringVector::AddString(output.data[1], bind_data.labels[state.offset]);
 		}
 		weights[count] = bind_data.weights[state.offset];
@@ -386,7 +369,7 @@ struct FrontierBindData : public FunctionData {
 };
 
 static unique_ptr<FunctionData> EfficientFrontierBind(ClientContext &, TableFunctionBindInput &input,
-                                                      vector<LogicalType> &return_types, vector<string> &names) {
+                                                      vector<LogicalType> &return_types, vector<Identifier> &names) {
 	names = {"point_idx", "expected_return", "volatility", "weights"};
 	return_types = {FinanceLogicalType(LogicalTypeId::BIGINT), FinanceLogicalType(LogicalTypeId::DOUBLE),
 	                FinanceLogicalType(LogicalTypeId::DOUBLE),
@@ -426,14 +409,14 @@ static unique_ptr<FunctionData> EfficientFrontierBind(ClientContext &, TableFunc
 static void EfficientFrontierFunction(ClientContext &, TableFunctionInput &data_p, DataChunk &output) {
 	auto &bind_data = data_p.bind_data->Cast<FrontierBindData>();
 	auto &state = data_p.global_state->Cast<RowsGlobalState>();
-	auto point_idx = FlatVector::GetData<int64_t>(output.data[0]);
-	auto expected_return = FlatVector::GetData<double>(output.data[1]);
-	auto volatility = FlatVector::GetData<double>(output.data[2]);
+	auto point_idx = FlatVector::GetDataMutable<int64_t>(output.data[0]);
+	auto expected_return = FlatVector::GetDataMutable<double>(output.data[1]);
+	auto volatility = FlatVector::GetDataMutable<double>(output.data[2]);
 	auto &weights_vector = output.data[3];
 	auto n = bind_data.mu.size();
 	idx_t count = 0;
 	auto points = NumericCast<idx_t>(bind_data.points);
-	auto list_entries = FlatVector::GetData<list_entry_t>(weights_vector);
+	auto list_entries = FlatVector::GetDataMutable<list_entry_t>(weights_vector);
 	ListVector::Reserve(weights_vector, MinValue<idx_t>(points - MinValue(points, state.offset), STANDARD_VECTOR_SIZE) * n);
 	idx_t list_offset = 0;
 	while (state.offset < points && count < STANDARD_VECTOR_SIZE) {
@@ -478,7 +461,7 @@ static void EfficientFrontierFunction(ClientContext &, TableFunctionInput &data_
 		} else {
 			expected_return[count] = DotValues(weights, bind_data.mu);
 			volatility[count] = std::sqrt(std::max(0.0, PortfolioVarianceValue(weights, bind_data.cov)));
-			auto child = FlatVector::GetData<double>(ListVector::GetEntry(weights_vector));
+			auto child = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(weights_vector));
 			for (idx_t k = 0; k < n; k++) {
 				child[list_offset + k] = weights[k];
 			}

@@ -328,58 +328,37 @@ static void FinWindow(AggregateInputData &aggr_input_data, const WindowPartition
 		aux.prev_start = frames[0].start;
 		aux.prev_end = frames[0].end;
 	}
-	AggregateFinalizeData finalize_data(result, aggr_input_data);
+	AggregateFinalizeInputData finalize_input(aggr_input_data.function, aggr_input_data.bind_data,
+	                                          aggr_input_data.allocator);
+	AggregateFinalizeData finalize_data(result, finalize_input);
 	finalize_data.result_idx = rid;
-	auto rdata = FlatVector::GetData<RESULT_TYPE>(result);
+	auto rdata = FlatVector::GetDataMutable<RESULT_TYPE>(result);
 	OP::template Finalize<RESULT_TYPE, STATE>(state, rdata[rid], finalize_data);
 }
 
 //===--------------------------------------------------------------------===//
-// Bind: named-argument rejection and constant validation
+// Bind: constant validation
 //===--------------------------------------------------------------------===//
-// DuckDB binds native function arguments by position and silently drops `:=`
-// names. A named argument on a constant (`annualization := 12`) is detectable at
-// bind because the expression keeps the name as its alias, so reject it rather
-// than silently applying the value to the wrong parameter. Column references
-// carry their column name as alias and cannot be distinguished.
-static void FinRejectNamedArguments(const AggregateFunction &function, vector<unique_ptr<Expression>> &arguments) {
-	for (auto &argument : arguments) {
-		if (argument->GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF || argument->GetAlias().empty()) {
-			continue;
-		}
-		throw InvalidInputException("%s: named argument '%s := ...' is not supported; native aggregate arguments "
-		                            "bind by position, so pass every argument positionally",
-		                            function.name, argument->GetAlias());
-	}
-}
-
-static unique_ptr<FunctionData> FinNamedArgumentsBind(ClientContext &, AggregateFunction &function,
-                                                      vector<unique_ptr<Expression>> &arguments) {
-	FinRejectNamedArguments(function, arguments);
-	return nullptr;
-}
-
 template <class OP>
-static unique_ptr<FunctionData> FinValidatingBind(ClientContext &context, AggregateFunction &function,
-                                                  vector<unique_ptr<Expression>> &arguments) {
-	FinRejectNamedArguments(function, arguments);
+static unique_ptr<FunctionData> FinValidatingBind(BindAggregateFunctionInput &input) {
+	auto &argument_types = input.GetBoundFunction().GetArguments();
 	// Constant configuration is validated once at bind so invalid settings fail
 	// even on empty input. Non-constant configuration (for example macro
 	// parameters) is validated by UpdateRow.
-	for (idx_t c = OP::REQUIRED_ARGS; c < arguments.size(); c++) {
-		auto &argument = *arguments[c];
-		if (!argument.IsFoldable()) {
+	for (idx_t c = OP::REQUIRED_ARGS; c < input.GetArguments().size(); c++) {
+		auto constant = input.TryGetConstant(c);
+		if (!constant) {
 			continue;
 		}
-		auto value = ExpressionExecutor::EvaluateScalar(context, argument, true);
+		auto &value = *constant;
 		if (value.IsNull()) {
 			OP::ValidateParameter(c, std::numeric_limits<double>::quiet_NaN(), false);
 			continue;
 		}
-		if (function.arguments[c].id() == LogicalTypeId::VARCHAR) {
+		if (argument_types[c].id() == LogicalTypeId::VARCHAR) {
 			auto text = StringValue::Get(value.DefaultCastAs(LogicalType::VARCHAR));
 			OP::ValidateParameter(c, OP::ParseText(c, string_t(text.c_str(), static_cast<uint32_t>(text.size()))), true);
-		} else if (function.arguments[c].id() == LogicalTypeId::BOOLEAN) {
+		} else if (argument_types[c].id() == LogicalTypeId::BOOLEAN) {
 			OP::ValidateParameter(c, BooleanValue::Get(value.DefaultCastAs(LogicalType::BOOLEAN)) ? 1.0 : 0.0, true);
 		} else {
 			OP::ValidateParameter(c, DoubleValue::Get(value.DefaultCastAs(LogicalType::DOUBLE)), true);
@@ -411,7 +390,8 @@ static AggregateFunction FinAggregate(const string &name, vector<LogicalType> ar
 	                         AggregateFunction::StateInitialize<STATE, OP, AggregateDestructorType::LEGACY>,
 	                         FinScatterUpdate<STATE, OP>, AggregateFunction::StateCombine<STATE, OP>,
 	                         AggregateFunction::StateFinalize<STATE, RESULT_TYPE, OP>,
-	                         FunctionNullHandling::DEFAULT_NULL_HANDLING, FinSimpleUpdate<STATE, OP>);
+	                         FunctionNullHandling::DEFAULT_NULL_HANDLING,
+	                         FinClusterUpdate<FinSimpleUpdate<STATE, OP>, FinScatterUpdate<STATE, OP>>);
 	result.SetStateDestructorCallback(AggregateFunction::StateDestroy<STATE, OP>);
 	result.SetBindCallback(FinValidatingBind<OP>);
 	result.SetOrderDependent(OP::ORDER_DEPENDENT ? AggregateOrderDependent::ORDER_DEPENDENT
@@ -438,7 +418,7 @@ static void FinRegisterSet(ExtensionLoader &loader, const string &name, vector<A
 	for (auto &function : functions) {
 		set.AddFunction(std::move(function));
 	}
-	loader.RegisterFunction(std::move(set));
+	FinanceRegisterFunction(loader, std::move(set));
 }
 
 //===--------------------------------------------------------------------===//

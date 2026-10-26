@@ -130,7 +130,7 @@ def check(label, actual, expected):
 
 
 def run(duckdb, extension, sql):
-    return subprocess.run([duckdb, "-init", "/dev/null", "-unsigned", "-json"],
+    return subprocess.run([duckdb, "-no-agent", "-init", "/dev/null", "-unsigned", "-json"],
                           input=f".bail on\nLOAD {sql_literal(extension)};\n{sql}",
                           text=True, capture_output=True, timeout=120)
 

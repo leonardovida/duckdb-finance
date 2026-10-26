@@ -129,7 +129,7 @@ def profile_path(output: Path, index: int) -> Path:
 def run_prefix(args: argparse.Namespace, statements: list[str], count: int, *, trace: bool) -> int:
     stderr = None if trace else subprocess.DEVNULL
     process = subprocess.Popen(
-        [args.duckdb, "-unsigned"],
+        [args.duckdb, "-no-agent", "-unsigned"],
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=stderr,
