@@ -93,10 +93,10 @@ SELECT fin_macd(x, f) FROM (VALUES (1.0, 2), (2.0, 3)) AS t(x, f)
 ----
 fin_macd: parameters must be constant within a group or window partition
 
-statement error
-SELECT fin_sma(1.0, period := 3)
+query R
+SELECT fin_sma(x, period := 2 ORDER BY i) FROM (VALUES (1, 1.0), (2, 3.0), (3, 5.0)) AS t(i, x)
 ----
-fin_sma: named argument 'period := ...' is not supported
+4.0
 
 query R
 SELECT fin_sma(x, 2 ORDER BY i) FROM (VALUES (1, 1.0), (2, 3.0), (3, 5.0)) AS t(i, x)
@@ -144,51 +144,62 @@ SELECT fin_mid(99.0, 101.0), fin_mid(101.0, 99.0), fin_trade_sign(100.5, 99.0, 1
 ----
 100.0	NULL	1.0
 
-statement error
-SELECT fin_sortino(r, annualization := 12.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+# DuckDB 2.0 binds native arguments by name: a named call matches the positional call.
+query RR
+SELECT round(fin_sortino(r, mar := 0.0, annualization := 12.0), 9), round(fin_sortino(r, 0.0, 12.0), 9) FROM (VALUES (0.01), (-0.02), (0.03)) AS t(r)
 ----
-fin_sortino: named argument 'annualization := ...' is not supported
+2.0	2.0
 
+query R
+SELECT round(fin_max_drawdown(r, initial_nav := 100.0 ORDER BY i), 9) FROM (VALUES (1, 0.01), (2, -0.02)) AS t(i, r)
+----
+-0.02
+
+query R
+SELECT round(fin_bond_price(ytm := 0.04, coupon_rate := 0.05, maturity := 5.0, frequency := 2, face := 100.0), 9)
+----
+104.491292503
+
+query R
+SELECT round(fin_bond_price(0.05, 0.04, 5.0, frequency := 2), 9)
+----
+104.491292503
+
+query R
+SELECT round(fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', day_count := 'ACT/365F'), 9)
+----
+1.0
+
+query R
+SELECT fin_trade_sign(1.0, 0.9, 1.1, 0.95, method := 'emo')
+----
+1.0
+
+query R
+SELECT round(fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, vol := 0.2), 9)
+----
+10.450583572
+
+query R
+SELECT fin_mid(ask := 101.0, bid := 99.0)
+----
+100.0
+
+# Names select an overload; there are no defaults to skip over, and unknown or repeated names do not bind.
 statement error
 SELECT fin_volatility(r, ddof := 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
 ----
-fin_volatility: named argument 'ddof := ...' is not supported
+No function matches the given name and argument types
 
 statement error
-SELECT fin_max_drawdown(r, initial_nav := 100.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+SELECT fin_mid(bid := 99.0, offer := 101.0)
 ----
-fin_max_drawdown: named argument 'initial_nav := ...' is not supported
-
-# Native scalars reject named arguments instead of binding them by position.
-statement error
-SELECT fin_bond_price(ytm := 0.04, coupon := 0.05, maturity := 5.0, frequency := 2, face := 100.0)
-----
-fin_bond_price: named argument 'ytm := ...' is not supported; native scalar arguments bind by position
+No function matches the given name and argument types
 
 statement error
-SELECT fin_bond_price(0.05, 0.04, 5.0, frequency := 2)
+SELECT fin_bond_price(0.05, coupon_rate := 0.05, maturity := 5.0)
 ----
-fin_bond_price: named argument 'frequency := ...' is not supported
-
-statement error
-SELECT fin_yearfrac(DATE '2026-01-01', DATE '2027-01-01', day_count := 'ACT/365')
-----
-fin_yearfrac: named argument 'day_count := ...' is not supported
-
-statement error
-SELECT fin_trade_sign(1.0, 0.9, 1.1, 0.95, method := 'emo')
-----
-fin_trade_sign: named argument 'method := ...' is not supported
-
-statement error
-SELECT fin_bsm_price('call', 100.0, 100.0, 1.0, 0.05, vol := 0.2)
-----
-fin_bsm_price: named argument 'vol := ...' is not supported
-
-statement error
-SELECT fin_mid(bid := 99.0, ask := 101.0)
-----
-fin_mid: named argument 'bid := ...' is not supported
+No function matches the given name and argument types
 
 query R
 SELECT round(fin_bond_price(0.05, 0.04, 5.0, 2, 100.0), 9)

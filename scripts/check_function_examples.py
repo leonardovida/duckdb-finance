@@ -56,7 +56,7 @@ def run_example(duckdb: str, extension: str, example: FunctionExample) -> str | 
     script = f".bail on\nLOAD {sql_literal(extension)};\n.mode csv\n.headers on\n{example.sql}\n"
     try:
         process = subprocess.run(
-            [duckdb, "-unsigned", ":memory:"], input=script, capture_output=True, text=True, timeout=120
+            [duckdb, "-no-agent", "-unsigned", ":memory:"], input=script, capture_output=True, text=True, timeout=120
         )
     except subprocess.TimeoutExpired:
         return "timed out after 120 s"
@@ -79,7 +79,7 @@ def catalog_errors(duckdb: str, extension: str, examples: list[FunctionExample])
         "FROM duckdb_functions() WHERE starts_with(function_name, 'fin_') ORDER BY ALL"
     )
     script = f".bail on\nLOAD {sql_literal(extension)};\n.mode csv\n.headers on\n{query};\n"
-    process = subprocess.run([duckdb, "-unsigned", ":memory:"], input=script, capture_output=True, text=True)
+    process = subprocess.run([duckdb, "-no-agent", "-unsigned", ":memory:"], input=script, capture_output=True, text=True)
     if process.returncode != 0 or process.stderr.strip():
         return [f"duckdb_functions() failed: {(process.stderr or process.stdout).strip()[:400]}"]
     expected = {example.name: example for example in examples}

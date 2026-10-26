@@ -3368,15 +3368,15 @@ WITH inputs AS (
   FROM inputs
 )
 SELECT
-  assert_true('min variance unconstrained', list_reduce(list_transform(list_zip(mv_free, [0.12277312854459042, -0.04343908457547364, 0.15427470980736274, 0.7663912462235204]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
-  assert_true('min variance long only', list_reduce(list_transform(list_zip(mv_long, [0.12367491166077739, 0.0, 0.14134275618374556, 0.734982332155477]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('min variance unconstrained', list_reduce(list_transform(list_zip(mv_free, [0.12277312854459042, -0.04343908457547364, 0.15427470980736274, 0.7663912462235204]), lambda p: abs(p[1] - p[2]) < 1e-12), lambda a, b: a AND b)),
+  assert_true('min variance long only', list_reduce(list_transform(list_zip(mv_long, [0.12367491166077739, 0.0, 0.14134275618374556, 0.734982332155477]), lambda p: abs(p[1] - p[2]) < 1e-12), lambda a, b: a AND b)),
   assert_near('max sharpe unconstrained shorts asset 2', ms_free[2], -0.10416449, 1e-8),
-  assert_true('max sharpe long only', list_reduce(list_transform(list_zip(ms_long, [0.3430599369085173, 0.0, 0.3391167192429022, 0.31782334384858046]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('max sharpe long only', list_reduce(list_transform(list_zip(ms_long, [0.3430599369085173, 0.0, 0.3391167192429022, 0.31782334384858046]), lambda p: abs(p[1] - p[2]) < 1e-12), lambda a, b: a AND b)),
   assert_true('max sharpe beats equal weight', fin_portfolio_sharpe(ms_long, mu, s, 0.02) > fin_portfolio_sharpe([0.25, 0.25, 0.25, 0.25], mu, s, 0.02)),
-  assert_true('risk parity hits budgets', list_reduce(list_transform(list_zip(fin_risk_contribution(rp_budget, s), [0.4, 0.3, 0.2, 0.1]), p -> abs(p[1] - p[2]) < 1e-8), (a, b) -> a AND b)),
-  assert_true('risk parity reference', list_reduce(list_transform(list_zip(rp_equal, [0.21355818119019918, 0.12264755883586934, 0.17976156921275435, 0.4840326907611773]), p -> abs(p[1] - p[2]) < 1e-7), (a, b) -> a AND b)),
-  assert_true('black litterman default omega', list_reduce(list_transform(list_zip(bl, [0.054027525115395054, 0.0674983708932935, 0.06977404629378224, 0.005079062584849304]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
-  assert_true('black litterman explicit omega', list_reduce(list_transform(list_zip(bl_omega, [0.06199549932667091, 0.05176940250903677, 0.07373378694450353, 0.0028184669359982957]), p -> abs(p[1] - p[2]) < 1e-12), (a, b) -> a AND b)),
+  assert_true('risk parity hits budgets', list_reduce(list_transform(list_zip(fin_risk_contribution(rp_budget, s), [0.4, 0.3, 0.2, 0.1]), lambda p: abs(p[1] - p[2]) < 1e-8), lambda a, b: a AND b)),
+  assert_true('risk parity reference', list_reduce(list_transform(list_zip(rp_equal, [0.21355818119019918, 0.12264755883586934, 0.17976156921275435, 0.4840326907611773]), lambda p: abs(p[1] - p[2]) < 1e-7), lambda a, b: a AND b)),
+  assert_true('black litterman default omega', list_reduce(list_transform(list_zip(bl, [0.054027525115395054, 0.0674983708932935, 0.06977404629378224, 0.005079062584849304]), lambda p: abs(p[1] - p[2]) < 1e-12), lambda a, b: a AND b)),
+  assert_true('black litterman explicit omega', list_reduce(list_transform(list_zip(bl_omega, [0.06199549932667091, 0.05176940250903677, 0.07373378694450353, 0.0028184669359982957]), lambda p: abs(p[1] - p[2]) < 1e-12), lambda a, b: a AND b)),
   assert_eq('min variance non-PD covariance is NULL', fin_min_variance_weights([[1.0, 2.0], [2.0, 1.0]]), NULL),
   assert_eq('max sharpe needs positive excess return long only', fin_max_sharpe_weights([0.01, 0.0], [[0.04, 0.0], [0.0, 0.09]], 0.02), NULL),
   assert_eq('risk parity budget length mismatch is NULL', fin_risk_parity_weights(s, [0.5, 0.5]), NULL),

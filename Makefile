@@ -6,6 +6,7 @@ EXTENSION_PATH ?= $(BUILD_DIR)/extension/finance/finance.duckdb_extension
 EXT_NAME ?= finance
 EXT_CONFIG ?= $(EXTENSION_CONFIG)
 SMOKE_SQL ?= test/sql/smoke_queries.sql
+SQLLOGIC_TESTS ?= test/sql/smoke.test
 GOLD_DATASET_SQL ?= test/sql/gold_dataset.sql
 GOLD_TEST_SQL ?= test/sql/gold_tests.sql
 PERF_OUTPUT ?= /tmp/duckdb-finance-profile.json
@@ -17,7 +18,7 @@ GOLD_TRACE_SQL ?= /tmp/duckdb-finance-gold.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
-.PHONY: debug release test smoke smoke-quiet gold gold-quiet function-examples perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-examples check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
+.PHONY: debug release test smoke smoke-quiet sqllogictest gold gold-quiet function-examples perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-examples check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
@@ -26,13 +27,18 @@ release:
 	$(MAKE) -C $(DUCKDB_ROOT) release EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
 
 smoke: debug
-	{ $(SQL_TEST_PREAMBLE); cat $(SMOKE_SQL); } | $(DUCKDB) -unsigned
+	{ $(SQL_TEST_PREAMBLE); cat $(SMOKE_SQL); } | $(DUCKDB) -no-agent -unsigned
 
 smoke-quiet: debug
 	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(SMOKE_SQL)" >/dev/null
 
+# Run the sqllogictest records (test/sql/*.test) through the CLI; the release
+# pipeline skips DuckDB's own unittest runner.
+sqllogictest: debug
+	python3 scripts/run_sqllogictest.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" $(SQLLOGIC_TESTS)
+
 gold: debug
-	{ $(SQL_TEST_PREAMBLE); cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -unsigned
+	{ $(SQL_TEST_PREAMBLE); cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } | $(DUCKDB) -no-agent -unsigned
 
 gold-quiet: debug
 	{ cat $(GOLD_DATASET_SQL); printf "\n"; cat $(GOLD_TEST_SQL); } > "$(GOLD_TRACE_SQL)"
@@ -55,7 +61,7 @@ covariance-example: debug
 	{ cat examples/pairwise_covariance.sql; printf "\n"; cat test/sql/covariance_workflow_tests.sql; } > "$(BUILD_DIR)/finance-covariance-workflow.sql"
 	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(BUILD_DIR)/finance-covariance-workflow.sql" >/dev/null
 
-test: smoke gold function-examples covariance-example
+test: smoke sqllogictest gold function-examples covariance-example
 
 check-yaml:
 	ruby -e 'require "yaml"; Dir[".github/workflows/*.yml", ".github/ISSUE_TEMPLATE/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'
@@ -101,7 +107,7 @@ ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests ch
 
 ci-duckdb-smoke: smoke-quiet
 
-ci-duckdb: gold-quiet check-aggregate-numerics function-examples covariance-example
+ci-duckdb: gold-quiet sqllogictest check-aggregate-numerics function-examples covariance-example
 
 ci: ci-static ci-duckdb
 
