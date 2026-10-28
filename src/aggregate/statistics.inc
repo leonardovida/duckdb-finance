@@ -1636,6 +1636,7 @@ struct GarchFitOperation : public OrderedSeriesBase<1> {
 		const double alpha = p * share;
 		const double beta = p * (1.0 - share);
 		const idx_t n = r2.size();
+		constexpr double PI = 3.14159265358979323846;
 		double h = s2;
 		double dh[3] = {0.0, 0.0, 0.0}; // d h / d (omega, alpha, beta)
 		double nll = 0.0;
@@ -1651,7 +1652,7 @@ struct GarchFitOperation : public OrderedSeriesBase<1> {
 			if (!(h > 0.0) || !std::isfinite(h)) {
 				return std::numeric_limits<double>::infinity();
 			}
-			nll += 0.5 * (std::log(2.0 * M_PI) + std::log(h) + r2[t] / h);
+			nll += 0.5 * (std::log(2.0 * PI) + std::log(h) + r2[t] / h);
 			const double dl = 0.5 * (1.0 / h - r2[t] / (h * h));
 			for (idx_t k = 0; k < 3; k++) {
 				g[k] += dl * dh[k];

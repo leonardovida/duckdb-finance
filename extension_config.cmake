@@ -1,7 +1,7 @@
 # Included by DuckDB's build system when building this out-of-tree extension.
 duckdb_extension_load(finance
     LOAD_TESTS
-    EXTENSION_VERSION 0.3.0
+    EXTENSION_VERSION 0.3.1
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}
     INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/include
     TEST_DIR ${CMAKE_CURRENT_LIST_DIR}/test/sql
