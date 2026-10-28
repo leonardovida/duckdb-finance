@@ -123,6 +123,14 @@ selected dates, duplicate weights, and NULL/non-finite weights also block it.
 These are temporary example views and tables. Adapt their names and inputs to
 your schema; run against a consistent input snapshot.
 
+The `covariance_returns` and `covariance_weights` input views cast asset IDs to
+`VARCHAR`, matching the matrix and portfolio-table APIs. All joins, duplicate
+checks, and label ordering use those strings: integer IDs `2` and `10` appear
+in matrix order `['10', '2']`. Preserve the same label representation in both
+sources; string `'02'` is distinct from integer `2` (label `'2'`). Check that
+your IDs remain unique after casting. The recipe blocks duplicate normalized
+weights and selected `(date, asset_id)` keys rather than combining them.
+
 The gate checks **every** ordered covariance pair for two observations and a
 finite value, verifies the matrix labels against the selected assets, and calls
 `fin_matrix_is_psd` with relative tolerance `1e-10`. This is a numerical tolerance,
@@ -147,6 +155,13 @@ are in squared return units, with no automatic annualization.
 Run the executable recipe and its analytic/negative cases with
 `make covariance-example DUCKDB_ROOT=/path/to/duckdb`. Both `make check` and
 the native CI gate run this target.
+
+The checks also replace the inputs with a synthetic four-asset, eight-date
+integer-ID panel. Its full-rank covariance is independently derived from four
+orthogonal sign series, and portfolio variance is `89/437500`, matching the
+sample variance of its weighted returns. This verifies label alignment and
+coverage beyond the singular introductory panel; it does not establish that
+an arbitrary complete-case estimate is suitable for optimization.
 
 ## Naming Guidance
 
