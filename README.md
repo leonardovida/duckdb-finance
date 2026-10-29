@@ -117,6 +117,17 @@ Community extensions are built and signed by DuckDB's community extension CI.
 Locked-down environments can disable community extensions with DuckDB's
 `allow_community_extensions` option.
 
+To serve `finance` to other DuckDB 2.0 clients over the Quack remote protocol,
+load it in the server process. Clients that `CONNECT` to the server do not need
+the extension installed:
+
+```sh
+duckdb -cmd "LOAD finance" my_database.duckdb -serve
+```
+
+See [Installation: Quack Server](docs/installation.md#quack-server) for client
+usage and which queries need the extension loaded on the client.
+
 For development, build from source:
 
 ```sh

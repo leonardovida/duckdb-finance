@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "23 8 * * 1"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/community-install-smoke.yml
+      - examples/community_install_smoke.sql
+      - scripts/quack_server_smoke.py
 
 permissions:
   contents: read
@@ -51,3 +56,6 @@ jobs:
 
       - name: Run community install smoke
         run: ./duckdb -no-agent -batch < examples/community_install_smoke.sql
+
+      - name: Run Quack server smoke
+        run: python3 scripts/quack_server_smoke.py --duckdb ./duckdb
