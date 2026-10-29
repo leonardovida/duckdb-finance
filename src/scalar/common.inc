@@ -1269,7 +1269,74 @@ static idx_t NyseHolidays(int32_t year, date_t *out) {
 	return n;
 }
 
+//! NYSE holidays for 1900-2199 as a day bitmap with per-word prefix counts, built once from
+//! NyseHolidays. Holiday tests and range counts inside the table are O(1); dates outside it use
+//! the rules directly.
+struct NyseHolidayTable {
+	int64_t first_day;
+	int64_t end_day;
+	vector<uint64_t> bits;
+	vector<uint32_t> prefix; // holidays before each word
+
+	NyseHolidayTable() {
+		first_day = Date::FromDate(1900, 1, 1).days;
+		end_day = Date::FromDate(2200, 1, 1).days;
+		const auto words = static_cast<idx_t>((end_day - first_day + 63) / 64);
+		bits.assign(words, 0);
+		date_t holidays[24];
+		for (int32_t year = 1900; year < 2200; year++) {
+			auto n = NyseHolidays(year, holidays);
+			for (idx_t i = 0; i < n; i++) {
+				auto offset = static_cast<idx_t>(holidays[i].days - first_day);
+				bits[offset / 64] |= uint64_t(1) << (offset % 64);
+			}
+		}
+		prefix.assign(words + 1, 0);
+		for (idx_t w = 0; w < words; w++) {
+			prefix[w + 1] = prefix[w] + static_cast<uint32_t>(PopCount(bits[w]));
+		}
+	}
+
+	static int PopCount(uint64_t word) {
+		int count = 0;
+		for (; word; word &= word - 1) {
+			count++;
+		}
+		return count;
+	}
+
+	bool Covers(int64_t day) const {
+		return day >= first_day && day <= end_day;
+	}
+
+	bool Contains(int64_t day) const {
+		auto offset = static_cast<idx_t>(day - first_day);
+		return (bits[offset / 64] >> (offset % 64)) & 1;
+	}
+
+	//! Holidays in [first_day, day) for a covered day.
+	int64_t CountBefore(int64_t day) const {
+		auto offset = static_cast<idx_t>(day - first_day);
+		auto word = offset / 64;
+		auto bit = offset % 64;
+		int64_t count = prefix[word];
+		if (bit > 0) {
+			count += PopCount(bits[word] & ((uint64_t(1) << bit) - 1));
+		}
+		return count;
+	}
+};
+
+static const NyseHolidayTable &NyseHolidaysTable() {
+	static const NyseHolidayTable table;
+	return table;
+}
+
 static bool IsNyseHoliday(date_t date) {
+	const auto &table = NyseHolidaysTable();
+	if (table.Covers(date.days) && date.days < table.end_day) {
+		return table.Contains(date.days);
+	}
 	int32_t y, m, d;
 	Date::Convert(date, y, m, d);
 	date_t holidays[24];
@@ -1345,6 +1412,10 @@ static int64_t WeekdaysForward(date_t start, date_t end) {
 static int64_t NyseHolidaysInRange(date_t lower, date_t upper) {
 	if (!(lower.days < upper.days)) {
 		return 0;
+	}
+	const auto &table = NyseHolidaysTable();
+	if (table.Covers(lower.days) && table.Covers(upper.days)) {
+		return table.CountBefore(upper.days) - table.CountBefore(lower.days);
 	}
 	int32_t ly, lm, ld;
 	int32_t uy, um, ud;

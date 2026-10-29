@@ -23,6 +23,7 @@
 #include <cctype>
 #include <limits>
 #include <utility>
+#include <atomic>
 #include <vector>
 
 namespace duckdb {

@@ -95,6 +95,12 @@ Conventions for the returns and risk functions (0.3.0):
   (`OVER (PARTITION BY .. ORDER BY .. ROWS BETWEEN ..)`); order-independent
   fixed-state metrics use DuckDB's segment tree, and history-keeping and
   order-dependent ones evaluate one frame at a time from the ordered frame rows.
+  Historical `fin_var`/`fin_cvar`, `fin_trimmed_mean`, `fin_winsorized_mean`
+  and the default `linear` `fin_weighted_quantile` rank the partition once and
+  update a frame in O(log n) per row entering or leaving it, so running and
+  sliding frames scale as O(n log n). `fin_drawdown_at_risk` and
+  `fin_conditional_drawdown_at_risk` do the same for running frames (frames
+  that start at the partition's first row).
 - Order-dependent aggregates need `ORDER BY` inside the call
   (`fin_max_drawdown(r ORDER BY ts)`) or a window `ORDER BY`. Order-dependent
   macros take the ordering column explicitly (`fin_calmar(r, ts)`,

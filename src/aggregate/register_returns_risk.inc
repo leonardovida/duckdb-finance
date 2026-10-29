@@ -18,14 +18,14 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	FinRegisterSet(loader, "fin_ulcer_index",
 	               {FinWindowAggregate<DrawdownState, UlcerIndexOperation>("fin_ulcer_index", FinDoubles(1))});
 	FinRegisterSet(loader, "fin_drawdown_at_risk",
-	               {FinWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<false>>("fin_drawdown_at_risk",
+	               {FinRankWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<false>>("fin_drawdown_at_risk",
 	                                                                                    FinDoubles(1)),
-	                FinWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<false>>("fin_drawdown_at_risk",
+	                FinRankWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<false>>("fin_drawdown_at_risk",
 	                                                                                    FinDoubles(2))});
 	FinRegisterSet(loader, "fin_conditional_drawdown_at_risk",
-	               {FinWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<true>>(
+	               {FinRankWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<true>>(
 	                    "fin_conditional_drawdown_at_risk", FinDoubles(1)),
-	                FinWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<true>>(
+	                FinRankWindowAggregate<DrawdownRiskState, DrawdownRiskOperation<true>>(
 	                    "fin_conditional_drawdown_at_risk", FinDoubles(2))});
 
 	using Volatility = RiskMomentsOperation<RiskMomentsKind::VOLATILITY>;
@@ -51,24 +51,24 @@ static void RegisterReturnsRiskAggregates(ExtensionLoader &loader) {
 	vector<vector<LogicalType>> tail_signatures = {
 	    {DOUBLE}, {DOUBLE, DOUBLE}, {DOUBLE, DOUBLE, VARCHAR}, {DOUBLE, DOUBLE, VARCHAR, BOOLEAN}};
 	for (auto &signature : tail_signatures) {
-		value_at_risk.push_back(FinWindowAggregate<HistoryState, TailRiskOperation<false>>("fin_var", signature));
+		value_at_risk.push_back(FinRankWindowAggregate<HistoryState, TailRiskOperation<false>>("fin_var", signature));
 		conditional_value_at_risk.push_back(
-		    FinWindowAggregate<HistoryState, TailRiskOperation<true>>("fin_cvar", signature));
+		    FinRankWindowAggregate<HistoryState, TailRiskOperation<true>>("fin_cvar", signature));
 	}
 	FinRegisterSet(loader, "fin_var", std::move(value_at_risk));
 	FinRegisterSet(loader, "fin_cvar", std::move(conditional_value_at_risk));
 
 	FinRegisterSet(loader, "fin_trimmed_mean",
-	               {FinWindowAggregate<HistoryState, RobustMeanOperation<false>>("fin_trimmed_mean", FinDoubles(1)),
-	                FinWindowAggregate<HistoryState, RobustMeanOperation<false>>("fin_trimmed_mean", FinDoubles(3))});
+	               {FinRankWindowAggregate<HistoryState, RobustMeanOperation<false>>("fin_trimmed_mean", FinDoubles(1)),
+	                FinRankWindowAggregate<HistoryState, RobustMeanOperation<false>>("fin_trimmed_mean", FinDoubles(3))});
 	FinRegisterSet(
 	    loader, "fin_winsorized_mean",
-	    {FinWindowAggregate<HistoryState, RobustMeanOperation<true>>("fin_winsorized_mean", FinDoubles(1)),
-	     FinWindowAggregate<HistoryState, RobustMeanOperation<true>>("fin_winsorized_mean", FinDoubles(3))});
+	    {FinRankWindowAggregate<HistoryState, RobustMeanOperation<true>>("fin_winsorized_mean", FinDoubles(1)),
+	     FinRankWindowAggregate<HistoryState, RobustMeanOperation<true>>("fin_winsorized_mean", FinDoubles(3))});
 	FinRegisterSet(loader, "fin_weighted_quantile",
-	               {FinWindowAggregate<WeightedQuantileState, WeightedQuantileOperation>("fin_weighted_quantile",
+	               {FinRankWindowAggregate<WeightedQuantileState, WeightedQuantileOperation>("fin_weighted_quantile",
 	                                                                                     FinDoubles(3)),
-	                FinWindowAggregate<WeightedQuantileState, WeightedQuantileOperation>(
+	                FinRankWindowAggregate<WeightedQuantileState, WeightedQuantileOperation>(
 	                    "fin_weighted_quantile", {DOUBLE, DOUBLE, DOUBLE, VARCHAR})});
 
 	FinRegisterSet(loader, "fin_garch11_forecast",

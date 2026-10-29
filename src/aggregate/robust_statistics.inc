@@ -1,9 +1,12 @@
 // History-keeping statistics: trimmed/winsorized means and tail risk (VaR/CVaR).
 // Values are retained for exact order statistics; windowed use rebuilds a frame
-// into one reusable local state instead of combining per-row histories.
+// into one reusable local state instead of combining per-row histories, or
+// moves a rank-indexed frame (see FinRankFrame) when the operation supports it.
 struct HistoryState {
 	vector<double> *values;
 	FinWindowAux *window;
+	FinRankPartition *rank_partition; // window init state: the partition's rank index
+	FinRankFrame *rank_frame;         // window local state: the current frame
 	double parameters[3];
 	bool parameters_set;
 	bool invalid;
@@ -14,11 +17,25 @@ struct HistoryOperationBase : public FinOperationDefaults {
 	static constexpr bool ORDER_DEPENDENT = false;
 	static constexpr bool WINDOW_INCREMENTAL = true;
 	static constexpr idx_t REQUIRED_ARGS = 1;
+	static constexpr idx_t RANK_CONFIG_COLUMN = 1;
+	static constexpr bool RANK_SCALE_MASSES = false;
+
+	static FinRankEntry RankEntry(const FinRow &row, double &, double &key, double &mass) {
+		key = mass = row.v[0];
+		return std::isfinite(row.v[0]) ? FinRankEntry::ENTRY : FinRankEntry::INVALID;
+	}
+
+	template <class STATE>
+	static void RankConfigure(const STATE &state, double *parameters) {
+		std::copy(state.parameters, state.parameters + 3, parameters);
+	}
 
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.values = new vector<double>();
 		state.window = nullptr;
+		state.rank_partition = nullptr;
+		state.rank_frame = nullptr;
 		WindowReset(state);
 	}
 
@@ -83,6 +100,10 @@ struct HistoryOperationBase : public FinOperationDefaults {
 		state.values = nullptr;
 		delete state.window;
 		state.window = nullptr;
+		delete state.rank_partition;
+		state.rank_partition = nullptr;
+		delete state.rank_frame;
+		state.rank_frame = nullptr;
 	}
 };
 
@@ -145,6 +166,35 @@ struct RobustMeanOperation : public HistoryOperationBase {
 			return;
 		}
 		target = (sum.Value() / static_cast<double>(count)) * scale;
+	}
+
+	static bool RankWindow(const double *) {
+		return true;
+	}
+
+	static void RankFinalize(const double *parameters, const FinRankFrame &frame, double &target,
+	                         AggregateFinalizeData &finalize_data) {
+		auto lower = frame.Quantile(parameters[0]);
+		auto upper = frame.Quantile(parameters[1]);
+		auto lower_rank = frame.RankBelow(lower);
+		auto upper_rank = frame.RankAtMost(upper);
+		auto below = frame.PrefixCount(lower_rank);
+		auto through = frame.PrefixCount(upper_rank);
+		auto inner = frame.RangeSum(lower_rank, upper_rank);
+		if (WINSORIZE) {
+			FinSum sum;
+			sum.Reset();
+			sum.Add(lower * static_cast<double>(below));
+			sum.Add(inner);
+			sum.Add(upper * static_cast<double>(frame.total - through));
+			target = sum.Value() / static_cast<double>(frame.total);
+			return;
+		}
+		if (through == below) {
+			finalize_data.ReturnNull();
+			return;
+		}
+		target = inner / static_cast<double>(through - below);
 	}
 };
 
@@ -263,6 +313,27 @@ struct TailRiskOperation : public HistoryOperationBase {
 			result = CVAR ? mean - sd * FinNormalPdf(z) / tail : mean + sd * z;
 		}
 		result = state.parameters[2] != 0.0 ? -result : result;
+		if (!std::isfinite(result)) {
+			finalize_data.ReturnNull();
+			return;
+		}
+		target = result;
+	}
+
+	// Parametric methods need central moments, so only historical frames use the rank index.
+	static bool RankWindow(const double *parameters) {
+		return static_cast<TailRiskMethod>(static_cast<uint8_t>(parameters[1])) == TailRiskMethod::HISTORICAL;
+	}
+
+	static void RankFinalize(const double *parameters, const FinRankFrame &frame, double &target,
+	                         AggregateFinalizeData &finalize_data) {
+		auto result = frame.Quantile(1.0 - parameters[0]);
+		if (CVAR) {
+			// Mean of the observations at or below the threshold.
+			auto rank = frame.RankAtMost(result);
+			result = frame.RangeSum(0, rank) / static_cast<double>(frame.PrefixCount(rank));
+		}
+		result = parameters[2] != 0.0 ? -result : result;
 		if (!std::isfinite(result)) {
 			finalize_data.ReturnNull();
 			return;

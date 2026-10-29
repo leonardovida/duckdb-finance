@@ -218,6 +218,8 @@ struct DrawdownRiskState {
 	vector<double> *values;
 	vector<double> *scratch;
 	FinWindowAux *window;
+	FinRankPartition *rank_partition;
+	FinRankFrame *rank_frame;
 	double confidence;
 	bool confidence_set;
 	bool invalid;
@@ -238,6 +240,8 @@ struct DrawdownRiskOperation : public FinOperationDefaults {
 		state.values = new vector<double>();
 		state.scratch = new vector<double>();
 		state.window = nullptr;
+		state.rank_partition = nullptr;
+		state.rank_frame = nullptr;
 		WindowReset(state);
 	}
 
@@ -321,6 +325,49 @@ struct DrawdownRiskOperation : public FinOperationDefaults {
 		target = count == 0 ? dar : sum.Value() / static_cast<double>(count);
 	}
 
+	// Window frames: the drawdown path depends on where the frame starts, so the
+	// index holds the path from the partition's first row and serves the frames
+	// that start there (running frames). Other frames are evaluated one by one.
+	static constexpr idx_t RANK_CONFIG_COLUMN = 1;
+	static constexpr bool RANK_SCALE_MASSES = false;
+
+	static FinRankEntry RankEntry(const FinRow &row, double &nav, double &key, double &mass) {
+		auto value = row.v[0];
+		if (!std::isfinite(value) || value < -1.0) {
+			return FinRankEntry::INVALID;
+		}
+		nav = std::min(1.0, nav * (1.0 + value));
+		key = mass = 1.0 - nav;
+		return FinRankEntry::ENTRY;
+	}
+
+	static bool RankFrames(const SubFrames &frames) {
+		return frames.size() == 1 && frames[0].start == 0;
+	}
+
+	template <class STATE>
+	static void RankConfigure(const STATE &state, double *parameters) {
+		parameters[0] = state.confidence;
+	}
+
+	static bool RankWindow(const double *) {
+		return true;
+	}
+
+	template <class T>
+	static void RankFinalize(const double *parameters, const FinRankFrame &frame, T &target,
+	                         AggregateFinalizeData &) {
+		auto dar = frame.Quantile(parameters[0]);
+		if (!CONDITIONAL) {
+			target = dar;
+			return;
+		}
+		auto rank = frame.RankBelow(dar);
+		auto count = frame.total - frame.PrefixCount(rank);
+		target = count == 0 ? dar
+		                    : frame.RangeSum(rank, frame.partition->keys.size()) / static_cast<double>(count);
+	}
+
 	template <class STATE>
 	static void Destroy(STATE &state, AggregateInputData &) {
 		delete state.values;
@@ -329,5 +376,9 @@ struct DrawdownRiskOperation : public FinOperationDefaults {
 		state.scratch = nullptr;
 		delete state.window;
 		state.window = nullptr;
+		delete state.rank_partition;
+		state.rank_partition = nullptr;
+		delete state.rank_frame;
+		state.rank_frame = nullptr;
 	}
 };

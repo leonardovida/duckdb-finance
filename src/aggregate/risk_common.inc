@@ -381,6 +381,9 @@ struct FinOperationDefaults {
 	}
 	static void ValidateParameter(idx_t, double, bool) {
 	}
+	static bool RankFrames(const SubFrames &) {
+		return true;
+	}
 };
 
 template <class STATE, class OP, class RESULT_TYPE = double>
@@ -585,4 +588,393 @@ static double FinContinuousQuantile(vector<double> &values, double quantile) {
 	}
 	auto upper_value = *std::min_element(values.begin() + lower + 1, values.end());
 	return ConvexCombination(lower_value, upper_value, fraction);
+}
+
+//===--------------------------------------------------------------------===//
+// Rank-indexed window frames
+//===--------------------------------------------------------------------===//
+// History aggregates whose result depends only on order statistics and sums
+// over value ranges evaluate windows from a partition-wide rank index instead of
+// rescanning every frame. Window init decodes the partition once and sorts its
+// entries; each thread's local state keeps Fenwick trees of per-rank counts and
+// compensated mass sums for the rows inside its current frame. Moving a frame
+// costs O(log n) per row entering or leaving it, so running and sliding frames
+// are O(n log n) per partition instead of O(n^2) or O(n w).
+//
+// An operation using the index provides:
+//   RANK_CONFIG_COLUMN    first argument that is configuration (constant per frame)
+//   RANK_SCALE_MASSES     scale masses by a power of two so the largest is below 1
+//   RankEntry(row, context, key, mass) -> FinRankEntry: how a counted row enters
+//                         a frame; context carries a running value across the
+//                         partition's counted rows in order and starts at 1
+//   RankConfigure(state, parameters) copies a validated configuration
+//   RankWindow(parameters) whether that configuration uses the index
+//   RankFrames(frames)    whether this frame can be read from the index
+//   RankFinalize(parameters, frame, target, finalize_data)
+enum class FinRankEntry : uint8_t { SKIP, ENTRY, INVALID };
+
+static uint64_t FinNextRankPartitionId() {
+	static std::atomic<uint64_t> next_id {0};
+	return ++next_id;
+}
+
+struct FinRankPartition {
+	static constexpr uint32_t SKIP = std::numeric_limits<uint32_t>::max(); // row does not enter frames
+	static constexpr uint32_t INVALID = SKIP - 1;                         // row makes its frames NULL
+
+	uint64_t id = 0;
+	idx_t columns = 0;
+	vector<double> keys;    // entry keys in ascending (key, mass) order; equal entries share a rank
+	vector<double> masses;  // the mass one row of each rank adds to the frame sums
+	vector<uint32_t> ranks; // per partition row: rank, SKIP or INVALID
+	FinRow configuration;   // the first counted row; every counted row shares its configuration
+	bool counted = false;
+	// False when the configuration varies across rows (frames are then validated
+	// one at a time by the generic evaluator) or when mass sums could overflow or
+	// lose precision.
+	bool usable = true;
+
+	template <class OP>
+	void Build(const WindowPartitionInput &partition) {
+		id = FinNextRankPartitionId();
+		columns = partition.column_ids.size();
+		FinWindowAux aux;
+		aux.Initialize(partition);
+		const auto count = partition.count;
+		if (count >= INVALID) {
+			usable = false;
+			return;
+		}
+		ranks.assign(count, SKIP);
+		struct Entry {
+			double key;
+			double mass;
+			uint32_t row;
+		};
+		vector<Entry> entries;
+		entries.reserve(count);
+		FinRow row;
+		double max_mass = 0.0;
+		double min_mass = std::numeric_limits<double>::infinity();
+		double context = 1.0;
+		for (idx_t i = 0; i < count; i++) {
+			if (!partition.filter_mask.RowIsValid(i) || !aux.Read<OP>(i, row)) {
+				continue;
+			}
+			if (!counted) {
+				configuration = row;
+				counted = true;
+			} else if (!SameConfiguration(row, OP::RANK_CONFIG_COLUMN)) {
+				usable = false;
+				return;
+			}
+			double key, mass;
+			auto kind = OP::RankEntry(row, context, key, mass);
+			if (kind == FinRankEntry::INVALID) {
+				ranks[i] = INVALID;
+			} else if (kind == FinRankEntry::ENTRY) {
+				max_mass = std::max(max_mass, std::fabs(mass));
+				if (mass != 0.0) {
+					min_mass = std::min(min_mass, std::fabs(mass));
+				}
+				entries.push_back({key, mass, static_cast<uint32_t>(i)});
+			}
+		}
+		int exponent = 0;
+		if (OP::RANK_SCALE_MASSES && max_mass > 0.0) {
+			// Exact power-of-two scaling keeps equal or integral weights exact.
+			std::frexp(max_mass, &exponent);
+			if (std::ldexp(min_mass, -exponent) < std::numeric_limits<double>::min()) {
+				usable = false;
+				return;
+			}
+			max_mass = std::ldexp(max_mass, -exponent);
+		}
+		if (max_mass > std::numeric_limits<double>::max() / (4.0 * static_cast<double>(entries.size() + 1))) {
+			usable = false;
+			return;
+		}
+		std::sort(entries.begin(), entries.end(), [](const Entry &lhs, const Entry &rhs) {
+			return lhs.key < rhs.key || (lhs.key == rhs.key && lhs.mass < rhs.mass);
+		});
+		for (const auto &entry : entries) {
+			if (keys.empty() || keys.back() != entry.key || masses.back() != std::ldexp(entry.mass, -exponent)) {
+				keys.push_back(entry.key);
+				masses.push_back(std::ldexp(entry.mass, -exponent));
+			}
+			ranks[entry.row] = static_cast<uint32_t>(keys.size() - 1);
+		}
+	}
+
+	bool SameConfiguration(const FinRow &row, idx_t first_column) const {
+		for (idx_t c = first_column; c < columns; c++) {
+			if (row.valid[c] != configuration.valid[c] ||
+			    (row.valid[c] && memcmp(&row.v[c], &configuration.v[c], sizeof(double)) != 0)) {
+				return false;
+			}
+		}
+		return true;
+	}
+};
+
+struct FinRankFrame {
+	const FinRankPartition *partition = nullptr;
+	uint64_t partition_id = 0;
+	vector<int64_t> counts; // Fenwick trees over ranks, 1-based
+	vector<FinSum> sums;
+	idx_t step = 0; // highest power of two <= number of keys
+	bool enabled = false; // the partition's configuration uses the index
+	double parameters[4] = {0.0, 0.0, 0.0, 0.0};
+	int64_t total = 0;
+	int64_t invalid = 0;
+	idx_t start = 0;
+	idx_t end = 0;
+
+	// Returns true when the frame was (re)attached to a new partition.
+	bool Attach(const FinRankPartition &shared) {
+		if (partition == &shared && partition_id == shared.id) {
+			return false;
+		}
+		partition = &shared;
+		partition_id = shared.id;
+		const auto size = shared.keys.size();
+		counts.assign(size + 1, 0);
+		sums.assign(size + 1, FinSum {0.0, 0.0});
+		step = 1;
+		while (step * 2 <= size) {
+			step *= 2;
+		}
+		total = invalid = 0;
+		start = end = 0;
+		return true;
+	}
+
+	void Toggle(idx_t row, int64_t sign) {
+		auto rank = partition->ranks[row];
+		if (rank == FinRankPartition::SKIP) {
+			return;
+		}
+		if (rank == FinRankPartition::INVALID) {
+			invalid += sign;
+			return;
+		}
+		total += sign;
+		const auto value = sign > 0 ? partition->masses[rank] : -partition->masses[rank];
+		for (idx_t i = rank + 1; i < counts.size(); i += i & (~i + 1)) {
+			counts[i] += sign;
+			sums[i].Add(value);
+		}
+	}
+
+	void Toggle(idx_t begin, idx_t finish, int64_t sign) {
+		for (idx_t i = begin; i < finish; i++) {
+			Toggle(i, sign);
+		}
+	}
+
+	// Moves the frame to [new_start, new_end), touching only rows that leave or enter it.
+	void Move(idx_t new_start, idx_t new_end) {
+		Toggle(start, std::min(end, new_start), -1);
+		Toggle(std::max(start, new_end), end, -1);
+		Toggle(new_start, std::min(new_end, start), 1);
+		Toggle(std::max(new_start, end), new_end, 1);
+		start = new_start;
+		end = new_end;
+	}
+
+	// Moves the frame to cover the subframes: the hull is kept incrementally and
+	// the gaps between subframes (EXCLUDE) are removed until Restore().
+	void Move(const SubFrames &frames) {
+		idx_t hull_start = 0, hull_end = 0;
+		bool any = false;
+		for (const auto &frame : frames) {
+			if (frame.start >= frame.end) {
+				continue;
+			}
+			hull_start = any ? std::min(hull_start, frame.start) : frame.start;
+			hull_end = any ? std::max(hull_end, frame.end) : frame.end;
+			any = true;
+		}
+		if (!any) {
+			hull_start = hull_end = start;
+		}
+		Move(hull_start, hull_end);
+		ToggleGaps(frames, -1);
+	}
+
+	void Restore(const SubFrames &frames) {
+		ToggleGaps(frames, 1);
+	}
+
+	void ToggleGaps(const SubFrames &frames, int64_t sign) {
+		bool any = false;
+		idx_t previous_end = 0;
+		for (const auto &frame : frames) {
+			if (frame.start >= frame.end) {
+				continue;
+			}
+			if (any && frame.start > previous_end) {
+				Toggle(previous_end, frame.start, sign);
+			}
+			previous_end = any ? std::max(previous_end, frame.end) : frame.end;
+			any = true;
+		}
+	}
+
+	// The k-th smallest value (0-based) in the frame; requires k < total.
+	double Select(idx_t k) const {
+		idx_t position = 0;
+		auto remaining = static_cast<int64_t>(k) + 1;
+		for (auto bit = step; bit > 0; bit >>= 1) {
+			auto next = position + bit;
+			if (next < counts.size() && counts[next] < remaining) {
+				position = next;
+				remaining -= counts[next];
+			}
+		}
+		return partition->keys[position];
+	}
+
+	// Linear-interpolation quantile of the frame values, as FinContinuousQuantile.
+	double Quantile(double quantile) const {
+		const auto n = static_cast<idx_t>(total);
+		if (n == 1) {
+			return Select(0);
+		}
+		auto position = FinQuantilePosition(quantile, n);
+		auto lower = static_cast<idx_t>(std::floor(position));
+		auto fraction = position - static_cast<double>(lower);
+		auto lower_value = Select(lower);
+		if (fraction == 0.0 || lower + 1 >= n) {
+			return lower_value;
+		}
+		return ConvexCombination(lower_value, Select(lower + 1), fraction);
+	}
+
+	// Rank of the first key >= value (Below) or > value (AtMost).
+	idx_t RankBelow(double value) const {
+		return std::lower_bound(partition->keys.begin(), partition->keys.end(), value) - partition->keys.begin();
+	}
+	idx_t RankAtMost(double value) const {
+		return std::upper_bound(partition->keys.begin(), partition->keys.end(), value) - partition->keys.begin();
+	}
+
+	// Number of frame values with rank < rank.
+	int64_t PrefixCount(idx_t rank) const {
+		int64_t result = 0;
+		for (idx_t i = rank; i > 0; i -= i & (~i + 1)) {
+			result += counts[i];
+		}
+		return result;
+	}
+
+	FinSum PrefixSum(idx_t rank) const {
+		FinSum result {0.0, 0.0};
+		for (idx_t i = rank; i > 0; i -= i & (~i + 1)) {
+			result.Merge(sums[i]);
+		}
+		return result;
+	}
+
+	// Sum of frame values with rank in [lower, upper).
+	double RangeSum(idx_t lower, idx_t upper) const {
+		if (lower >= upper) {
+			return 0.0;
+		}
+		auto high = PrefixSum(upper);
+		auto low = PrefixSum(lower);
+		return (high.sum - low.sum) + (high.correction - low.correction);
+	}
+
+	// The first rank whose cumulative frame mass reaches target, or the number of
+	// keys when none does; before receives the mass of the frame ranks below it.
+	idx_t SearchMass(double target, FinSum &before) const {
+		idx_t position = 0;
+		before = FinSum {0.0, 0.0};
+		for (auto bit = step; bit > 0; bit >>= 1) {
+			auto next = position + bit;
+			if (next >= counts.size()) {
+				continue;
+			}
+			auto trial = before;
+			trial.Merge(sums[next]);
+			if (trial.Value() < target) {
+				position = next;
+				before = trial;
+			}
+		}
+		return position;
+	}
+};
+
+template <class STATE, class OP>
+static void FinRankWindowInit(AggregateInputData &, const WindowPartitionInput &partition, data_ptr_t g_state) {
+	auto &state = *reinterpret_cast<STATE *>(g_state);
+	delete state.rank_partition;
+	state.rank_partition = new FinRankPartition();
+	state.rank_partition->template Build<OP>(partition);
+}
+
+// Window evaluation with a rank-indexed frame. A partition whose configuration
+// varies by row, whose configuration needs the full sample, or whose sums could
+// overflow falls back to the frame-by-frame evaluator.
+template <class STATE, class OP, class RESULT_TYPE>
+static void FinRankWindow(AggregateInputData &aggr_input_data, const WindowPartitionInput &partition,
+                          const_data_ptr_t g_state, data_ptr_t l_state, const SubFrames &frames, Vector &result,
+                          idx_t rid) {
+	auto shared = g_state ? reinterpret_cast<const STATE *>(g_state)->rank_partition : nullptr;
+	auto &state = *reinterpret_cast<STATE *>(l_state);
+	if (!shared || !shared->usable) {
+		FinWindow<STATE, OP, RESULT_TYPE>(aggr_input_data, partition, g_state, l_state, frames, result, rid);
+		return;
+	}
+	if (!state.rank_frame) {
+		state.rank_frame = new FinRankFrame();
+	}
+	auto &frame = *state.rank_frame;
+	if (frame.Attach(*shared)) {
+		frame.enabled = true;
+		if (shared->counted) {
+			// Validate the shared configuration exactly as a row update would, in a
+			// separate state: the frame-by-frame evaluator owns the local state.
+			STATE configuration;
+			OP::Initialize(configuration);
+			try {
+				OP::UpdateRow(configuration, shared->configuration, shared->columns);
+				OP::RankConfigure(configuration, frame.parameters);
+			} catch (...) {
+				OP::Destroy(configuration, aggr_input_data);
+				throw;
+			}
+			OP::Destroy(configuration, aggr_input_data);
+			frame.enabled = OP::RankWindow(frame.parameters);
+		}
+	}
+	if (!frame.enabled || !OP::RankFrames(frames)) {
+		// The rank path never changes the state after attaching, so the
+		// frame-by-frame evaluator can continue from its own previous frame.
+		FinWindow<STATE, OP, RESULT_TYPE>(aggr_input_data, partition, g_state, l_state, frames, result, rid);
+		return;
+	}
+	frame.Move(frames);
+	AggregateFinalizeInputData finalize_input(aggr_input_data.function, aggr_input_data.bind_data,
+	                                          aggr_input_data.allocator);
+	AggregateFinalizeData finalize_data(result, finalize_input);
+	finalize_data.result_idx = rid;
+	if (frame.invalid > 0 || frame.total == 0) {
+		finalize_data.ReturnNull();
+	} else {
+		OP::RankFinalize(frame.parameters, frame, FlatVector::GetDataMutable<RESULT_TYPE>(result)[rid],
+		                 finalize_data);
+	}
+	frame.Restore(frames);
+}
+
+template <class STATE, class OP, class RESULT_TYPE = double>
+static AggregateFunction FinRankWindowAggregate(const string &name, vector<LogicalType> arguments,
+                                                const LogicalType &return_type = LogicalType(LogicalTypeId::DOUBLE)) {
+	auto result = FinAggregate<STATE, OP, RESULT_TYPE>(name, std::move(arguments), return_type);
+	result.SetWindowCallback(FinRankWindow<STATE, OP, RESULT_TYPE>);
+	result.SetWindowInitCallback(FinRankWindowInit<STATE, OP>);
+	return result;
 }
