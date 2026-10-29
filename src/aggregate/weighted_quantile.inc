@@ -27,6 +27,8 @@ static WeightedQuantileMethod ParseWeightedQuantileMethod(string_t method) {
 struct WeightedQuantileState {
 	vector<std::pair<double, double>> *values;
 	FinWindowAux *window;
+	FinRankPartition *rank_partition;
+	FinRankFrame *rank_frame;
 	double quantile;
 	WeightedQuantileMethod method;
 	bool parameters_set;
@@ -34,15 +36,44 @@ struct WeightedQuantileState {
 	double weight_scale;
 };
 
+// Picks the quantile once the cumulative weight first reaches the target at an
+// observation: previous_weight and previous_value describe the observation
+// before it in (value, weight) order.
+static double WeightedQuantilePick(WeightedQuantileMethod method, double target_weight, double previous_weight,
+                                   double cumulative, double previous_value, double value) {
+	if (target_weight == cumulative) {
+		return value;
+	}
+	if (method == WeightedQuantileMethod::HIGHER || method == WeightedQuantileMethod::INVERTED_CDF ||
+	    cumulative == previous_weight) {
+		return value;
+	}
+	if (method == WeightedQuantileMethod::LOWER) {
+		return previous_value;
+	}
+	if (method == WeightedQuantileMethod::MIDPOINT) {
+		return ConvexCombination(previous_value, value, 0.5);
+	}
+	if (method == WeightedQuantileMethod::NEAREST) {
+		return target_weight - previous_weight <= cumulative - target_weight ? previous_value : value;
+	}
+	auto fraction = (target_weight - previous_weight) / (cumulative - previous_weight);
+	return ConvexCombination(previous_value, value, std::min(1.0, std::max(0.0, fraction)));
+}
+
 struct WeightedQuantileOperation : public FinOperationDefaults {
 	static constexpr idx_t REQUIRED_ARGS = 3;
 	static constexpr bool ORDER_DEPENDENT = false;
 	static constexpr bool WINDOW_INCREMENTAL = true;
+	static constexpr idx_t RANK_CONFIG_COLUMN = 2;
+	static constexpr bool RANK_SCALE_MASSES = true;
 
 	template <class STATE>
 	static void Initialize(STATE &state) {
 		state.values = new vector<std::pair<double, double>>();
 		state.window = nullptr;
+		state.rank_partition = nullptr;
+		state.rank_frame = nullptr;
 		WindowReset(state);
 	}
 
@@ -173,23 +204,8 @@ struct WeightedQuantileOperation : public FinOperationDefaults {
 		for (const auto &entry : *state.values) {
 			AddCompensated(normalize_weight(entry.second), cumulative, correction);
 			if (target_weight <= cumulative) {
-				if (target_weight == cumulative) {
-					target = entry.first;
-					return;
-				}
-				if (state.method == WeightedQuantileMethod::HIGHER ||
-				    state.method == WeightedQuantileMethod::INVERTED_CDF || cumulative == previous_weight) {
-					target = entry.first;
-				} else if (state.method == WeightedQuantileMethod::LOWER) {
-					target = previous_value;
-				} else if (state.method == WeightedQuantileMethod::MIDPOINT) {
-					target = ConvexCombination(previous_value, entry.first, 0.5);
-				} else if (state.method == WeightedQuantileMethod::NEAREST) {
-					target = target_weight - previous_weight <= cumulative - target_weight ? previous_value : entry.first;
-				} else {
-					auto fraction = (target_weight - previous_weight) / (cumulative - previous_weight);
-					target = ConvexCombination(previous_value, entry.first, std::min(1.0, std::max(0.0, fraction)));
-				}
+				target = WeightedQuantilePick(state.method, target_weight, previous_weight, cumulative, previous_value,
+				                              entry.first);
 				return;
 			}
 			previous_weight = cumulative;
@@ -198,11 +214,78 @@ struct WeightedQuantileOperation : public FinOperationDefaults {
 		target = state.values->back().first;
 	}
 
+	// Window frames: entries are ranked by (value, weight) and the frame walk
+	// below follows the grouped walk. Weights are summed in a different order, so
+	// only the linear method, which is continuous where the cumulative weight
+	// meets the target, uses the index; the discrete methods would pick another
+	// observation at exact ties and keep the frame-by-frame evaluator.
+	static FinRankEntry RankEntry(const FinRow &row, double &, double &key, double &mass) {
+		key = row.v[0];
+		mass = row.v[1];
+		if (!std::isfinite(key) || !std::isfinite(mass) || mass < 0.0) {
+			return FinRankEntry::INVALID;
+		}
+		return mass > 0.0 ? FinRankEntry::ENTRY : FinRankEntry::SKIP;
+	}
+
+	template <class STATE>
+	static void RankConfigure(const STATE &state, double *parameters) {
+		parameters[0] = state.quantile;
+		parameters[1] = static_cast<double>(state.method);
+	}
+
+	static bool RankWindow(const double *parameters) {
+		return static_cast<WeightedQuantileMethod>(static_cast<uint8_t>(parameters[1])) ==
+		       WeightedQuantileMethod::LINEAR;
+	}
+
+	template <class T>
+	static void RankFinalize(const double *parameters, const FinRankFrame &frame, T &target,
+	                         AggregateFinalizeData &) {
+		const auto quantile = parameters[0];
+		const auto method = static_cast<WeightedQuantileMethod>(static_cast<uint8_t>(parameters[1]));
+		const auto &keys = frame.partition->keys;
+		const auto &masses = frame.partition->masses;
+		auto minimum = frame.Select(0);
+		auto maximum = frame.Select(static_cast<idx_t>(frame.total - 1));
+		if (minimum == maximum || quantile == 0.0) {
+			target = minimum;
+			return;
+		}
+		if (quantile == 1.0) {
+			target = maximum;
+			return;
+		}
+		auto target_weight = quantile * frame.PrefixSum(keys.size()).Value();
+		FinSum before;
+		auto rank = frame.SearchMass(target_weight, before);
+		if (rank >= keys.size()) {
+			target = maximum;
+			return;
+		}
+		// Equal (value, weight) rows share a rank; the target falls on its first
+		// row only when that row alone reaches it.
+		auto first = before;
+		first.Add(masses[rank]);
+		if (first.Value() < target_weight) {
+			target = keys[rank];
+			return;
+		}
+		auto below = frame.PrefixCount(rank);
+		auto previous_value = below > 0 ? frame.Select(static_cast<idx_t>(below - 1)) : keys[rank];
+		target = WeightedQuantilePick(method, target_weight, before.Value(), first.Value(), previous_value,
+		                              keys[rank]);
+	}
+
 	template <class STATE>
 	static void Destroy(STATE &state, AggregateInputData &) {
 		delete state.values;
 		state.values = nullptr;
 		delete state.window;
 		state.window = nullptr;
+		delete state.rank_partition;
+		state.rank_partition = nullptr;
+		delete state.rank_frame;
+		state.rank_frame = nullptr;
 	}
 };

@@ -606,23 +606,34 @@ struct MannWhitneyOperation : public TwoSampleBase {
 	static bool Compute(STATE &state, double *out) {
 		const auto &data = *state.data;
 		const idx_t total = data.size() / 2;
-		vector<double> values(total);
+		// Sort (value, sample) pairs directly and add each tie group's average rank
+		// once per x member. Ranks are half-integers, so R_x is exact.
+		vector<std::pair<double, double>> rows(total);
 		double n1 = 0.0;
 		for (idx_t i = 0; i < total; i++) {
-			values[i] = data[2 * i];
+			rows[i] = {data[2 * i], data[2 * i + 1]};
 			n1 += data[2 * i + 1] == 0.0 ? 1.0 : 0.0;
 		}
 		const double n2 = double(total) - n1;
 		if (n1 < 1.0 || n2 < 1.0) {
 			return false;
 		}
-		vector<double> ranks;
-		auto ties = StatAverageRanks(values, ranks);
+		std::sort(rows.begin(), rows.end(),
+		          [](const std::pair<double, double> &l, const std::pair<double, double> &r) { return l.first < r.first; });
 		double r1 = 0.0;
-		for (idx_t i = 0; i < total; i++) {
-			if (data[2 * i + 1] == 0.0) {
-				r1 += ranks[i];
+		double ties = 0.0;
+		idx_t i = 0;
+		while (i < total) {
+			idx_t j = i + 1;
+			double members = rows[i].second == 0.0 ? 1.0 : 0.0;
+			while (j < total && rows[j].first == rows[i].first) {
+				members += rows[j].second == 0.0 ? 1.0 : 0.0;
+				j++;
 			}
+			r1 += members * (0.5 * double(i + 1 + j));
+			double t = double(j - i);
+			ties += t * t * t - t;
+			i = j;
 		}
 		const double u1 = r1 - n1 * (n1 + 1.0) / 2.0;
 		out[0] = u1;

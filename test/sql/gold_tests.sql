@@ -439,6 +439,69 @@ SELECT
   assert_eq('returns risk window frame rows', count(*), 41::BIGINT)
 FROM framed f JOIN grouped e USING (i, g);
 
+-- Rank-indexed history windows (historical VaR/CVaR, trimmed/winsorized means,
+-- linear weighted quantile, running DaR/CDaR): running, sliding and EXCLUDE frames over tied
+-- values, NULLs and a FILTER equal the grouped aggregate over the same rows; a
+-- NaN makes frames NULL. Discrete weighted methods keep the frame-by-frame path,
+-- including after frames that start empty (NULL weights on the first rows).
+CREATE OR REPLACE TEMP TABLE rank_window_input AS
+  SELECT i, i % 2 AS g, CASE WHEN i % 13 = 0 THEN NULL WHEN i = 301 THEN 'nan'::DOUBLE
+    ELSE round(sin(i * 0.7) * 0.02, 3) END AS r,
+    CASE WHEN i < 5 THEN NULL ELSE (1 + i % 4)::DOUBLE END AS w FROM range(1, 700) t(i);
+WITH framed AS (
+  SELECT i, g,
+    fin_var(r) OVER run AS run_var, fin_cvar(r, 0.9) OVER run AS run_cvar,
+    fin_trimmed_mean(r, 0.1, 0.8) OVER run AS run_trim, fin_winsorized_mean(r) OVER run AS run_wins,
+    fin_cvar(r) FILTER (WHERE i % 3 <> 0) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 40 PRECEDING AND 4 FOLLOWING) AS slide_cvar,
+    fin_winsorized_mean(r, 0.2, 0.9) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 25 PRECEDING AND 3 FOLLOWING EXCLUDE CURRENT ROW) AS excl_wins,
+    fin_weighted_quantile(r, w, 0.3) OVER run AS run_wq,
+    fin_weighted_quantile(r, w, 0.4, 'lower') OVER run AS run_wq_lower,
+    fin_weighted_quantile(r, w, 0.6) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 30 PRECEDING AND CURRENT ROW) AS slide_wq,
+    fin_drawdown_at_risk(r, 0.9) OVER run AS run_dar, fin_conditional_drawdown_at_risk(r, 0.8) OVER run AS run_cdar,
+    fin_conditional_drawdown_at_risk(r) OVER (PARTITION BY g ORDER BY i ROWS BETWEEN 3 PRECEDING AND 20 FOLLOWING) AS slide_cdar
+  FROM rank_window_input
+  WINDOW run AS (PARTITION BY g ORDER BY i ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+), grouped AS (
+  SELECT a.i, a.g,
+    (SELECT fin_var(x.r) FROM rank_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_var,
+    (SELECT fin_cvar(x.r, 0.9) FROM rank_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_cvar,
+    (SELECT fin_trimmed_mean(x.r, 0.1, 0.8) FROM rank_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_trim,
+    (SELECT fin_winsorized_mean(x.r) FROM rank_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_wins,
+    (SELECT fin_cvar(x.r) FROM rank_window_input x
+      WHERE x.g = a.g AND x.i > a.i - 82 AND x.i <= a.i + 8 AND x.i % 3 <> 0) AS slide_cvar,
+    (SELECT fin_winsorized_mean(x.r, 0.2, 0.9) FROM rank_window_input x
+      WHERE x.g = a.g AND x.i > a.i - 52 AND x.i <= a.i + 6 AND x.i <> a.i) AS excl_wins,
+    (SELECT fin_weighted_quantile(x.r, x.w, 0.3) FROM rank_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_wq,
+    (SELECT fin_weighted_quantile(x.r, x.w, 0.4, 'lower') FROM rank_window_input x
+      WHERE x.g = a.g AND x.i <= a.i) AS run_wq_lower,
+    (SELECT fin_weighted_quantile(x.r, x.w, 0.6) FROM rank_window_input x
+      WHERE x.g = a.g AND x.i > a.i - 62 AND x.i <= a.i) AS slide_wq,
+    (SELECT fin_drawdown_at_risk(x.r, 0.9 ORDER BY x.i) FROM rank_window_input x WHERE x.g = a.g AND x.i <= a.i) AS run_dar,
+    (SELECT fin_conditional_drawdown_at_risk(x.r, 0.8 ORDER BY x.i) FROM rank_window_input x
+      WHERE x.g = a.g AND x.i <= a.i) AS run_cdar,
+    (SELECT fin_conditional_drawdown_at_risk(x.r ORDER BY x.i) FROM rank_window_input x
+      WHERE x.g = a.g AND x.i > a.i - 8 AND x.i <= a.i + 40) AS slide_cdar
+  FROM rank_window_input a WHERE a.i % 23 = 0 OR a.i IN (1, 2, 301, 302, 360, 361)
+)
+SELECT
+  assert_true('rank-indexed history windows match grouped aggregates', bool_and(
+    f.run_var IS NOT DISTINCT FROM e.run_var AND
+    coalesce(abs(f.run_cvar - e.run_cvar) < 1e-15, f.run_cvar IS NOT DISTINCT FROM e.run_cvar) AND
+    coalesce(abs(f.run_trim - e.run_trim) < 1e-15, f.run_trim IS NOT DISTINCT FROM e.run_trim) AND
+    coalesce(abs(f.run_wins - e.run_wins) < 1e-15, f.run_wins IS NOT DISTINCT FROM e.run_wins) AND
+    coalesce(abs(f.slide_cvar - e.slide_cvar) < 1e-15, f.slide_cvar IS NOT DISTINCT FROM e.slide_cvar) AND
+    coalesce(abs(f.excl_wins - e.excl_wins) < 1e-15, f.excl_wins IS NOT DISTINCT FROM e.excl_wins) AND
+    coalesce(abs(f.run_wq - e.run_wq) < 1e-15, f.run_wq IS NOT DISTINCT FROM e.run_wq) AND
+    f.run_wq_lower IS NOT DISTINCT FROM e.run_wq_lower AND
+    coalesce(abs(f.slide_wq - e.slide_wq) < 1e-15, f.slide_wq IS NOT DISTINCT FROM e.slide_wq) AND
+    f.run_dar IS NOT DISTINCT FROM e.run_dar AND
+    coalesce(abs(f.run_cdar - e.run_cdar) < 1e-15, f.run_cdar IS NOT DISTINCT FROM e.run_cdar) AND
+    coalesce(abs(f.slide_cdar - e.slide_cdar) < 1e-15, f.slide_cdar IS NOT DISTINCT FROM e.slide_cdar))),
+  assert_eq('rank-indexed running frames after a NaN are NULL',
+    count(*) FILTER (WHERE f.i >= 301 AND f.g = 1 AND f.run_var IS NOT NULL), 0::BIGINT),
+  assert_eq('rank-indexed window rows', count(*), 36::BIGINT)
+FROM framed f JOIN grouped e USING (i, g);
+
 -- Order-dependent returns/risk aggregates must not depend on thread count or
 -- physical row order.
 CREATE OR REPLACE TEMP TABLE rr_order_input AS
