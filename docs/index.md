@@ -83,10 +83,6 @@ FROM (
     <strong>Release</strong>
     <span>Tag releases, build artifacts, and prepare the community extension manifest.</span>
   </a>
-  <a class="doc-link" href="{{ '/roadmap-0-2/' | relative_url }}">
-    <strong>0.2.0 Roadmap</strong>
-    <span>Plan publication, agent-ready examples, numerical review, and release quality for the next minor.</span>
-  </a>
   <a class="doc-link" href="{{ '/development/' | relative_url }}">
     <strong>Development Guide</strong>
     <span>Build, test, document, and extend the out-of-tree extension.</span>
@@ -113,12 +109,12 @@ custom aggregate state, or table-function bind-time SQL generation matters.
 SQL macros are used where DuckDB already has the right primitive, such as `avg`,
 `stddev_samp`, `corr`, `quantile_cont`, or `fsum`.
 
-Some broad catalog entries are pragmatic v1 aliases or approximations so the API
-surface is usable while deeper statistical and optimization methods can improve
-behind stable names. Placeholder behavior is explicitly documented and covered
-by tests.
+Every function documents its model, units, and conventions in the function
+reference. Functions that are not yet recommended for production are listed on
+the [Experimental Functions]({{ '/experimental-functions/' | relative_url }})
+page, which is empty in this release.
 
-Because this is pre-1.0 OSS software, users should pin a commit for production
+Because this is pre-1.0 OSS software, users should pin a release version for production
 research workflows and reconcile model outputs against their official analytics
 stack before relying on them for trading, valuation, or risk sign-off.
 

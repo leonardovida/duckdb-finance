@@ -40,14 +40,14 @@ breaking change.
 5. Validate the release metadata for the intended tag:
 
    ```sh
-   python3 scripts/check_release_metadata.py --tag v0.2.1
+   python3 scripts/check_release_metadata.py --tag vX.Y.Z
    ```
 
 6. Tag the current `main` commit:
 
    ```sh
-   git tag v0.2.1
-   git push origin v0.2.1
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
 
 7. The release workflow validates the tag, builds release artifacts through
@@ -104,10 +104,10 @@ CLI.
 After the GitHub release is created, confirm:
 
 ```sh
-gh release view v0.2.1 --json tagName,targetCommitish,url,isDraft,isPrerelease,assets
+gh release view vX.Y.Z --json tagName,targetCommitish,url,isDraft,isPrerelease,assets
 git rev-parse HEAD
-git rev-parse v0.2.1
-git ls-remote --tags origin v0.2.1
+git rev-parse vX.Y.Z
+git ls-remote --tags origin vX.Y.Z
 ```
 
 The rendered community manifest asset should include:

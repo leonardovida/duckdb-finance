@@ -181,27 +181,6 @@ static void RegisterMacro(ExtensionLoader &loader, const FinanceMacro &macro) {
 	}
 }
 
-static bool Contains(const char *haystack, const char *needle) {
-	return string(haystack).find(needle) != string::npos;
-}
-
-static bool IsLoadTimeSafeMacro(const FinanceMacro &macro) {
-	// DuckDB parses internal macros while loading the extension. Window syntax and
-	// lambda/list-comprehension syntax are valid SQL in query context, but they can
-	// recurse deeply in CreateInternalMacroInfo before a binder is available.
-	auto name = string(macro.name);
-	if (name == "fin_ema" || name == "fin_sortino" || name == "fin_ewma_variance" || name == "fin_ewma_vol" || name == "fin_rsi" ||
-	    name == "fin_turnover" || name == "fin_equal_weights" || name == "fin_inverse_vol_weights" ||
-	    name == "fin_portfolio_sharpe" || name == "fin_drawdown" || name == "fin_max_drawdown" ||
-	    name == "fin_avg_drawdown" || name == "fin_drawdown_duration" || name == "fin_ulcer_index" ||
-	    name == "fin_outlier_count" || name == "fin_quantile_spread") {
-		return false;
-	}
-	return !Contains(macro.definition, "OVER") && !Contains(macro.definition, "->") &&
-	       !Contains(macro.definition, "generate_series(") && !Contains(macro.definition, "lambda :=") &&
-	       !Contains(macro.definition, "fin_delta(");
-}
-
 static const FinanceMacro FINANCE_MACROS[] = {
 #include "macros/returns_risk.inc"
 #include "macros/time_series.inc"
@@ -214,11 +193,8 @@ static const FinanceMacro FINANCE_MACROS[] = {
 void RegisterFinanceMacros(ExtensionLoader &loader) {
 	unordered_set<string> registered_names;
 	for (idx_t i = 0; FINANCE_MACROS[i].name != nullptr; i++) {
-		if (!IsLoadTimeSafeMacro(FINANCE_MACROS[i])) {
-			continue;
-		}
 		if (!registered_names.insert(FINANCE_MACROS[i].name).second) {
-			continue;
+			throw InternalException("Finance macro %s is defined twice", FINANCE_MACROS[i].name);
 		}
 		RegisterMacro(loader, FINANCE_MACROS[i]);
 	}

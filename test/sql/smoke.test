@@ -751,3 +751,45 @@ statement error
 SELECT * FROM fin_garch_fit('(SELECT 1 AS t, 0.1 AS r)', 'r', 't', 2)
 ----
 fin_garch_fit: only p = 1 is supported
+
+# SQL-macro return and risk aggregates validate annualization and annual rates
+# like the native aggregates instead of returning 0, NaN or a negative variance.
+statement error
+SELECT fin_upside_deviation(r, -2.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_upside_deviation: annual rate must be finite and greater than -1
+
+statement error
+SELECT fin_hit_ratio(r, 'inf'::DOUBLE) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_hit_ratio: annual rate must be finite and greater than -1
+
+statement error
+SELECT fin_semivariance(r, 0.0, 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_semivariance: annualization must be positive and finite
+
+statement error
+SELECT fin_realized_variance(r, -1) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_realized_variance: annualization must be positive and finite
+
+statement error
+SELECT fin_tracking_error(r, r, 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_tracking_error: annualization must be positive and finite
+
+statement error
+SELECT fin_cagr(r, 0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_cagr: annualization must be positive and finite
+
+statement error
+SELECT fin_alpha(r, r, 0.02, -252) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_alpha: annualization must be positive and finite
+
+statement error
+SELECT fin_omega_ratio(r, -1.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
+----
+fin_omega_ratio: annual rate must be finite and greater than -1

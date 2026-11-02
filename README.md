@@ -35,7 +35,7 @@ Finance workflows often start in SQL but detour into notebooks, services, or
 vendor libraries for basic analytics. DuckDB Finance keeps that work inside
 DuckDB:
 
-- Price options, bonds, swaps, forwards, cash flows, and scenario shocks.
+- Price options, bonds, swaps, forwards, and cash flows.
 - Calculate returns, volatility, drawdowns, Sharpe, Sortino, beta, VaR-style
   metrics, and data-quality checks.
 - Aggregate portfolios with explicit caller-owned units and assumptions.
@@ -95,15 +95,17 @@ finance columns.
 
 This repository is early-stage OSS and should be treated as pre-1.0. The native
 core is covered by deterministic DuckDB SQL tests, function-reference coverage,
-golden fixtures, and performance coverage checks, but users should pin a commit
-for production research workflows.
+golden fixtures, and performance coverage checks, but users should pin a release
+version for production research workflows.
 
 The extension is local and deterministic:
 
 - It does not call market-data vendors or remote pricing services.
-- Some broad catalog entries are pragmatic v1 aliases or approximations. Those
-  entries are documented and tested so stronger implementations can replace them
-  behind stable names.
+- Every function documents its model, units and conventions in the
+  [Function Reference](docs/function_reference.md). Functions that are not yet
+  recommended for production are listed on the
+  [Experimental Functions](docs/experimental_functions.md) page; it is empty in
+  this release.
 
 ## Install
 

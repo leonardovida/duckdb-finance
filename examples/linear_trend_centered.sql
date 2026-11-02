@@ -1,4 +1,4 @@
--- Load the locally built finance extension first. Requires post-v0.2.17 code.
+-- Load the finance extension first. Requires finance 0.2.18 or later.
 -- Large absolute levels can obscure small changes in DOUBLE regression.
 -- Synthetic series with representable quarter-unit noise and known slope 2.
 WITH observations AS (

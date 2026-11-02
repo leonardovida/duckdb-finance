@@ -127,9 +127,8 @@ docs:
     (`0.05` for 5 percent rates, `0.20` for 20 percent volatility), option time
     to maturity is annualized unless you use the date-based helpers, and market
     or portfolio tables remain ordinary DuckDB tables. The extension performs no
-    network calls and does not fetch market data. Some broad catalog entries are
-    pragmatic v1 aliases or approximations; they are documented and tested so
-    stronger implementations can replace them behind stable names.
+    network calls and does not fetch market data. Each function documents its
+    model, units, and conventions in the function reference.
 
     Full documentation and the complete function reference:
     https://leonardovida.github.io/duckdb-finance/
