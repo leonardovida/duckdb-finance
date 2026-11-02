@@ -6,16 +6,30 @@ work, and verify behavior with DuckDB after edits.
 
 ## Repository Layout
 
-- `src/scalar.cpp`: native scalar functions for distributions, rates, options,
-  cash flows, portfolio math, validation, and calendars.
-- `src/aggregate.cpp`: native aggregate implementations that need custom state.
-- `src/macros.cpp`: SQL macro registrations for finance-native analytics.
-- `src/table_functions.cpp`: table functions and bind-replace SQL generators.
+Each `src/*.cpp` translation unit includes the `.inc` files in the matching
+subdirectory; edit the `.inc` file that owns a function family.
+
+- `src/finance_extension.cpp`: extension entry point and function registration
+  helpers.
+- `src/scalar.cpp`, `src/scalar/*.inc`: native scalar functions for
+  distributions, rates, options, cash flows, market data, portfolio
+  optimizers, validation, and calendars (`register.inc` registers them).
+- `src/aggregate.cpp`, `src/aggregate/*.inc`: native aggregates that need
+  custom state, including window-frame support (`register*.inc`).
+- `src/macros.cpp`, `src/macros/*.inc`: SQL macro registrations.
+- `src/table_functions.cpp`, `src/table_functions/*.inc`: table functions and
+  bind-replace SQL generators.
+- `src/portfolio_qp.inc`: quadratic-programming solver for the optimizers.
+- `src/function_metadata.inc`: generated `duckdb_functions()` metadata; do not
+  edit by hand.
 - `include/finance/finance_extension.hpp`: extension registration declarations.
 - `test/sql/smoke_queries.sql`: broad smoke coverage.
+- `test/sql/smoke.test`: sqllogictest records, mainly expected errors.
 - `test/sql/gold_dataset.sql`: deterministic gold fixture tables.
 - `test/sql/gold_tests.sql`: assertion-based behavior coverage.
 - `docs/function_reference.md`: source-derived user-facing function reference.
+- `docs/function_examples.sql`: one runnable example per function.
+- `history/`: reports from earlier sweeps; not current documentation.
 
 ## Build And Test
 

@@ -1,5 +1,5 @@
 -- Load the locally built finance extension before running this example.
--- Requires the explicit-axis fin_linear_trend implementation, not v0.2.17.
+-- Requires finance 0.2.18 or later (explicit-axis fin_linear_trend).
 -- Synthetic daily prices. Use elapsed calendar days rather than row order so
 -- missing dates retain their meaning. Slope is price units per calendar day.
 WITH prices(symbol, day, close) AS (

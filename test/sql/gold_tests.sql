@@ -4802,3 +4802,51 @@ FROM (SELECT * FROM fin_delta_to_grid('gold_grid_order', 'ts', 'x', TIMESTAMP '2
         INTERVAL '1 second', asset_col := 'sym')
       EXCEPT SELECT * FROM gold_grid_order_t1);
 RESET threads;
+
+-- A NULL threshold makes threshold-based macros NULL, like the native aggregates; it used to read as 0.
+SELECT
+  assert_eq('upside deviation null threshold', fin_upside_deviation(r, NULL), NULL),
+  assert_eq('semivariance null threshold', fin_semivariance(r, NULL), NULL),
+  assert_eq('hit ratio null threshold', fin_hit_ratio(r, NULL), NULL),
+  assert_eq('omega null required return', fin_omega_ratio(r, NULL), NULL)
+FROM gold_returns;
+
+-- Single-aggregate return and risk macros run as window functions: each framed value equals the grouped
+-- result over the frame rows, and a non-finite observation only nulls the frames that contain it.
+CREATE TEMP TABLE gold_macro_window AS
+SELECT i, CASE WHEN i = 17 THEN 'inf'::DOUBLE WHEN i % 11 = 7 THEN NULL ELSE sin(i * 1.7) * 0.03 + 0.002 END AS r,
+  cos(i * 0.9) * 0.02 AS b, 100 + i + abs(sin(i)) AS hi, 100 + i - abs(cos(i)) AS lo
+FROM range(1, 41) t(i);
+CREATE MACRO gold_macro_window_bad(win, grp) AS
+  CASE WHEN win IS NULL AND grp IS NULL THEN false WHEN win IS NULL OR grp IS NULL THEN true
+  ELSE abs(win - grp) > 1e-12 * greatest(1, abs(grp)) END;
+SELECT
+  assert_eq('macro windows match grouped frames', count(*) FILTER (WHERE
+    gold_macro_window_bad(w_kahan, g_kahan) OR gold_macro_window_bad(w_mean, g_mean)
+    OR gold_macro_window_bad(w_cov, g_cov) OR gold_macro_window_bad(w_corr, g_corr)
+    OR gold_macro_window_bad(w_up, g_up) OR gold_macro_window_bad(w_semi, g_semi)
+    OR gold_macro_window_bad(w_te, g_te) OR gold_macro_window_bad(w_active, g_active)
+    OR gold_macro_window_bad(w_hit, g_hit) OR gold_macro_window_bad(w_win, g_win)
+    OR gold_macro_window_bad(w_rv, g_rv) OR gold_macro_window_bad(w_rvol, g_rvol)
+    OR gold_macro_window_bad(w_park, g_park) OR gold_macro_window_bad(w_vov, g_vov)), 0::BIGINT),
+  assert_eq('macro window frame with inf is null', count(*) FILTER (WHERE i BETWEEN 17 AND 21 AND w_mean IS NOT NULL), 0::BIGINT),
+  assert_eq('macro window frames without inf are set', count(*) FILTER (WHERE i > 21 AND w_mean IS NULL), 0::BIGINT)
+FROM (
+  SELECT i,
+    fin_kahan_sum(r) OVER w AS w_kahan, (SELECT fin_kahan_sum(r) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_kahan,
+    fin_stable_mean(r) OVER w AS w_mean, (SELECT fin_stable_mean(r) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_mean,
+    fin_stable_cov(r, b) OVER w AS w_cov, (SELECT fin_stable_cov(r, b) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_cov,
+    fin_realized_corr(r, b) OVER w AS w_corr, (SELECT fin_realized_corr(r, b) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_corr,
+    fin_upside_deviation(r, 0.05) OVER w AS w_up, (SELECT fin_upside_deviation(r, 0.05) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_up,
+    fin_semivariance(r, 0.05) OVER w AS w_semi, (SELECT fin_semivariance(r, 0.05) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_semi,
+    fin_tracking_error(r, b) OVER w AS w_te, (SELECT fin_tracking_error(r, b) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_te,
+    fin_active_return(r, b) OVER w AS w_active, (SELECT fin_active_return(r, b) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_active,
+    fin_hit_ratio(r, 0.05) OVER w AS w_hit, (SELECT fin_hit_ratio(r, 0.05) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_hit,
+    fin_win_rate(r) OVER w AS w_win, (SELECT fin_win_rate(r) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_win,
+    fin_realized_variance(r) OVER w AS w_rv, (SELECT fin_realized_variance(r) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_rv,
+    fin_realized_vol(r) OVER w AS w_rvol, (SELECT fin_realized_vol(r) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_rvol,
+    fin_parkinson_vol(hi, lo) OVER w AS w_park, (SELECT fin_parkinson_vol(hi, lo) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_park,
+    fin_vol_of_vol(abs(r)) OVER w AS w_vov, (SELECT fin_vol_of_vol(abs(r)) FROM gold_macro_window g WHERE g.i BETWEEN t.i - 4 AND t.i) AS g_vov
+  FROM gold_macro_window t
+  WINDOW w AS (ORDER BY i ROWS BETWEEN 4 PRECEDING AND CURRENT ROW)
+);

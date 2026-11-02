@@ -15,6 +15,7 @@ BENCH_SCALE ?= 1
 BENCH_REPEATS ?= 5
 RELEASE_BUILD_DIR ?= $(DUCKDB_ROOT)/build/release
 GOLD_TRACE_SQL ?= /tmp/duckdb-finance-gold.sql
+COVARIANCE_TRACE_SQL ?= /tmp/duckdb-finance-covariance-workflow.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
@@ -58,8 +59,8 @@ benchmark: release
 
 .PHONY: covariance-example
 covariance-example: debug
-	{ cat examples/pairwise_covariance.sql; printf "\n"; cat test/sql/covariance_workflow_tests.sql; } > "$(BUILD_DIR)/finance-covariance-workflow.sql"
-	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(BUILD_DIR)/finance-covariance-workflow.sql" >/dev/null
+	{ cat examples/pairwise_covariance.sql; printf "\n"; cat test/sql/covariance_workflow_tests.sql; } > "$(COVARIANCE_TRACE_SQL)"
+	python3 scripts/run_sql_with_trace.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)" "$(COVARIANCE_TRACE_SQL)" >/dev/null
 
 test: smoke sqllogictest gold function-examples covariance-example
 

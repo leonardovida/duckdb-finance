@@ -562,6 +562,12 @@ void RegisterFinanceScalars(ExtensionLoader &loader) {
 	AddOverload(valid_return, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), ValidateReturnFunction);
 	FinanceRegisterFunction(loader, std::move(valid_return));
 	AddScalar(loader, "fin_is_finite", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsFiniteFunction);
+	// Maps NaN and infinity to NULL. Aggregate macros wrap a single aggregate in it instead of a separate
+	// bool_or guard, which lets DuckDB also run them as window functions.
+	AddScalar(loader, "finance_finite_internal", {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::DOUBLE),
+	          [](DataChunk &args, ExpressionState &, Vector &result) {
+		          ExecuteDouble(args, result, [](const PreparedInputs &input, idx_t row) { return input.GetDouble(0, row); });
+	          });
 	ScalarFunctionSet is_price(FinanceFunctionName("fin_is_price"));
 	AddOverload(is_price, {FinanceLogicalType(LogicalTypeId::DOUBLE)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsPriceFunction);
 	AddOverload(is_price, {FinanceLogicalType(LogicalTypeId::DOUBLE), FinanceLogicalType(LogicalTypeId::BOOLEAN)}, FinanceLogicalType(LogicalTypeId::BOOLEAN), IsPriceFunction);

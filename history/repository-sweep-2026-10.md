@@ -6,13 +6,13 @@ public functions implement simplified proxies rather than their named models.
 Passing tests cannot establish that the entire catalog is production accurate
 or free of bugs. The remaining work below is necessary before making that claim.
 
-The follow-up performance pass is documented in `PERFORMANCE_IMPROVEMENTS.md`.
+The follow-up performance pass is documented in `performance-improvements-2026-10.md`.
 It implements the geometric bond-risk calculations, analytic IRR derivatives,
 selection-based robust cutoffs, and bounded RSI state proposed here, and adds
 release benchmarks and clearer defaults.
 
 The next sweep starts from released v0.2.21 and is documented in
-`SECOND_REPOSITORY_SWEEP.md`. It implements EMA and empirical IV percentile,
+`second-repository-sweep-2026-10.md`. It implements EMA and empirical IV percentile,
 repairs further aggregate numerical failures, and replaces quantile-spread sorting
 with selection. The reports describe their respective starting revisions.
 
