@@ -14,7 +14,7 @@ CREATE OR REPLACE MACRO assert_not_null(name, actual) AS
   CASE WHEN actual IS NOT NULL THEN 1 ELSE CAST(name AS INTEGER) END;
 
 SELECT assert_true('version prefix', starts_with(fin_version(), 'finance'));
-SELECT assert_eq('release version', fin_version(), 'finance 0.3.2');
+SELECT assert_eq('release version', fin_version(), 'finance 0.3.3');
 
 -- NULL inputs skip the entire liquidity row, even when another input is non-finite.
 CREATE TEMP TABLE liquidity_null_rows AS SELECT * FROM (VALUES
