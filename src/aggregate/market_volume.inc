@@ -38,6 +38,20 @@ struct FinCompensatedSum {
 	}
 };
 
+// Read a complete row before invoking an operation's own input validation.
+template <idx_t N>
+static bool FinReadDoubleRow(UnifiedVectorFormat (&formats)[N], const double *(&data)[N], idx_t i, double (&row)[N]) {
+	for (idx_t c = 0; c < N; c++) {
+		auto index = formats[c].sel->get_index(i);
+		bool valid = formats[c].validity.RowIsValid(index);
+		row[c] = data[c][index];
+		if (!valid) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // Scatter/simple update for N DOUBLE inputs, skipping rows with any NULL.
 template <class STATE, class OP, idx_t N>
 static void FinDoubleRowsScatter(Vector inputs[], AggregateInputData &, idx_t, Vector &states, idx_t count) {
@@ -52,13 +66,7 @@ static void FinDoubleRowsScatter(Vector inputs[], AggregateInputData &, idx_t, V
 	auto state_values = UnifiedVectorFormat::GetData<STATE *>(sdata);
 	double row[N];
 	for (idx_t i = 0; i < count; i++) {
-		bool valid = true;
-		for (idx_t c = 0; c < N && valid; c++) {
-			auto index = formats[c].sel->get_index(i);
-			valid = formats[c].validity.RowIsValid(index);
-			row[c] = data[c][index];
-		}
-		if (valid) {
+		if (FinReadDoubleRow(formats, data, i, row)) {
 			OP::UpdateRow(*state_values[sdata.sel->get_index(i)], row);
 		}
 	}
@@ -76,13 +84,7 @@ static void FinDoubleRowsSimpleUpdate(Vector inputs[], AggregateInputData &, idx
 	auto &state = *reinterpret_cast<STATE *>(state_ptr);
 	double row[N];
 	for (idx_t i = 0; i < count; i++) {
-		bool valid = true;
-		for (idx_t c = 0; c < N && valid; c++) {
-			auto index = formats[c].sel->get_index(i);
-			valid = formats[c].validity.RowIsValid(index);
-			row[c] = data[c][index];
-		}
-		if (valid) {
+		if (FinReadDoubleRow(formats, data, i, row)) {
 			OP::UpdateRow(state, row);
 		}
 	}
