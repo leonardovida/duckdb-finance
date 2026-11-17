@@ -10,13 +10,19 @@ SELECT date, asset_id, return_decimal::DOUBLE AS return_decimal FROM (VALUES
   (DATE '2026-01-05', 'DDD', 0.10)
 ) AS t(date, asset_id, return_decimal);
 
+-- Matrix and portfolio-table APIs identify assets by VARCHAR labels. Normalize
+-- both input boundaries before joins, duplicate checks, and label ordering.
+-- Integer 2 becomes '2'; a caller-supplied string '02' remains a distinct label.
+CREATE OR REPLACE TEMP VIEW covariance_returns AS
+SELECT date, asset_id::VARCHAR AS asset_id, return_decimal FROM sample_returns;
+
 -- Every asset pair appears, even when it has zero or one shared observation.
 CREATE OR REPLACE TEMP VIEW pairwise_covariance AS
 WITH assets AS (
-  SELECT DISTINCT asset_id FROM sample_returns WHERE asset_id IS NOT NULL
+  SELECT DISTINCT asset_id FROM covariance_returns WHERE asset_id IS NOT NULL
 ), finite_returns AS (
   SELECT date, asset_id, return_decimal
-  FROM sample_returns
+  FROM covariance_returns
   WHERE date IS NOT NULL AND asset_id IS NOT NULL AND isfinite(return_decimal)
 ), pair_stats AS (
   SELECT a.asset_id AS asset_i, b.asset_id AS asset_j,
@@ -40,11 +46,14 @@ CREATE OR REPLACE TEMP TABLE sample_weights AS
 SELECT asset_id, weight::DOUBLE AS weight
 FROM (VALUES ('AAA', 0.5), ('BBB', 0.3), ('CCC', 0.2)) t(asset_id, weight);
 
+CREATE OR REPLACE TEMP VIEW covariance_weights AS
+SELECT asset_id::VARCHAR AS asset_id, weight FROM sample_weights;
+
 CREATE OR REPLACE TEMP VIEW selected_assets AS
-SELECT DISTINCT asset_id FROM sample_weights WHERE asset_id IS NOT NULL;
+SELECT DISTINCT asset_id FROM covariance_weights WHERE asset_id IS NOT NULL;
 
 CREATE OR REPLACE TEMP VIEW selected_finite_returns AS
-SELECT r.* FROM sample_returns r JOIN selected_assets USING (asset_id)
+SELECT r.* FROM covariance_returns r JOIN selected_assets USING (asset_id)
 WHERE date IS NOT NULL AND isfinite(return_decimal);
 
 -- Complete-case deletion is an explicit choice. No imputation, PSD repair or
@@ -72,19 +81,19 @@ FROM complete_covariance_matrix,
 CREATE OR REPLACE TEMP VIEW covariance_coverage AS
 SELECT
   (SELECT count(*) FROM selected_assets) AS n_assets,
-  (SELECT count(DISTINCT date) FROM sample_returns JOIN selected_assets USING (asset_id)) AS candidate_dates,
+  (SELECT count(DISTINCT date) FROM covariance_returns JOIN selected_assets USING (asset_id)) AS candidate_dates,
   (SELECT count(*) FROM complete_dates) AS complete_dates,
-  (SELECT count(*) FROM sample_returns JOIN selected_assets USING (asset_id)
+  (SELECT count(*) FROM covariance_returns JOIN selected_assets USING (asset_id)
    WHERE date IS NULL) AS invalid_date_rows,
-  (SELECT count(*) FROM sample_returns JOIN selected_assets USING (asset_id)
+  (SELECT count(*) FROM covariance_returns JOIN selected_assets USING (asset_id)
    WHERE return_decimal IS NULL OR NOT isfinite(return_decimal)) AS invalid_return_rows,
   (SELECT count(*) FROM (
-     SELECT date, asset_id FROM sample_returns JOIN selected_assets USING (asset_id)
+     SELECT date, asset_id FROM covariance_returns JOIN selected_assets USING (asset_id)
      GROUP BY date, asset_id HAVING count(*) > 1
    )) AS duplicate_keys,
-  (SELECT count(*) FROM sample_weights
+  (SELECT count(*) FROM covariance_weights
    WHERE asset_id IS NULL OR weight IS NULL OR NOT isfinite(weight)) AS invalid_weights,
-  (SELECT count(*) - count(DISTINCT asset_id) FROM sample_weights) AS duplicate_weights,
+  (SELECT count(*) - count(DISTINCT asset_id) FROM covariance_weights) AS duplicate_weights,
   coalesce(estimate.labels = (SELECT list(asset_id ORDER BY asset_id) FROM selected_assets), false) AS labels_match,
   coalesce(fin_matrix_is_psd(estimate.matrix, 1e-10), false) AS is_psd,
   (SELECT count(*) FROM selected_assets a CROSS JOIN selected_assets b
@@ -112,7 +121,7 @@ FROM (SELECT fin_cov_matrix(date, asset_id, return_decimal) AS estimate
 
 -- Retain a status row when blocked; never emit an unchecked risk estimate.
 CREATE OR REPLACE TEMP VIEW approved_weights AS
-SELECT * FROM sample_weights WHERE (SELECT ready FROM covariance_gate);
+SELECT * FROM covariance_weights WHERE (SELECT ready FROM covariance_gate);
 
 CREATE OR REPLACE TEMP VIEW complete_portfolio_risk AS
 WITH calculated AS (
