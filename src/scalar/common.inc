@@ -1113,7 +1113,8 @@ static double BondYTM(double price, double coupon_rate, double maturity_years, i
 	for (idx_t i = 0; i < 200; i++) {
 		double p = price_at(y);
 		if (!IsFinite(p)) {
-			hi = y;
+			// The price overflows only when the yield is too low.
+			lo = y;
 			y = 0.5 * (lo + hi);
 			continue;
 		}
@@ -1127,7 +1128,10 @@ static double BondYTM(double price, double coupon_rate, double maturity_years, i
 			hi = y;
 		}
 		double derivative = BondPriceDerivative(coupon_rate, y, periods, frequency, face);
-		double next = y - diff / derivative;
+		// Newton on ln(price) in ln(1 + y / f): exactly linear for a zero-coupon bond, so deeply negative
+		// yields on long bonds converge in a few steps instead of creeping along the price curve.
+		double slope = derivative / p * (f + y);
+		double next = f * std::expm1(std::log1p(y / f) - (std::log(p) - std::log(price)) / slope);
 		if (!IsFinite(next) || !(next > lo && next < hi)) {
 			next = 0.5 * (lo + hi);
 		}
@@ -1229,6 +1233,11 @@ static date_t ObservedHoliday(int32_t year, int32_t month, int32_t day) {
 //! Weekday NYSE full-day closures for a year (rule-based holidays plus known special closures since 1985).
 static idx_t NyseHolidays(int32_t year, date_t *out) {
 	idx_t n = 0;
+	// The Gregorian computus and the rule dates are undefined before 1583, and the last representable year
+	// cannot hold its autumn holidays: report no holidays rather than raising a date conversion error.
+	if (year < 1583 || year >= 5881580) {
+		return 0;
+	}
 	auto add = [&](date_t d) {
 		if (IsWeekday(d)) {
 			out[n++] = d;
@@ -1985,7 +1994,9 @@ static double BSMImpliedVol(const OptionRow &o, double price, double guess, doub
 		    kernel.pdf_d1 = NormPDF(kernel.d1);
 		    return std::make_pair(BSMPriceFromKernel(o.call, kernel), BSMVegaFromKernel(kernel));
 	    },
-	    price, guess, tolerance, max_iter);
+	    // The absolute price tolerance shrinks with the underlying so low-priced instruments (sub-unit FX,
+	    // penny stocks) are not accepted while the volatility is still visibly off.
+	    price, guess, tolerance * std::min(1.0, std::min(o.spot, o.strike)), max_iter);
 }
 
 static double Black76Price(bool call, double forward, double strike, double ttm, double rate, double vol) {
