@@ -793,3 +793,13 @@ statement error
 SELECT fin_omega_ratio(r, -1.0) FROM (VALUES (0.01), (-0.02)) AS t(r)
 ----
 fin_omega_ratio: annual rate must be finite and greater than -1
+
+statement error
+SELECT fin_excess_return(0.01, 0.05, 0)
+----
+fin_excess_return: annualization must be positive and finite
+
+statement error
+SELECT fin_excess_return(0.01, -1.5)
+----
+fin_excess_return: annual rate must be finite and greater than -1

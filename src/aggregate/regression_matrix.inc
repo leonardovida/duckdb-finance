@@ -318,10 +318,11 @@ struct OlsData {
 	vector<double> mean;
 	vector<double> comoment; // dim x dim, row-major
 	bool invalid = false;
+	vector<double> delta; // scratch for Add
 
 	void Add(const double *values) {
 		count += 1.0;
-		vector<double> delta(dim);
+		delta.resize(dim);
 		for (idx_t i = 0; i < dim; i++) {
 			delta[i] = values[i] - mean[i];
 			mean[i] += delta[i] / count;

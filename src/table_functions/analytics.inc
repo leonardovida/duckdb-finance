@@ -300,9 +300,11 @@ static unique_ptr<TableRef> FamaMacbethBindReplace(ClientContext &context, Table
 	} else {
 		extra_cte = StringUtil::Format(
 		    ", __finance_fm_nw AS ("
-		    "  SELECT a.k, sum(CASE WHEN r.j = 0 THEN 1.0 ELSE 2.0 * (1.0 - r.j / (%lld + 1.0)) END * a.e * b.e) AS s "
-		    "  FROM __finance_fm_dev a CROSS JOIN range(0, %lld + 1) r(j) "
-		    "  JOIN __finance_fm_dev b ON b.k = a.k AND b.t = a.t - r.j GROUP BY a.k"
+		    // Join the lagged periods directly: a range(0, lags + 1) cross product materializes lags that
+		    // exceed the number of periods and contribute nothing.
+		    "  SELECT a.k, sum(CASE WHEN a.t = b.t THEN 1.0 ELSE 2.0 * (1.0 - (a.t - b.t) / (%lld + 1.0)) END * a.e * b.e) AS s "
+		    "  FROM __finance_fm_dev a "
+		    "  JOIN __finance_fm_dev b ON b.k = a.k AND b.t <= a.t AND b.t >= a.t - %lld GROUP BY a.k"
 		    ")",
 		    static_cast<long long>(lags), static_cast<long long>(lags));
 		stderr_sql = "CASE WHEN count(v) >= 2 THEN sqrt(greatest(any_value(nw.s), 0.0)) / count(v) END";

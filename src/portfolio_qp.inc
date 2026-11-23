@@ -152,7 +152,34 @@ static bool PortfolioQPSolveDense(vector<vector<double>> m, vector<double> &rhs)
 // on success. `working` lists inequality indices to start from (they must be
 // active at x and linearly independent of the equalities); it holds the final
 // active set, so consecutive solves over the same feasible set warm start.
+static bool PortfolioQPSolveFrom(const PortfolioQP &qp, vector<double> &x, vector<idx_t> &working);
+
 static bool PortfolioQPSolve(const PortfolioQP &qp, vector<double> &x, vector<idx_t> &working) {
+	if (working.empty()) {
+		// Start points are usually vertices of the feasible set (the maximum-return LP solution) with most
+		// bounds active. Seeding the working set with them saves one dense KKT solve per bound; an empty start
+		// adds them one zero-length step at a time. A seed that is linearly dependent on the equalities makes
+		// the first KKT system singular, so fall back to the empty start in that case.
+		vector<idx_t> seed;
+		const auto capacity = qp.n > qp.a_eq.size() ? qp.n - qp.a_eq.size() : 0;
+		for (idx_t i = 0; i < qp.a_in.size() && seed.size() < capacity; i++) {
+			if (std::fabs(PortfolioQPDot(qp.a_in[i], x) - qp.b_in[i]) <= 1e-12 * (1.0 + std::fabs(qp.b_in[i]))) {
+				seed.push_back(i);
+			}
+		}
+		if (!seed.empty()) {
+			auto seeded_x = x;
+			if (PortfolioQPSolveFrom(qp, seeded_x, seed)) {
+				x = std::move(seeded_x);
+				working = std::move(seed);
+				return true;
+			}
+		}
+	}
+	return PortfolioQPSolveFrom(qp, x, working);
+}
+
+static bool PortfolioQPSolveFrom(const PortfolioQP &qp, vector<double> &x, vector<idx_t> &working) {
 	auto n = qp.n;
 	auto n_eq = qp.a_eq.size();
 	vector<double> in_norm(qp.a_in.size());

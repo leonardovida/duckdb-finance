@@ -1638,10 +1638,16 @@ struct NeweyWestOperation : public OrderedSeriesBase<2> {
 			return false;
 		}
 		vector<double> x(n * 2), y(n), beta, se, residuals, xtx_inv;
+		// The slope and its HAC variance do not depend on the origin of x. Centering keeps the sandwich below
+		// from cancelling for high-level regressors such as epoch seconds.
+		double mean_x = 0.0;
+		for (idx_t t = 0; t < n; t++) {
+			mean_x += rows[t][2] / double(n);
+		}
 		for (idx_t t = 0; t < n; t++) {
 			y[t] = rows[t][1];
 			x[t * 2] = 1.0;
-			x[t * 2 + 1] = rows[t][2];
+			x[t * 2 + 1] = rows[t][2] - mean_x;
 		}
 		if (!StatLeastSquares(x, y, n, 2, beta, se, residuals, &xtx_inv)) {
 			return false;

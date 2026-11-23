@@ -78,10 +78,10 @@ function is called.
 
 | Kind | Count | Call shape | Notes |
 |---|---|---|---|
-| `scalar` | 128 | `SELECT fin_bsm_price('call', 100, 100, 1, 0.05, 0.2)` | Native C++. One value per row. Optional trailing arguments are overloads. |
-| `aggregate` | 111 | `SELECT fin_sharpe(r, 0.0, 252) FROM t` | Native C++. Also valid with `OVER (...)`. Optional trailing arguments are overloads. |
-| `macro` | 115 | `SELECT fin_cagr(r, annualization := 12) FROM t` | SQL macro, scalar or aggregate. Has real default values. Only the aggregate macros listed in the reference run over a window frame. |
-| `table` | 29 | `SELECT * FROM fin_calendar('NYSE', DATE '2026-01-01', DATE '2026-01-31')` | Used in `FROM`. Several take a table or view name and column names as strings. |
+| `scalar` | 127 | `SELECT fin_bsm_price('call', 100, 100, 1, 0.05, 0.2)` | Native C++. One value per row. Optional trailing arguments are overloads. |
+| `aggregate` | 100 | `SELECT fin_sharpe(r, 0.0, 252) FROM t` | Native C++. Also valid with `OVER (...)`. Optional trailing arguments are overloads. |
+| `macro` | 126 | `SELECT fin_cagr(r, annualization := 12) FROM t` | SQL macro, scalar or aggregate; some wrap a native aggregate. Has real default values. Only the aggregate macros listed in the reference run over a window frame. |
+| `table` | 30 | `SELECT * FROM fin_calendar('NYSE', DATE '2026-01-01', DATE '2026-01-31')` | Used in `FROM`. Several take a table or view name and column names as strings. |
 
 ## Conventions That Apply Everywhere
 

@@ -43,8 +43,10 @@ SELECT d, fin_sharpe(r, 0.0, 252) OVER (ORDER BY d ROWS BETWEEN 251 PRECEDING AN
 FROM (VALUES (DATE '2026-01-02', 0.01), (DATE '2026-01-05', -0.02), (DATE '2026-01-06', 0.03)) AS t(d, r);
 ```
 
-Pass native aggregate arguments by position; `name := value` is only
-supported by SQL macros. Order-dependent aggregates (drawdowns, GARCH,
+Native aggregates take arguments by position or as `name := value`. Their
+optional arguments are overloads, so a named call must supply a prefix of the
+parameter list: `fin_sharpe(r, risk_free := 0.0, annualization := 252)`.
+Order-dependent aggregates (drawdowns, GARCH,
 Yang-Zhang, IV rank) need `ORDER BY` inside the call or a window `ORDER BY`.
 
 Use `fin_simple_return(price, previous_price)` or

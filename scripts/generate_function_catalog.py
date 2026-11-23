@@ -12,7 +12,8 @@ import re
 import sys
 from pathlib import Path
 
-from check_function_surface import registered_by_source
+from check_function_surface import category_for
+from function_discovery import registered_functions, source_files
 from function_examples import ExampleError, parse_examples
 
 
@@ -26,6 +27,10 @@ KINDS = {
     "macros": "macro",
     "table_functions": "table",
 }
+# A name can be quoted in several source files: a SQL macro that wraps a native
+# aggregate, or a scalar helper that names a table function in its errors. The
+# callable kind is the first match in this order.
+KIND_PRIORITY = ["macros", "table_functions", "aggregate", "scalar"]
 
 MACRO_ENTRY = re.compile(r'\{\s*"(fin_[a-z0-9_]+)"\s*,\s*((?:"(?:[^"\\]|\\.)*"\s*)+)\}')
 STRING_LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -114,12 +119,24 @@ def macro_parameters() -> dict[str, list[str]]:
     return parameters
 
 
+def registration_sites() -> dict[str, tuple[Path, str]]:
+    """Map each registered function to the source file and directory that define its callable kind."""
+    sites: dict[str, tuple[Path, str]] = {}
+    files = [(path, category_for(path), read(path)) for path in source_files()]
+    for name in sorted(registered_functions()):
+        quoted = f'"{name}"'
+        matches = [(path, category) for path, category, text in files if quoted in text]
+        matches.sort(key=lambda match: KIND_PRIORITY.index(match[1]) if match[1] in KIND_PRIORITY else len(KIND_PRIORITY))
+        sites[name] = matches[0]
+    return sites
+
+
 def catalog() -> list[dict[str, object]]:
     rows = reference_rows()
     examples = {example.name: example for example in parse_examples()}
     macros = macro_parameters()
     entries = []
-    for name, (source, source_kind) in sorted(registered_by_source().items()):
+    for name, (source, source_kind) in sorted(registration_sites().items()):
         row = rows.get(name)
         example = examples.get(name)
         if row is None or example is None:

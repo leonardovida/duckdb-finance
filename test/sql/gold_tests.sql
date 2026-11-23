@@ -4850,3 +4850,163 @@ FROM (
   FROM gold_macro_window t
   WINDOW w AS (ORDER BY i ROWS BETWEEN 4 PRECEDING AND CURRENT ROW)
 );
+
+-- Third repository sweep regressions.
+-- First/last-by-key helpers keep nanosecond and wide integer keys exact.
+SELECT
+  assert_eq('ohlc open with nanosecond keys', (fin_ohlc(p, ts)).open, 101.0),
+  assert_eq('ohlc close with nanosecond keys', (fin_ohlc(p, ts)).close, 100.0),
+  assert_eq('delta with nanosecond keys', fin_delta(p, ts), -1.0),
+  assert_eq('pct change with nanosecond keys', fin_pct_change(p, ts) < 0, true)
+FROM (VALUES
+  (101.0, TIMESTAMP_NS '2024-01-02 09:30:00.000000100'),
+  (100.0, TIMESTAMP_NS '2024-01-02 09:30:00.000000900')) t(p, ts);
+
+SELECT
+  assert_eq('delta with ubigint epoch nanosecond keys', fin_delta(x, k), -2.0),
+  assert_eq('delta with hugeint keys', fin_delta(x, k::HUGEINT), -2.0)
+FROM (VALUES (5.0, 1700000000000000001::UBIGINT), (3.0, 1700000000000000002::UBIGINT)) t(x, k);
+
+-- fin_first_non_null / fin_last_non_null keep the (ts, x) tie order for any value type and run over frames.
+SELECT
+  assert_eq('first non null double', fin_first_non_null(x, ts), 2.0),
+  assert_eq('last non null double tie on ts takes larger x', fin_last_non_null(x, ts), 3.0),
+  assert_eq('first non null varchar', fin_first_non_null(s, ts), 'a'),
+  assert_eq('last non null list', fin_last_non_null(l, ts), [3]),
+  assert_eq('first non null all null group', fin_first_non_null(n, ts), NULL)
+FROM (VALUES (NULL, 1, 'a', [1], NULL::DOUBLE), (2.0, 2, 'b', [2], NULL), (3.0, 2, NULL, [3], NULL), (NULL, 4, 'd', NULL, NULL)) t(x, ts, s, l, n);
+
+SELECT assert_eq('last non null over a sliding frame', list(v ORDER BY ts), [NULL, 2.0, 3.0, 3.0])
+FROM (
+  SELECT ts, fin_last_non_null(x, ts) OVER (ORDER BY ts ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS v
+  FROM (VALUES (NULL, 1), (2.0, 2), (3.0, 3), (NULL, 4)) t(x, ts)
+);
+
+-- fin_ols does not call regressors on very different scales singular.
+SELECT
+  assert_near('ols mixed scale beta 1', fit.beta[1], 1.99759047, 1e-7),
+  assert_near('ols mixed scale beta 2', fit.beta[2] * 1e9, 2.99980593, 1e-7),
+  assert_near('ols mixed scale intercept', fit.intercept, 1.00000167, 1e-8),
+  assert_near('ols mixed scale r2', fit.r2, 0.99999782, 1e-8)
+FROM (
+  SELECT fin_ols(y, [x1, x2]) AS fit
+  FROM (
+    SELECT (i % 7) * 1e-4 AS x1, (i % 11) * 1e6 AS x2,
+           1 + 2 * (i % 7) * 1e-4 + 3e-9 * (i % 11) * 1e6 + ((i % 5) - 2) * 1e-5 AS y
+    FROM range(100) t(i))
+);
+
+-- The Newey-West slope statistic does not depend on the origin of the regressor (epoch-second trends).
+SELECT
+  assert_near('newey west epoch seconds minute bars', shifted_minutes / plain_minutes, 1.0, 1e-6),
+  assert_near('newey west epoch seconds second bars', shifted_seconds / plain_seconds, 1.0, 1e-6),
+  assert_near('newey west second bars value', shifted_seconds, 13.309046094, 1e-6),
+  assert_near('newey west minute bars value', plain_minutes, 773.2058346546879, 1e-6)
+FROM (
+  SELECT
+    fin_newey_west_tstat(100 + 0.06 * i + ((i * 7) % 5 - 2) * 0.01, 1.7e9 + 60 * i, i) AS shifted_minutes,
+    fin_newey_west_tstat(100 + 0.06 * i + ((i * 7) % 5 - 2) * 0.01, 60 * i, i) AS plain_minutes,
+    fin_newey_west_tstat(100 + 0.001 * i + ((i * 7) % 5 - 2) * 0.01, 1.7e9 + i, i) AS shifted_seconds,
+    fin_newey_west_tstat(100 + 0.001 * i + ((i * 7) % 5 - 2) * 0.01, i, i) AS plain_seconds
+  FROM range(60) t(i)
+);
+
+-- Indicator parameters may differ between window partitions.
+SELECT
+  assert_eq('sma column period running frame p=1', list(s ORDER BY ts) FILTER (WHERE p = 1), [0.0, 1.0, 2.0, 3.0, 4.0]),
+  assert_eq('sma column period running frame p=3', list(s ORDER BY ts) FILTER (WHERE p = 3), [NULL, NULL, 1.0, 2.0, 3.0])
+FROM (
+  SELECT p, ts, fin_sma(x, p) OVER (PARTITION BY p ORDER BY ts ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS s
+  FROM (SELECT p, ts, ts::DOUBLE AS x FROM range(5) t(ts), (VALUES (1), (3)) v(p))
+);
+
+SELECT
+  assert_eq('sma column period forward frame p=2', list(s ORDER BY ts) FILTER (WHERE p = 2), [2.5, 3.5, 3.5, 3.5, NULL]),
+  assert_eq('sma column period forward frame p=3', list(s ORDER BY ts) FILTER (WHERE p = 3), [2.0, 3.0, 3.0, NULL, NULL])
+FROM (
+  SELECT p, ts, fin_sma(x, p) OVER (PARTITION BY p ORDER BY ts ROWS BETWEEN CURRENT ROW AND 3 FOLLOWING) AS s
+  FROM (SELECT p, ts, ts::DOUBLE AS x FROM range(5) t(ts), (VALUES (2), (3)) v(p))
+);
+
+-- fin_volume_profile does not depend on the arrival order of duplicate prices.
+SELECT assert_eq('volume profile arrival order',
+  (SELECT fin_volume_profile(p, 1.0, 10) FROM (SELECT (i % 1500)::DOUBLE AS p FROM range(3000) t(i))),
+  (SELECT fin_volume_profile(p, 1.0, 10) FROM (SELECT (i // 2)::DOUBLE AS p FROM range(3000) t(i))));
+
+-- Scalar solver and tolerance regressions.
+SELECT
+  assert_near('bsm implied vol sub-unit underlying',
+    fin_bsm_implied_vol('call', fin_bsm_price('call', 1e-5, 1.2e-5, 0.25, 0.0, 0.5), 1e-5, 1.2e-5, 0.25, 0.0), 0.5, 1e-8),
+  assert_near('black76 implied vol sub-unit forward',
+    fin_black76_implied_vol('call', fin_black76_price('call', 1e-5, 1.2e-5, 0.25, 0.0, 0.5), 1e-5, 1.2e-5, 0.25, 0.0), 0.5, 1e-8),
+  assert_near('bsm implied vol unit scale unchanged', fin_bsm_implied_vol('call', 10.450583572185565, 100, 100, 1, 0.05), 0.2, 1e-12),
+  assert_eq('barrier knock-in worth zero at large spot',
+    fin_barrier_price('call', 'down-in', 1e7, 6138434.447, 6207061.487, 0.04096083063, -0.007951089336, 0.2838021103), 0.0),
+  assert_near('bond ytm deeply negative zero coupon', fin_bond_ytm(124318.95, 0.0, 100.0, 2, 100.0), -0.07, 1e-9),
+  assert_near('bond ytm deeply negative coupon', fin_bond_ytm(108447.93, 0.02, 100.0, 1, 100.0), -0.065, 1e-9),
+  assert_near('bond ytm round trip', fin_bond_ytm(fin_bond_price(0.05, 0.04, 5.0, 2, 100.0), 0.05, 5.0, 2, 100.0), 0.04, 1e-12),
+  assert_eq('nyse calendar before the gregorian calendar', fin_is_business_day(DATE '0003-06-02 (BC)', 'NYSE'), true),
+  assert_eq('nyse calendar last representable year', fin_is_business_day(DATE '5881580-07-09', 'NYSE'), true),
+  assert_eq('nyse session date 1974 emergency dst', fin_session_date(TIMESTAMPTZ '1974-03-01 04:30:00+00', 'NYSE'), DATE '1974-03-01'),
+  assert_eq('nyse regular session 1974 emergency dst', fin_is_regular_session(TIMESTAMPTZ '1974-03-01 14:15:00+00', 'NYSE'), true),
+  assert_eq('nyse session date 1975 before emergency dst', fin_session_date(TIMESTAMPTZ '1975-02-01 04:30:00+00', 'NYSE'), DATE '1975-01-31');
+
+-- fin_portfolio_optimize converges at degenerate vertices and on ill-conditioned covariances.
+SELECT
+  assert_near('qp tied top returns weight 0', max(weight) FILTER (WHERE asset_idx = 0), 0.988599348534, 1e-9),
+  assert_near('qp tied top returns weight 4', max(weight) FILTER (WHERE asset_idx = 4), 0.011400651466, 1e-9),
+  assert_near('qp tied top returns budget', sum(weight), 1.0, 1e-12)
+FROM fin_portfolio_optimize([0.15, 0.08, 0.11, 0.11, 0.15],
+  [[0.0625, 0.0177, 0.0227, 0.0166, 0.0618], [0.0177, 0.04, 0.0092, 0.0067, 0.025], [0.0227, 0.0092, 0.1156, 0.0086, 0.0322],
+   [0.0166, 0.0067, 0.0086, 0.0144, 0.0236], [0.0618, 0.025, 0.0322, 0.0236, 0.1225]],
+  'target_return', NULL, true, NULL, NULL, 0.15);
+
+SELECT
+  assert_near('qp target vol tied returns weight 1', max(weight) FILTER (WHERE asset_idx = 1), 0.534909909910, 1e-9),
+  assert_near('qp target vol tied returns weight 3', max(weight) FILTER (WHERE asset_idx = 3), 0.465090090090, 1e-9)
+FROM fin_portfolio_optimize([0.07, 0.1, 0.09, 0.1],
+  [[0.1156, 0.0111, 0.014, 0.0217], [0.0111, 0.09, 0.0047, 0.0074], [0.014, 0.0047, 0.0225, 0.0093], [0.0217, 0.0074, 0.0093, 0.1024]],
+  'target_vol', NULL, true, NULL, 0.6, NULL, 1.0);
+
+SELECT
+  assert_near('qp ill-conditioned long-short weight 0', max(weight) FILTER (WHERE asset_idx = 0), -4999.63635702, 1e-4),
+  assert_near('qp ill-conditioned long-short weight 2', max(weight) FILTER (WHERE asset_idx = 2), 0.27271405, 1e-6)
+FROM fin_portfolio_optimize([0.08, 0.12, 0.10],
+  [[0.04, 0.039996, 0.01], [0.039996, 0.04, 0.01], [0.01, 0.01, 0.09]], 'max_utility', NULL, false);
+
+-- The long-only weight kernels are invariant to the scale of the covariance.
+SELECT
+  assert_near('min variance tiny covariance weight 1', fin_min_variance_weights(
+    [[1e-12, 9e-13, 1.9e-12], [9e-13, 1e-12, 2e-12], [1.9e-12, 2e-12, 1.024e-11]])[1], 0.5, 1e-12),
+  assert_near('min variance tiny covariance weight 3', fin_min_variance_weights(
+    [[1e-12, 9e-13, 1.9e-12], [9e-13, 1e-12, 2e-12], [1.9e-12, 2e-12, 1.024e-11]])[3], 0.0, 1e-12),
+  assert_near('max sharpe tiny covariance weight 2', fin_max_sharpe_weights([0.05, 0.06, 0.2],
+    [[1e-13, 9e-14, 1.9e-13], [9e-14, 1e-13, 2e-13], [1.9e-13, 2e-13, 1.024e-12]])[2], 0.7282608696, 1e-9),
+  assert_near('max sharpe tiny covariance weight 3', fin_max_sharpe_weights([0.05, 0.06, 0.2],
+    [[1e-13, 9e-14, 1.9e-13], [9e-14, 1e-13, 2e-13], [1.9e-13, 2e-13, 1.024e-12]])[3], 0.2717391304, 1e-9);
+
+-- Grid functions treat a NULL asset as a regular series.
+SELECT
+  assert_eq('resample grid null asset values', list(value ORDER BY ts) FILTER (WHERE sym IS NULL), [1.0, 1.0]),
+  assert_eq('resample grid named asset values', list(value ORDER BY ts) FILTER (WHERE sym = 'A'), [2.0, 2.0])
+FROM fin_resample_grid(
+  '(SELECT * FROM (VALUES (NULL, TIMESTAMP ''2026-01-01 00:00:00'', 1.0), (''A'', TIMESTAMP ''2026-01-01 00:00:00'', 2.0)) t(sym, ts, v))',
+  'ts', 'v', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-01-01 00:00:01', INTERVAL '1 second', asset_col := 'sym');
+
+-- Normalizers keep an existing canonical optional column instead of replacing it with the placeholder.
+SELECT
+  assert_eq('normalize ohlcv keeps existing asset_id', (SELECT asset_id FROM fin_normalize_ohlcv(
+    '(SELECT TIMESTAMP ''2026-01-01'' AS ts, ''AAA'' AS asset_id, 1.0 AS open, 2.0 AS high, 0.5 AS low, 1.5 AS close, 10.0 AS volume)',
+    'ts', 'open', 'high', 'low', 'close', 'volume')), 'AAA'),
+  assert_eq('normalize ohlcv asset placeholder', (SELECT asset_id FROM fin_normalize_ohlcv(
+    '(SELECT TIMESTAMP ''2026-01-01'' AS ts, 1.0 AS open, 2.0 AS high, 0.5 AS low, 1.5 AS close, 10.0 AS volume)',
+    'ts', 'open', 'high', 'low', 'close', 'volume')), NULL),
+  assert_eq('normalize ohlcv column count', (SELECT count(*) FROM (DESCRIBE SELECT * FROM fin_normalize_ohlcv(
+    '(SELECT TIMESTAMP ''2026-01-01'' AS ts, ''AAA'' AS asset_id, 1.0 AS open, 2.0 AS high, 0.5 AS low, 1.5 AS close, 10.0 AS volume, 7 AS extra)',
+    'ts', 'open', 'high', 'low', 'close', 'volume'))), 8::BIGINT),
+  assert_eq('normalize option chain keeps existing dividend_yield', (SELECT option_spec.dividend_yield FROM fin_normalize_option_chain(
+    '(SELECT ''call'' AS cp, 100.0 AS s, 100.0 AS k, DATE ''2027-01-01'' AS e, DATE ''2026-01-01'' AS v, 0.05 AS r, 0.2 AS iv, 0.03 AS dividend_yield)',
+    'cp', 's', 'k', 'e', 'v', 'r', 'iv')), 0.03),
+  assert_eq('normalize option chain dividend placeholder', (SELECT dividend_yield FROM fin_normalize_option_chain(
+    '(SELECT ''call'' AS cp, 100.0 AS s, 100.0 AS k, DATE ''2027-01-01'' AS e, DATE ''2026-01-01'' AS v, 0.05 AS r, 0.2 AS iv)',
+    'cp', 's', 'k', 'e', 'v', 'r', 'iv')), 0.0);
