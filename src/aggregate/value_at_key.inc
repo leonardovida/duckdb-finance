@@ -84,6 +84,12 @@ static AggregateFunctionSet ValueAtKeySet(const string &name) {
 	set.AddFunction(ValueAtKeyAggregate<timestamp_t, LAST>(name, FinanceLogicalType(LogicalTypeId::TIMESTAMP)));
 	set.AddFunction(
 	    ValueAtKeyAggregate<timestamp_tz_t, LAST>(name, FinanceLogicalType(LogicalTypeId::TIMESTAMP_TZ)));
+	// Exact overloads for keys that would otherwise bind through a lossy implicit cast: TIMESTAMP_NS truncates to
+	// microseconds as TIMESTAMP, and UBIGINT/HUGEINT epoch-nanosecond keys collapse above 2^53 as DOUBLE.
+	set.AddFunction(
+	    ValueAtKeyAggregate<timestamp_ns_t, LAST>(name, FinanceLogicalType(LogicalTypeId::TIMESTAMP_NS)));
+	set.AddFunction(ValueAtKeyAggregate<hugeint_t, LAST>(name, FinanceLogicalType(LogicalTypeId::HUGEINT)));
+	set.AddFunction(ValueAtKeyAggregate<uhugeint_t, LAST>(name, FinanceLogicalType(LogicalTypeId::UHUGEINT)));
 	return set;
 }
 
