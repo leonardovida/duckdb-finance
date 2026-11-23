@@ -271,15 +271,10 @@ static bool StatInvertSPD(vector<double> &a, idx_t k) {
 	return true;
 }
 
-// Ordinary least squares on a dense row-major design (n x k). Fills the
-// coefficients, their conventional standard errors and residuals. Returns
-// false for n <= k or a singular design.
-static bool StatLeastSquares(const vector<double> &x, const vector<double> &y, idx_t n, idx_t k, vector<double> &beta,
-                             vector<double> &stderr_out, vector<double> &residuals, vector<double> *xtx_inv_out = nullptr) {
-	if (n <= k) {
-		return false;
-	}
-	// Column scaling keeps the normal equations well conditioned for trend columns.
+// Solves the normal equations of a dense row-major design (n x k) after max-abs column scaling. Fills the
+// coefficients and inverse(X'X) in the original units. Returns false for a singular design.
+static bool StatSolveScaledNormalEquations(const vector<double> &x, const vector<double> &y, idx_t n, idx_t k,
+                                           vector<double> &beta, vector<double> &inverse) {
 	vector<double> scale(k, 0.0);
 	for (idx_t j = 0; j < k; j++) {
 		double s = 0.0;
@@ -304,40 +299,118 @@ static bool StatLeastSquares(const vector<double> &x, const vector<double> &y, i
 			xtx[b * k + a] = xtx[a * k + b];
 		}
 	}
-	if (!StatInvertSPD(xtx, k)) {
+	if (k > 0 && !StatInvertSPD(xtx, k)) {
 		return false;
 	}
 	beta.assign(k, 0.0);
+	inverse.assign(k * k, 0.0);
 	for (idx_t a = 0; a < k; a++) {
 		double sum = 0.0;
 		for (idx_t b = 0; b < k; b++) {
 			sum += xtx[a * k + b] * xty[b];
+			inverse[a * k + b] = xtx[a * k + b] / (scale[a] * scale[b]);
 		}
-		beta[a] = sum;
+		beta[a] = sum / scale[a];
 	}
+	return true;
+}
+
+// Ordinary least squares on a dense row-major design (n x k). Fills the
+// coefficients, their conventional standard errors and residuals. Returns
+// false for n <= k or a singular design.
+// A design with a constant column is solved on mean-centered columns: the raw normal equations lose about
+// (level / dispersion)^2 of precision to the intercept for regressors such as epoch-second time trends. The slopes,
+// residuals and inverse(X'X) are the same quantities, with the intercept terms recovered from the column means.
+static bool StatLeastSquares(const vector<double> &x, const vector<double> &y, idx_t n, idx_t k, vector<double> &beta,
+                             vector<double> &stderr_out, vector<double> &residuals, vector<double> *xtx_inv_out = nullptr) {
+	if (n <= k) {
+		return false;
+	}
+	idx_t constant = k;
+	for (idx_t j = 0; j < k && constant == k; j++) {
+		const double first = x[j];
+		bool is_constant = first != 0.0 && std::isfinite(first);
+		for (idx_t i = 1; i < n && is_constant; i++) {
+			is_constant = x[i * k + j] == first;
+		}
+		if (is_constant) {
+			constant = j;
+		}
+	}
+	vector<double> inverse;
 	residuals.assign(n, 0.0);
+	if (constant == k) {
+		if (!StatSolveScaledNormalEquations(x, y, n, k, beta, inverse)) {
+			return false;
+		}
+		for (idx_t i = 0; i < n; i++) {
+			double fit = 0.0;
+			for (idx_t a = 0; a < k; a++) {
+				fit += x[i * k + a] * beta[a];
+			}
+			residuals[i] = y[i] - fit;
+		}
+	} else {
+		const idx_t m = k - 1;
+		const double level = x[constant];
+		// Column j of the centered design is column j of x, skipping the constant column.
+		vector<double> mean(m, 0.0), centered(n * m), centered_y(n);
+		double mean_y = 0.0;
+		for (idx_t i = 0; i < n; i++) {
+			mean_y += y[i] / double(n);
+			for (idx_t a = 0; a < m; a++) {
+				mean[a] += x[i * k + a + (a >= constant ? 1 : 0)] / double(n);
+			}
+		}
+		for (idx_t i = 0; i < n; i++) {
+			centered_y[i] = y[i] - mean_y;
+			for (idx_t a = 0; a < m; a++) {
+				centered[i * m + a] = x[i * k + a + (a >= constant ? 1 : 0)] - mean[a];
+			}
+		}
+		vector<double> slope, slope_inverse;
+		if (!StatSolveScaledNormalEquations(centered, centered_y, n, m, slope, slope_inverse)) {
+			return false;
+		}
+		beta.assign(k, 0.0);
+		inverse.assign(k * k, 0.0);
+		double intercept = mean_y;
+		double intercept_variance = 1.0 / double(n);
+		for (idx_t a = 0; a < m; a++) {
+			const idx_t column_a = a + (a >= constant ? 1 : 0);
+			beta[column_a] = slope[a];
+			intercept -= slope[a] * mean[a];
+			double cross = 0.0;
+			for (idx_t b = 0; b < m; b++) {
+				const idx_t column_b = b + (b >= constant ? 1 : 0);
+				inverse[column_a * k + column_b] = slope_inverse[a * m + b];
+				cross += slope_inverse[a * m + b] * mean[b];
+			}
+			inverse[column_a * k + constant] = -cross / level;
+			inverse[constant * k + column_a] = -cross / level;
+			intercept_variance += mean[a] * cross;
+		}
+		beta[constant] = intercept / level;
+		inverse[constant * k + constant] = intercept_variance / (level * level);
+		for (idx_t i = 0; i < n; i++) {
+			double fit = 0.0;
+			for (idx_t a = 0; a < m; a++) {
+				fit += centered[i * m + a] * slope[a];
+			}
+			residuals[i] = centered_y[i] - fit;
+		}
+	}
 	double ssr = 0.0;
 	for (idx_t i = 0; i < n; i++) {
-		double fit = 0.0;
-		for (idx_t a = 0; a < k; a++) {
-			fit += x[i * k + a] / scale[a] * beta[a];
-		}
-		residuals[i] = y[i] - fit;
 		ssr += residuals[i] * residuals[i];
 	}
 	double sigma2 = ssr / double(n - k);
 	stderr_out.assign(k, 0.0);
 	for (idx_t a = 0; a < k; a++) {
-		stderr_out[a] = std::sqrt(sigma2 * xtx[a * k + a]) / scale[a];
-		beta[a] /= scale[a];
+		stderr_out[a] = std::sqrt(sigma2 * inverse[a * k + a]);
 	}
 	if (xtx_inv_out) {
-		xtx_inv_out->assign(k * k, 0.0);
-		for (idx_t a = 0; a < k; a++) {
-			for (idx_t b = 0; b < k; b++) {
-				(*xtx_inv_out)[a * k + b] = xtx[a * k + b] / (scale[a] * scale[b]);
-			}
-		}
+		*xtx_inv_out = std::move(inverse);
 	}
 	return true;
 }
@@ -1187,7 +1260,10 @@ static void StatSortedSeries(const vector<double> &data, vector<std::array<doubl
 			rows[i][c] = data[WIDTH * i + c];
 		}
 	}
-	std::sort(rows.begin(), rows.end());
+	// Rows usually arrive in key order (always in an ordered window frame).
+	if (!std::is_sorted(rows.begin(), rows.end())) {
+		std::sort(rows.begin(), rows.end());
+	}
 }
 
 // Shared row intake: columns [0, VALUE_COUNT) are values, VALUE_COUNT is the
