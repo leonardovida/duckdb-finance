@@ -1532,7 +1532,13 @@ static int64_t FloorDiv(int64_t a, int64_t b) {
 //! UTC microseconds of the DST start/end transitions for America/New_York in a year; false if no DST rule.
 static bool NewYorkDstWindow(int32_t year, int64_t &start_utc, int64_t &end_utc) {
 	int32_t start_month, start_day, end_month, end_day;
-	if (year >= 2007) {
+	if (year == 1974 || year == 1975) {
+		// Emergency daylight saving time: from January 6, 1974 and from February 23, 1975.
+		start_month = year == 1974 ? 1 : 2;
+		start_day = year == 1974 ? 6 : 23;
+		end_month = 10;
+		end_day = LastWeekdayOfMonth(year, 10, 7);
+	} else if (year >= 2007) {
 		start_month = 3;
 		start_day = NthWeekdayOfMonth(year, 3, 7, 2);
 		end_month = 11;

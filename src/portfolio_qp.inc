@@ -174,6 +174,9 @@ static bool PortfolioQPSolve(const PortfolioQP &qp, vector<double> &x, vector<id
 	}
 	working = std::move(filtered);
 	idx_t max_iterations = 200 + 20 * (n + qp.a_in.size());
+	// Set after a full unblocked Newton step: x is then the minimizer on the working face even when the
+	// recomputed step is roundoff larger than the stationarity tolerance (ill-conditioned covariances).
+	bool at_face_minimum = false;
 	for (idx_t iteration = 0; iteration < max_iterations; iteration++) {
 		vector<double> grad(n);
 		for (idx_t r = 0; r < n; r++) {
@@ -205,7 +208,8 @@ static bool PortfolioQPSolve(const PortfolioQP &qp, vector<double> &x, vector<id
 			p_norm = std::max(p_norm, std::fabs(rhs[k]));
 			x_norm = std::max(x_norm, std::fabs(x[k]));
 		}
-		if (p_norm <= 1e-13 * x_norm) {
+		if (at_face_minimum || m >= n || p_norm <= 1e-13 * x_norm) {
+			at_face_minimum = false;
 			// Stationary on the working face: drop the most negative multiplier.
 			double grad_norm = 1e-300;
 			for (auto v : grad) {
@@ -237,7 +241,9 @@ static bool PortfolioQPSolve(const PortfolioQP &qp, vector<double> &x, vector<id
 			for (idx_t k = 0; k < n; k++) {
 				ap += qp.a_in[i][k] * rhs[k];
 			}
-			if (ap >= -1e-14 * in_norm[i] * p_norm) {
+			// A constraint that is linearly dependent on the working set has a'p = 0 up to roundoff; treating
+			// it as blocking would add a dependent row and make the next KKT system singular.
+			if (ap >= -1e-10 * in_norm[i] * p_norm) {
 				continue;
 			}
 			auto ratio = std::max(0.0, (qp.b_in[i] - PortfolioQPDot(qp.a_in[i], x)) / ap);
@@ -253,6 +259,7 @@ static bool PortfolioQPSolve(const PortfolioQP &qp, vector<double> &x, vector<id
 			in_working[blocking] = true;
 			working.push_back(blocking);
 		}
+		at_face_minimum = blocking == DConstants::INVALID_INDEX;
 	}
 	return false;
 }
