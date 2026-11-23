@@ -19,13 +19,17 @@ COVARIANCE_TRACE_SQL ?= /tmp/duckdb-finance-covariance-workflow.sql
 DUCKDB_EXTRA_CMAKE_VARIABLES ?= -DBUILD_EXTENSIONS=
 SQL_TEST_PREAMBLE = printf "LOAD '$(EXTENSION_PATH)';\n.bail on\n"
 
-.PHONY: debug release test smoke smoke-quiet sqllogictest gold gold-quiet function-examples perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-examples check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
+.PHONY: debug release query test smoke smoke-quiet sqllogictest gold gold-quiet function-examples perf benchmark check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-catalog check-function-examples check-function-usability check-release-metadata check ci-static ci-duckdb-smoke ci-duckdb ci clean
 
 debug:
 	$(MAKE) -C $(DUCKDB_ROOT) debug EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
 
 release:
 	$(MAKE) -C $(DUCKDB_ROOT) release EXTENSION_CONFIGS="$(EXTENSION_CONFIG)" EXTRA_CMAKE_VARIABLES="$(DUCKDB_EXTRA_CMAKE_VARIABLES)"
+
+# Run one statement against the built extension: make query SQL="SELECT fin_version()"
+query: debug
+	@{ $(SQL_TEST_PREAMBLE); printf '%s\n' "$$SQL"; } | $(DUCKDB) -no-agent -unsigned
 
 smoke: debug
 	{ $(SQL_TEST_PREAMBLE); cat $(SMOKE_SQL); } | $(DUCKDB) -no-agent -unsigned
@@ -85,6 +89,9 @@ check-function-surface:
 check-function-metadata:
 	python3 scripts/generate_function_metadata.py --check
 
+check-function-catalog:
+	python3 scripts/generate_function_catalog.py --check
+
 check-function-examples:
 	python3 scripts/check_function_examples.py
 
@@ -102,9 +109,9 @@ check-sql-runner:
 check-aggregate-numerics: debug
 	python3 scripts/verify_aggregate_numerics.py --duckdb "$(DUCKDB)" --extension "$(EXTENSION_PATH)"
 
-check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-examples check-function-usability check-release-metadata check-sql-runner test check-aggregate-numerics
+check: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-catalog check-function-examples check-function-usability check-release-metadata check-sql-runner test check-aggregate-numerics
 
-ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-examples check-function-usability check-release-metadata check-sql-runner
+ci-static: check-yaml check-docs check-docs-site check-tests check-perf-tests check-function-surface check-function-metadata check-function-catalog check-function-examples check-function-usability check-release-metadata check-sql-runner
 
 ci-duckdb-smoke: smoke-quiet
 

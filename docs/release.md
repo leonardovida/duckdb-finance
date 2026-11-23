@@ -3,7 +3,7 @@ layout: default
 title: Release
 description: How DuckDB Finance is tagged and released.
 permalink: /release/
-nav_order: 11
+nav_order: 13
 ---
 
 # Release

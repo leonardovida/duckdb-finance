@@ -1,7 +1,7 @@
 -- Runnable example for every registered fin_* function.
 --
 -- scripts/generate_function_metadata.py copies each example into the
--- duckdb_functions() `examples` column, and `make check-examples` runs every
+-- duckdb_functions() `examples` column, and `make function-examples` runs every
 -- example against a fresh in-memory database with only the extension loaded.
 -- Examples must therefore be self-contained: inline VALUES, range(), literals
 -- or CTEs, no fixture tables, files, or network access.

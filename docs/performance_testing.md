@@ -3,7 +3,7 @@ layout: default
 title: Performance Testing
 description: Profiling and benchmark coverage for DuckDB Finance functions.
 permalink: /performance-testing/
-nav_order: 5
+nav_order: 12
 ---
 
 # Performance Testing

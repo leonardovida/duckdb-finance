@@ -3,7 +3,7 @@ layout: default
 title: Best Practices
 description: Practical conventions for reliable DuckDB Finance SQL.
 permalink: /best-practices/
-nav_order: 8
+nav_order: 10
 ---
 
 # Best Practices

@@ -3,14 +3,20 @@ layout: default
 title: Function Reference
 description: Every registered DuckDB Finance fin_* function with usage and return notes.
 permalink: /function-reference/
-nav_order: 4
+nav_order: 6
 reference_search: true
 wide: true
 ---
 
 # Finance Function Reference
 
-This document is generated from the extension registration surface in `src/` and the executable SQL coverage in `test/sql/`. All functions live in the `fin_` namespace and use standard DuckDB types such as `DOUBLE`, `VARCHAR`, `DATE`, `TIMESTAMP`, `LIST`, `STRUCT`, and table results.
+This reference has one table row for each of the 383 registered `fin_*` functions: usage, purpose, and return type with notes on units, defaults, `NULL`, and errors. `make check` keeps it in step with the registration surface in `src/` and the executable SQL coverage in `test/sql/`. All functions use standard DuckDB types such as `DOUBLE`, `VARCHAR`, `DATE`, `TIMESTAMP`, `LIST`, `STRUCT`, and table results.
+
+To read one function without loading this page, use one of:
+
+- In a session: `SELECT parameters, description, examples FROM duckdb_functions() WHERE function_name = 'fin_bsm_price';`
+- In a checkout: ``rg '^\| `fin_bsm_price` ' docs/function_reference.md`` returns the full row.
+- As data: [`function_catalog.jsonl`]({{ '/function_catalog.jsonl' | relative_url }}) holds the same rows as JSON, one object per line, with parameter names, a runnable example, and the function kind (`scalar`, `aggregate`, `macro`, `table`).
 
 ## Usage Conventions
 

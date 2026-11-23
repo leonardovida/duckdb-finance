@@ -1,0 +1,47 @@
+# DuckDB Finance
+
+> `finance` is a DuckDB community extension with 383 SQL functions for quant finance: returns and risk, options and volatility, fixed income and cash flows, portfolio analytics, technical indicators, market microstructure, calendars, and validation. Every function is named `fin_*`, takes ordinary DuckDB types, runs locally, and is deterministic. It targets DuckDB v2.0.0.
+
+Install with `INSTALL finance FROM community; LOAD finance;` and confirm with `SELECT fin_version();`.
+
+Facts that hold for every function:
+
+- Rates, returns, volatilities and dividend yields are decimals (`0.05` is 5%). Only parameters named `*_bps` take basis points.
+- Option `ttm` is a year fraction. Annualization defaults to 252 observations per year.
+- A numeric domain failure in a scalar function (negative volatility, no solver root) returns `NULL` for that row. An unknown configuration string (day count, option kind, method) raises an error that starts with the function name. Aggregates raise on invalid parameters.
+- All functions accept `name := value` arguments. Native functions have overloads instead of defaults, so a named call must supply a prefix of the parameter list.
+- Order-dependent aggregates (drawdowns, technical indicators, GARCH, IV rank) need `ORDER BY` inside the call, `fin_max_drawdown(r ORDER BY ts)`, or a window `ORDER BY`.
+- Functions that take SQL lambdas need DuckDB 2.0 syntax: `lambda x: x + 1`.
+
+To look a function up from a loaded session:
+
+```sql
+SELECT function_name, function_type, parameters, description, examples
+FROM duckdb_functions()
+WHERE function_name = 'fin_bsm_price';
+```
+
+## Docs
+
+- [Agent Guide](https://leonardovida.github.io/duckdb-finance/agent-guide/): lookup commands, conventions, pitfalls, and the change checklist for agents
+- [Function Reference](https://leonardovida.github.io/duckdb-finance/function-reference/): one table row per function with usage, purpose, return type, units, NULL and error behavior
+- [Function Cookbook](https://leonardovida.github.io/duckdb-finance/function-cookbook/): which function to use for a task, with small runnable queries
+- [Getting Started](https://leonardovida.github.io/duckdb-finance/getting-started/): first pricing, risk, fixed-income, portfolio and table-function queries
+- [Installation](https://leonardovida.github.io/duckdb-finance/installation/): community install, Quack server, source build
+- [Data Source Compatibility](https://leonardovida.github.io/duckdb-finance/data-source-compatibility/): canonical column shapes and the `fin_normalize_*` helpers
+- [Best Practices](https://leonardovida.github.io/duckdb-finance/best-practices/): units, validation and aggregation rules
+- [Quant Developer Guide](https://leonardovida.github.io/duckdb-finance/quant-developer-guide/): model boundaries, risk units, what to reconcile
+
+## Machine-readable
+
+- [Function catalog (JSON Lines)](https://leonardovida.github.io/duckdb-finance/function_catalog.jsonl): one object per function with `name`, `kind`, `category`, `usage`, `parameters`, `purpose`, `returns`, `example`, `source`
+- [Function examples (SQL)](https://leonardovida.github.io/duckdb-finance/function_examples.sql): one self-contained runnable statement per function
+
+## Optional
+
+- [Finance SQL Playbooks](https://leonardovida.github.io/duckdb-finance/playbooks/): longer desk-style workflows
+- [Experimental Functions](https://leonardovida.github.io/duckdb-finance/experimental-functions/): functions not yet recommended for production (currently none)
+- [Performance Testing](https://leonardovida.github.io/duckdb-finance/performance-testing/): profiling, benchmarks, solver defaults
+- [Development Guide](https://leonardovida.github.io/duckdb-finance/development/): build, test and extend the extension
+- [Release](https://leonardovida.github.io/duckdb-finance/release/): tagging and community publication
+- [Source repository](https://github.com/leonardovida/duckdb-finance): C++ sources, tests, `AGENTS.md`

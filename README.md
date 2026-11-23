@@ -196,16 +196,32 @@ GitHub Pages source lives in `docs/` and is published at:
 
 Main docs:
 
+- [Getting Started](docs/getting_started.md)
 - [Agent Guide](docs/agent_guide.md)
 - [Installation](docs/installation.md)
 - [Function Cookbook](docs/function_cookbook.md)
 - [Function Reference](docs/function_reference.md)
-- [Best Practices](docs/best_practices.md)
+- [Data Source Compatibility](docs/data_source_compatibility.md)
+- [Experimental Functions](docs/experimental_functions.md)
 - [Finance SQL Playbooks](docs/playbooks.md)
+- [Best Practices](docs/best_practices.md)
+- [Quant Developer Guide](docs/quant_developer_guide.md)
 - [Performance Testing](docs/performance_testing.md)
 - [Release](docs/release.md)
 - [Development Guide](docs/development.md)
 - [Contributing](CONTRIBUTING.md)
+
+For agents and tools:
+
+- [`docs/llms.txt`](docs/llms.txt): plain-text index of the documentation with
+  the conventions that apply to every function.
+- [`docs/function_catalog.jsonl`](docs/function_catalog.jsonl): one JSON object
+  per function with its kind, parameters, purpose, return notes, and a runnable
+  example.
+- [`AGENTS.md`](AGENTS.md): repository rules for agents that change the
+  extension.
+- In a session, `duckdb_functions()` carries the same description, parameter
+  names, and example for every `fin_*` function.
 
 ## Design Principles
 

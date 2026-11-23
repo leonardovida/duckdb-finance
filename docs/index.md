@@ -45,7 +45,7 @@ FROM (
   </a>
   <a class="doc-link" href="{{ '/agent-guide/' | relative_url }}">
     <strong>Agent Guide</strong>
-    <span>Route agent tasks to the right docs, examples, checks, and source files.</span>
+    <span>Lookup commands, conventions, pitfalls, and checklists for agents that write SQL or change the extension.</span>
   </a>
   <a class="doc-link" href="{{ '/installation/' | relative_url }}">
     <strong>Installation</strong>
@@ -127,7 +127,10 @@ stack before relying on them for trading, valuation, or risk sign-off.
 | `src/macros.cpp` | SQL macro registration unit; macro groups live in `src/macros/*.inc`. |
 | `src/table_functions.cpp` | Table-function registration unit; implementation lives in `src/table_functions/*.inc`. |
 | `test/sql/gold_dataset.sql` and `test/sql/gold_tests.sql` | Deterministic behavior coverage for the function surface. |
-| `docs/function_reference.md` | Source-derived function reference with usage, purpose, returns, and examples. |
+| `docs/function_reference.md` | Function reference: one row per function with usage, purpose, and return notes. |
+| `docs/function_examples.sql` | One runnable example per function. |
+| `docs/function_catalog.jsonl` | The reference as JSON Lines for agents and tools. |
+| `docs/llms.txt` | Plain-text documentation index for agents. |
 
 ## Playbooks
 

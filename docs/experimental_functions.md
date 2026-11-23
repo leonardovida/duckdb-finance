@@ -3,7 +3,7 @@ layout: default
 title: Experimental Functions
 description: Public functions that are documented and tested but not yet recommended for production use.
 permalink: /experimental-functions/
-nav_order: 7
+nav_order: 8
 wide: true
 ---
 
