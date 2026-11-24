@@ -5,9 +5,22 @@
 
 // The __finance_pad column keeps COLUMNS(...) non-empty when every source column
 // was consumed; it is removed again by the outer projection.
+// `fallback_column` names an optional canonical column that was not mapped. The source is then wrapped so
+// that __finance_opt reads the source column of that name when it exists and `fallback_sql` otherwise: a table
+// that already uses the canonical name keeps its data instead of receiving the placeholder.
 static string NormalizedQuery(const string &canonical_select, const vector<string> &consumed,
-                              const vector<string> &canonical, const string &table) {
+                              const vector<string> &canonical, const string &source,
+                              const string &fallback_column = string(), const string &fallback_sql = string()) {
+	auto table = source;
+	if (!fallback_column.empty()) {
+		table = StringUtil::Format("(SELECT __finance_l.* FROM (SELECT %s AS %s) __finance_default, "
+		                           "LATERAL (SELECT %s AS __finance_opt, * FROM %s) __finance_l)",
+		                           fallback_sql, fallback_column, fallback_column, source);
+	}
 	vector<string> names;
+	if (!fallback_column.empty()) {
+		names.push_back(SqlStringLiteral("__finance_opt"));
+	}
 	for (auto &name : consumed) {
 		names.push_back(SqlStringLiteral(StringUtil::Lower(name)));
 	}
@@ -36,14 +49,15 @@ static unique_ptr<TableRef> NormalizeOhlcvBindReplace(ClientContext &context, Ta
 	for (idx_t i = 1; i < input.inputs.size(); i++) {
 		consumed.push_back(RequireColumnName(input, i, function_name, parameters[i - 1]));
 	}
-	auto asset = input.inputs.size() == 8 ? SqlIdentifier(consumed[6]) + "::VARCHAR" : "CAST(NULL AS VARCHAR)";
+	const bool has_asset = input.inputs.size() == 8;
+	auto asset = has_asset ? SqlIdentifier(consumed[6]) + "::VARCHAR" : "__finance_opt::VARCHAR";
 	auto canonical = StringUtil::Format(
 	    "%s::TIMESTAMP AS ts, %s AS asset_id, %s::DOUBLE AS open, %s::DOUBLE AS high, "
 	    "%s::DOUBLE AS low, %s::DOUBLE AS close, %s::DOUBLE AS volume",
 	    SqlIdentifier(consumed[0]), asset, SqlIdentifier(consumed[1]), SqlIdentifier(consumed[2]),
 	    SqlIdentifier(consumed[3]), SqlIdentifier(consumed[4]), SqlIdentifier(consumed[5]));
-	auto query =
-	    NormalizedQuery(canonical, consumed, {"ts", "asset_id", "open", "high", "low", "close", "volume"}, table);
+	auto query = NormalizedQuery(canonical, consumed, {"ts", "asset_id", "open", "high", "low", "close", "volume"},
+	                             table, has_asset ? "" : "asset_id", "CAST(NULL AS VARCHAR)");
 	return ParseSubquery(context, query);
 }
 
@@ -79,7 +93,8 @@ static unique_ptr<TableRef> NormalizeOptionChainBindReplace(ClientContext &conte
 	auto valuation = SqlIdentifier(consumed[4]);
 	auto rate = SqlIdentifier(consumed[5]);
 	auto vol = SqlIdentifier(consumed[6]);
-	auto dividend_yield = input.inputs.size() == 9 ? SqlIdentifier(consumed[7]) : "0.0";
+	const bool has_dividend_yield = input.inputs.size() == 9;
+	auto dividend_yield = has_dividend_yield ? SqlIdentifier(consumed[7]) : "__finance_opt";
 	auto canonical = StringUtil::Format(
 	    "fin_parse_option_kind(%s::VARCHAR) AS option_kind, %s::DOUBLE AS underlying_price, "
 	    "%s::DOUBLE AS strike_price, %s::DATE AS expiry_date, %s::DATE AS valuation_date, "
@@ -93,6 +108,6 @@ static unique_ptr<TableRef> NormalizeOptionChainBindReplace(ClientContext &conte
 	                             {"option_kind", "underlying_price", "strike_price", "expiry_date", "valuation_date",
 	                              "time_to_expiry_years", "risk_free_rate", "implied_volatility", "dividend_yield",
 	                              "option_spec"},
-	                             table);
+	                             table, has_dividend_yield ? "" : "dividend_yield", "0.0::DOUBLE");
 	return ParseSubquery(context, query);
 }

@@ -3,7 +3,7 @@ layout: default
 title: Data Source Compatibility
 description: How to adapt external market-data tables and files to DuckDB Finance canonical inputs.
 permalink: /data-source-compatibility/
-nav_order: 6
+nav_order: 7
 wide: true
 ---
 

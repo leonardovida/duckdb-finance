@@ -318,10 +318,11 @@ struct OlsData {
 	vector<double> mean;
 	vector<double> comoment; // dim x dim, row-major
 	bool invalid = false;
+	vector<double> delta; // scratch for Add
 
 	void Add(const double *values) {
 		count += 1.0;
-		vector<double> delta(dim);
+		delta.resize(dim);
 		for (idx_t i = 0; i < dim; i++) {
 			delta[i] = values[i] - mean[i];
 			mean[i] += delta[i] / count;
@@ -417,9 +418,28 @@ struct OlsOperation {
 			xty[i] = data.Comoment(i, k) + (INTERCEPT ? 0.0 : n * data.mean[i] * data.mean[k]);
 		}
 		const double yty = data.Comoment(k, k) + (INTERCEPT ? 0.0 : n * data.mean[k] * data.mean[k]);
-		vector<double> inverse = xtx;
+		// Equilibrate so the pivot tolerance applies to the correlation-form matrix: regressors on very different
+		// scales (returns next to volumes) are not singular.
+		vector<double> norm(k);
+		for (idx_t i = 0; i < k; i++) {
+			norm[i] = std::sqrt(xtx[i * k + i]);
+			if (!(norm[i] > 0.0) || !std::isfinite(norm[i])) {
+				return null_result;
+			}
+		}
+		vector<double> inverse(k * k);
+		for (idx_t i = 0; i < k; i++) {
+			for (idx_t j = 0; j < k; j++) {
+				inverse[i * k + j] = xtx[i * k + j] / norm[i] / norm[j];
+			}
+		}
 		if (!StatInvertSPD(inverse, k)) {
 			return null_result;
+		}
+		for (idx_t i = 0; i < k; i++) {
+			for (idx_t j = 0; j < k; j++) {
+				inverse[i * k + j] = inverse[i * k + j] / norm[i] / norm[j];
+			}
 		}
 		vector<double> beta(k, 0.0);
 		for (idx_t i = 0; i < k; i++) {

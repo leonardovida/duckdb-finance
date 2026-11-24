@@ -31,7 +31,10 @@ make check DUCKDB_ROOT=/path/to/duckdb
   calibration or network calls.
 - Add or update tests in `test/sql/gold_tests.sql` for behavior changes.
 - Keep fixtures small and focused in `test/sql/gold_dataset.sql`.
-- Update `docs/function_reference.md` when the callable function surface changes.
+- Update `docs/function_reference.md` and `docs/function_examples.sql` when the
+  callable function surface changes, then regenerate
+  `src/function_metadata.inc` and `docs/function_catalog.jsonl` (see
+  [AGENTS.md](AGENTS.md)).
 - Run `make check` before opening a pull request.
 
 ## Pull Request Checklist

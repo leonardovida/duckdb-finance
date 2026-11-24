@@ -241,7 +241,26 @@ static bool PortfolioNormalizeWeights(vector<double> &w) {
 }
 
 //! Minimum-variance weights summing to one; long-only via the active-set QP.
-static bool PortfolioMinVariance(const vector<double> &cov, idx_t n, bool long_only, vector<double> &w) {
+//! The weight kernels below are invariant to the scale of the covariance, but their pivot and multiplier
+//! tolerances are not: divide by the largest variance so intraday-sized covariances (1e-9 and below) solve
+//! like unit-sized ones.
+static vector<double> PortfolioUnitScaleCovariance(const vector<double> &cov, idx_t n) {
+	double scale = 0.0;
+	for (idx_t i = 0; i < n; i++) {
+		scale = std::max(scale, cov[i * n + i]);
+	}
+	if (!(scale > 0.0) || !std::isfinite(scale)) {
+		return cov;
+	}
+	auto scaled = cov;
+	for (auto &value : scaled) {
+		value /= scale;
+	}
+	return scaled;
+}
+
+static bool PortfolioMinVariance(const vector<double> &raw_cov, idx_t n, bool long_only, vector<double> &w) {
+	auto cov = PortfolioUnitScaleCovariance(raw_cov, n);
 	vector<double> l;
 	if (!PortfolioCholesky(cov, n, l)) {
 		return false;
@@ -271,8 +290,9 @@ static bool PortfolioMinVariance(const vector<double> &cov, idx_t n, bool long_o
 }
 
 //! Maximum-Sharpe (tangency) weights summing to one.
-static bool PortfolioMaxSharpe(const vector<double> &mu, const vector<double> &cov, idx_t n, double risk_free,
+static bool PortfolioMaxSharpe(const vector<double> &mu, const vector<double> &raw_cov, idx_t n, double risk_free,
                                bool long_only, vector<double> &w) {
+	auto cov = PortfolioUnitScaleCovariance(raw_cov, n);
 	vector<double> excess(n);
 	double best = -std::numeric_limits<double>::infinity();
 	idx_t best_idx = 0;

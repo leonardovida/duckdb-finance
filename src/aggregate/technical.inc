@@ -2213,6 +2213,22 @@ static void TechWindow(AggregateInputData &aggr_input_data, const WindowPartitio
 			}
 		}
 	};
+	if (parameters > 0 && frames.size() == 1) {
+		// The local state serves every partition of a hash group. Resolve this frame's parameters from its first
+		// counted row before choosing a path: a new partition may carry different (per-partition constant)
+		// parameters, and `memory` must match them.
+		for (idx_t i = frames[0].start; i < frames[0].end; i++) {
+			if (!read(i)) {
+				continue;
+			}
+			if (state.prepared && memcmp(state.params, params, sizeof(state.params)) != 0) {
+				DRIVER::Reset(state);
+				aux.has_prev = false;
+			}
+			DRIVER::PrepareDynamic(state, params);
+			break;
+		}
+	}
 	const auto memory = state.memory;
 	if (frames.size() == 1) {
 		const auto begin = frames[0].start;

@@ -812,6 +812,14 @@ struct FinVolumeProfileOperation {
 		auto width = (state.max - state.min) / static_cast<double>(bins);
 		auto &volume = data.bins;
 		volume.assign(bins, 0.0);
+		if (!data.grid) {
+			// Settle exact versus grid from the final distinct-price count, so the mode does not depend on how
+			// many duplicates were pending when the buffer was last compacted (row order, thread split).
+			Compact(data);
+			if (data.exact.size() > FIN_PROFILE_EXACT) {
+				Regrid(data, state.min, state.max);
+			}
+		}
 		if (data.grid) {
 			for (idx_t j = 0; j < data.cells.size(); j++) {
 				if (data.cells[j] == 0.0) {

@@ -431,7 +431,7 @@ static void Black76ImpliedVolFunction(DataChunk &args, ExpressionState &, Vector
 			                        : df * (strike * NormCDF(-d2) - forward * NormCDF(-d1));
 			    return std::make_pair(value, df * forward * root_time * NormPDF(d1));
 		    },
-		    price, guess, tol, 100);
+		    price, guess, tol * std::min(1.0, std::min(forward, strike)), 100);
 	});
 }
 
@@ -598,7 +598,8 @@ static double BarrierPrice(bool call, BarrierKind barrier_kind, double spot, dou
 	} else {
 		price = strike >= barrier ? b(phi) - d(-1.0, phi) + f(-1.0) : a(phi) - c(-1.0, phi) + f(-1.0);
 	}
-	if (!IsFinite(price) || price < -1e-10) {
+	// The Reiner-Rubinstein terms are of order spot, so cancellation residues scale with the price level.
+	if (!IsFinite(price) || price < -1e-10 * std::max(1.0, std::max(spot, strike))) {
 		return FIN_NAN;
 	}
 	return std::max(0.0, price);

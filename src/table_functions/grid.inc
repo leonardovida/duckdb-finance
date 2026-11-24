@@ -141,7 +141,9 @@ static GridSource BuildGridSource(const TableFunctionBindInput &input, const str
 		result.ctes += ", __finance_assets AS (SELECT DISTINCT __finance_asset FROM __finance_obs)";
 		result.ctes += ", __finance_grid AS (SELECT a.__finance_asset, g.__finance_ts FROM __finance_assets a "
 		               "CROSS JOIN __finance_grid_points g)";
-		result.join_condition = "g.__finance_asset = o.__finance_asset AND g.__finance_ts >= o.__finance_ts";
+		// NULL is a regular asset key, as in the bar functions.
+		result.join_condition =
+		    "g.__finance_asset IS NOT DISTINCT FROM o.__finance_asset AND g.__finance_ts >= o.__finance_ts";
 		result.partition = "PARTITION BY __finance_asset ";
 		result.asset_select = "__finance_asset AS " + result.asset + ", ";
 		result.order_prefix = "__finance_asset, ";
@@ -244,7 +246,7 @@ static unique_ptr<TableRef> PredictLinearGridBindReplace(ClientContext &context,
 		horizon_seconds = static_cast<double>(Interval::GetMicro(horizon)) / Interval::MICROS_PER_SEC;
 	}
 	auto source = BuildGridSource(input, function_name, grid);
-	auto asset_join = source.asset.empty() ? string() : string("g.__finance_asset = o.__finance_asset AND ");
+	auto asset_join = source.asset.empty() ? string() : string("g.__finance_asset IS NOT DISTINCT FROM o.__finance_asset AND ");
 	auto group_prefix = source.asset.empty() ? string() : string("g.__finance_asset, ");
 	auto query = StringUtil::Format(
 	    "WITH %s, __finance_fit AS ("

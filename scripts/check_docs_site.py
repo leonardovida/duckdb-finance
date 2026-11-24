@@ -3,6 +3,8 @@ import re
 import sys
 from pathlib import Path
 
+from function_discovery import registered_functions
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -149,6 +151,42 @@ def main() -> int:
         print("Docs contain local extension binary load requirements:")
         for path, matches in docs_with_forbidden_fragments:
             print(f"  {path}: {', '.join(matches)}")
+        return 1
+
+    site_prefix = "https://leonardovida.github.io/duckdb-finance"
+    llms = read(DOCS / "llms.txt")
+    broken_llms_links = []
+    for url in re.findall(r"\]\((https?://[^)\s]+)\)", llms):
+        if not url.startswith(site_prefix):
+            continue
+        target = url[len(site_prefix):]
+        if target not in pages and not (DOCS / target.lstrip("/")).is_file():
+            broken_llms_links.append(url)
+    if broken_llms_links:
+        print("docs/llms.txt links to pages or files that do not exist:")
+        for url in broken_llms_links:
+            print(f"  {url}")
+        return 1
+
+    # `fin_name` is the placeholder used when describing file formats.
+    registered = registered_functions() | {"fin_name"}
+    prose_paths = [
+        ROOT / "README.md",
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "AGENTS.md",
+        DOCS / "llms.txt",
+        *DOCS.glob("*.md"),
+    ]
+    unknown_functions = []
+    for path in prose_paths:
+        mentioned = set(re.findall(r"\bfin_[a-z0-9_]*[a-z0-9]\b", read(path)))
+        unknown = sorted(mentioned - registered)
+        if unknown:
+            unknown_functions.append((path.relative_to(ROOT), unknown))
+    if unknown_functions:
+        print("Docs mention fin_* functions that are not registered:")
+        for path, names in unknown_functions:
+            print(f"  {path}: {', '.join(names)}")
         return 1
 
     print(f"Docs site nav covers {len(config_nav_urls())} pages and Pages publishing CI is configured.")

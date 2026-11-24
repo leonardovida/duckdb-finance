@@ -3,7 +3,7 @@ layout: default
 title: Installation
 description: Install DuckDB Finance from DuckDB Community Extensions or build it from source.
 permalink: /installation/
-nav_order: 3
+nav_order: 4
 ---
 
 # Installation
